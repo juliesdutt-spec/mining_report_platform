@@ -1,0 +1,192 @@
+"""
+PDF Report Generator
+SIH26023 - AI-Powered Geological & Mining Reporting Solution
+
+Generates formatted PDF reports from extracted mining data.
+"""
+import io
+import os
+from datetime import datetime
+
+try:
+    from fpdf import FPDF
+    FPDF_AVAILABLE = True
+except ImportError:
+    FPDF_AVAILABLE = False
+
+
+class MiningReportPDF(FPDF):
+    """Custom PDF class for mining reports"""
+    
+    def header(self):
+        self.set_font("Helvetica", "B", 12)
+        self.cell(0, 10, "AI-Powered Geological & Mining Report", align="C", new_x="LMARGIN", new_y="NEXT")
+        self.set_font("Helvetica", "", 8)
+        self.cell(0, 6, "Problem ID: SIH26023 | Ministry of Coal | CMPDI/CIL", align="C", new_x="LMARGIN", new_y="NEXT")
+        self.line(10, self.get_y(), 200, self.get_y())
+        self.ln(5)
+    
+    def footer(self):
+        self.set_y(-15)
+        self.set_font("Helvetica", "I", 8)
+        self.cell(0, 10, f"Generated: {datetime.now().strftime('%d-%m-%Y %H:%M')} | Page {self.page_no()}/{{nb}}", align="C")
+    
+    def section_title(self, title):
+        self.set_font("Helvetica", "B", 11)
+        self.set_fill_color(240, 240, 240)
+        self.cell(0, 8, title, fill=True, new_x="LMARGIN", new_y="NEXT")
+        self.ln(3)
+    
+    def field_row(self, label, value):
+        if value:
+            self.set_font("Helvetica", "B", 10)
+            self.cell(50, 7, f"{label}:", new_x="END")
+            self.set_font("Helvetica", "", 10)
+            self.multi_cell(0, 7, str(value), new_x="LMARGIN", new_y="NEXT")
+    
+    def body_text(self, text):
+        self.set_font("Helvetica", "", 10)
+        self.multi_cell(0, 6, text, new_x="LMARGIN", new_y="NEXT")
+        self.ln(2)
+
+
+def generate_pdf_report(extracted_data: dict, filename: str = "mining_report.pdf") -> bytes:
+    """
+    Generate a formatted PDF report from extracted mining data.
+    Returns the PDF as bytes for download.
+    """
+    if not FPDF_AVAILABLE:
+        return _generate_text_report(extracted_data)
+    
+    pdf = MiningReportPDF()
+    pdf.alias_nb_pages()
+    pdf.add_page()
+    
+    # Title
+    pdf.set_font("Helvetica", "B", 16)
+    pdf.cell(0, 12, "Mining Report Analysis", align="C", new_x="LMARGIN", new_y="NEXT")
+    pdf.set_font("Helvetica", "", 10)
+    pdf.cell(0, 8, f"Source: {extracted_data.get('filename', 'Uploaded Document')}", align="C", new_x="LMARGIN", new_y="NEXT")
+    pdf.ln(8)
+    
+    # Mine Details
+    pdf.section_title("MINE DETAILS")
+    pdf.field_row("Report Date", extracted_data.get("report_date"))
+    pdf.field_row("Location", extracted_data.get("location"))
+    pdf.field_row("State", extracted_data.get("state"))
+    pdf.field_row("District", extracted_data.get("district"))
+    pdf.field_row("Mine Name", extracted_data.get("mine_name"))
+    pdf.field_row("Company", extracted_data.get("company_name"))
+    pdf.field_row("Area", extracted_data.get("area_sq_km"))
+    pdf.ln(3)
+    
+    # Extraction Details
+    pdf.section_title("EXTRACTION DETAILS")
+    pdf.field_row("Mineral Type", extracted_data.get("mineral_type"))
+    pdf.field_row("Quantity Extracted", extracted_data.get("quantity_extracted"))
+    pdf.field_row("Extraction Method", extracted_data.get("extraction_method"))
+    pdf.field_row("Reserve Estimate", extracted_data.get("reserve_estimate"))
+    pdf.field_row("Financial Data", extracted_data.get("financial_data"))
+    pdf.ln(3)
+    
+    # Summary
+    pdf.section_title("EXECUTIVE SUMMARY")
+    summary = extracted_data.get("summary", "No summary available.")
+    pdf.body_text(summary)
+    
+    # Key Findings
+    key_findings = extracted_data.get("key_findings", [])
+    if key_findings:
+        pdf.section_title("KEY FINDINGS")
+        for i, finding in enumerate(key_findings, 1):
+            pdf.set_font("Helvetica", "", 10)
+            pdf.cell(8, 6, f"{i}.", new_x="END")
+            pdf.multi_cell(0, 6, str(finding), new_x="LMARGIN", new_y="NEXT")
+        pdf.ln(3)
+    
+    # Topics
+    topics = extracted_data.get("topics", [])
+    if topics:
+        pdf.section_title("IDENTIFIED TOPICS")
+        pdf.body_text(", ".join(topics))
+    
+    # Minerals & Locations
+    minerals = extracted_data.get("minerals_mentioned", [])
+    locations = extracted_data.get("locations_mentioned", [])
+    if minerals or locations:
+        pdf.section_title("ADDITIONAL REFERENCES")
+        if minerals:
+            pdf.field_row("Minerals", ", ".join(minerals))
+        if locations:
+            pdf.field_row("Locations", ", ".join(locations))
+        pdf.ln(3)
+    
+    # Environmental Notes
+    env_notes = extracted_data.get("environmental_notes")
+    if env_notes:
+        pdf.section_title("ENVIRONMENTAL NOTES")
+        pdf.body_text(env_notes)
+    
+    # Footer note
+    pdf.ln(10)
+    pdf.set_font("Helvetica", "I", 8)
+    pdf.multi_cell(0, 5, 
+        "This report was automatically generated by the AI-Powered Geological & Mining "
+        "Reporting System developed for Smart India Hackathon 2026 (SIH26023). "
+        "Data accuracy depends on source document quality.",
+        new_x="LMARGIN", new_y="NEXT"
+    )
+    
+    # Get PDF bytes
+    pdf_output = pdf.output()
+    if isinstance(pdf_output, str):
+        return pdf_output.encode("latin-1")
+    return bytes(pdf_output)
+
+
+def _generate_text_report(extracted_data: dict) -> bytes:
+    """Fallback: generate a plain text report if fpdf2 is not available"""
+    lines = []
+    lines.append("=" * 60)
+    lines.append("AI-POWERED GEOLOGICAL & MINING REPORT")
+    lines.append("Problem ID: SIH26023 | Ministry of Coal | CMPDI/CIL")
+    lines.append("=" * 60)
+    lines.append("")
+    
+    sections = [
+        ("MINE DETAILS", [
+            ("Report Date", extracted_data.get("report_date")),
+            ("Location", extracted_data.get("location")),
+            ("State", extracted_data.get("state")),
+            ("District", extracted_data.get("district")),
+            ("Mine Name", extracted_data.get("mine_name")),
+            ("Company", extracted_data.get("company_name")),
+        ]),
+        ("EXTRACTION DETAILS", [
+            ("Mineral Type", extracted_data.get("mineral_type")),
+            ("Quantity Extracted", extracted_data.get("quantity_extracted")),
+            ("Extraction Method", extracted_data.get("extraction_method")),
+            ("Reserve Estimate", extracted_data.get("reserve_estimate")),
+        ]),
+    ]
+    
+    for section_title, fields in sections:
+        lines.append(f"\n--- {section_title} ---")
+        for label, value in fields:
+            if value:
+                lines.append(f"{label}: {value}")
+    
+    summary = extracted_data.get("summary")
+    if summary:
+        lines.append(f"\n--- SUMMARY ---\n{summary}")
+    
+    key_findings = extracted_data.get("key_findings", [])
+    if key_findings:
+        lines.append("\n--- KEY FINDINGS ---")
+        for i, f in enumerate(key_findings, 1):
+            lines.append(f"{i}. {f}")
+    
+    lines.append("\n" + "=" * 60)
+    lines.append("Generated by: AI-Powered Geological & Mining Reporting System")
+    
+    return "\n".join(lines).encode("utf-8")

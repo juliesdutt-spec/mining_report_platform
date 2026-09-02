@@ -1,0 +1,32 @@
+# AI-Powered Geological & Mining Reporting Solution
+# Problem ID: SIH26023 - Ministry of Coal - CMPDI/CIL
+
+# Backend
+fastapi==0.115.0
+uvicorn==0.30.0
+python-multipart==0.0.9
+
+# Frontend
+streamlit==1.39.0
+
+# Document Processing
+pypdf==5.0.1
+pytesseract>=0.3.10
+Pillow==10.4.0
+
+# AI / LLM
+anthropic==0.40.0
+
+# Database
+sqlalchemy==2.0.35
+
+# Word Cloud & Visualization
+wordcloud==1.9.3
+matplotlib==3.9.2
+
+# Report Generation
+fpdf2==2.7.9
+
+# Utilities
+python-dotenv==1.0.1
+aiofiles==24.1.0
