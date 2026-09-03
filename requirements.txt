@@ -21,7 +21,7 @@ anthropic==0.40.0
 sqlalchemy==2.0.35
 
 # Word Cloud & Visualization
-wordcloud==1.9.3
+wordcloud==1.9.5
 matplotlib==3.9.2
 
 # Report Generation
