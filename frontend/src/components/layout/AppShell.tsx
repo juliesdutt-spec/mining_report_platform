@@ -1,8 +1,9 @@
-﻿import React, { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import { Sidebar } from "./Sidebar";
 import { Header } from "./Header";
 import { CommandPalette } from "./CommandPalette";
-import { EvidenceDrawer } from "@/components/shared/EvidenceDrawer";
+import { EvidenceSheet } from "@/components/shared/EvidenceSheet";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import { NavigationTab, Subsidiary, EvidenceSnippet } from "@/types";
 import { checkBackendHealth } from "@/services/api";
 
@@ -31,7 +32,7 @@ export function AppShell({
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const [backendStatus, setBackendStatus] = useState({
     isOnline: false,
-    statusText: "Checking...",
+    statusText: "Checking…",
   });
 
   useEffect(() => {
@@ -42,7 +43,7 @@ export function AppShell({
     return () => clearInterval(interval);
   }, []);
 
-  // Keyboard shortcut listener (⌘K and ⌘B)
+  // ⌘K opens the palette, ⌘B collapses the sidebar.
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
@@ -59,51 +60,45 @@ export function AppShell({
   }, []);
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-zinc-950 text-zinc-100 font-sans">
-      {/* Persistent Left Sidebar (Ref: Screenshot 3) */}
-      <Sidebar
-        currentTab={currentTab}
-        onSelectTab={onSelectTab}
-        selectedSubsidiary={selectedSubsidiary}
-        onSelectSubsidiary={onSelectSubsidiary}
-        isCollapsed={isSidebarCollapsed}
-        onToggleCollapse={() => setIsSidebarCollapsed((prev) => !prev)}
-      />
-
-      {/* Main Content Area */}
-      <div className="flex flex-1 flex-col overflow-hidden">
-        {/* Contextual Header */}
-        <Header
+    <TooltipProvider delayDuration={200}>
+      <div className="flex h-screen w-screen overflow-hidden bg-background text-foreground">
+        <Sidebar
           currentTab={currentTab}
-          isCollapsed={isSidebarCollapsed}
-          onToggleSidebar={() => setIsSidebarCollapsed((prev) => !prev)}
-          onOpenCommandPalette={() => setIsCommandPaletteOpen(true)}
+          onSelectTab={onSelectTab}
           selectedSubsidiary={selectedSubsidiary}
-          onQuickUpload={onQuickUpload}
-          backendStatus={backendStatus}
+          onSelectSubsidiary={onSelectSubsidiary}
+          isCollapsed={isSidebarCollapsed}
+          onToggleCollapse={() => setIsSidebarCollapsed((prev) => !prev)}
         />
 
-        {/* Scrollable Page Body */}
-        <main className="flex-1 overflow-y-auto bg-zinc-950 p-4 sm:p-6 lg:p-7">
-          <div className="mx-auto max-w-[1400px]">
-            {children}
-          </div>
-        </main>
+        <div className="flex flex-1 flex-col overflow-hidden">
+          <Header
+            currentTab={currentTab}
+            isCollapsed={isSidebarCollapsed}
+            onToggleSidebar={() => setIsSidebarCollapsed((prev) => !prev)}
+            onOpenCommandPalette={() => setIsCommandPaletteOpen(true)}
+            selectedSubsidiary={selectedSubsidiary}
+            onQuickUpload={onQuickUpload}
+            backendStatus={backendStatus}
+          />
+
+          <main className="flex-1 overflow-y-auto">
+            <div className="mx-auto max-w-[1400px] px-6 py-8 lg:px-8">{children}</div>
+          </main>
+        </div>
+
+        <CommandPalette
+          isOpen={isCommandPaletteOpen}
+          onClose={() => setIsCommandPaletteOpen(false)}
+          onSelectTab={onSelectTab}
+        />
+
+        <EvidenceSheet
+          evidence={activeEvidence}
+          isOpen={Boolean(activeEvidence)}
+          onClose={onCloseEvidence}
+        />
       </div>
-
-      {/* Global Command Palette */}
-      <CommandPalette
-        isOpen={isCommandPaletteOpen}
-        onClose={() => setIsCommandPaletteOpen(false)}
-        onSelectTab={onSelectTab}
-      />
-
-      {/* Traceable Evidence Flyout Inspector */}
-      <EvidenceDrawer
-        evidence={activeEvidence}
-        isOpen={Boolean(activeEvidence)}
-        onClose={onCloseEvidence}
-      />
-    </div>
+    </TooltipProvider>
   );
 }
