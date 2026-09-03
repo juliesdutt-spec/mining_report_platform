@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import { PageHeader } from "@/components/shared/PageHeader";
@@ -189,7 +190,7 @@ export function DocumentsPage({ onInspectEvidence, selectedSubsidiary }: Documen
               <ConfidenceMeter value={selectedDoc.confidenceScore} />
             </div>
 
-            <div className="rounded-lg border border-border bg-card p-5 shadow-xs">
+            <Card className="p-5">
               <FieldLabel>Reported output</FieldLabel>
               <div className="mt-1 font-mono text-2xl font-semibold tracking-tight text-foreground">
                 {selectedDoc.quantityExtracted}
@@ -204,7 +205,7 @@ export function DocumentsPage({ onInspectEvidence, selectedSubsidiary }: Documen
                 />
                 <Attribute label="District" value={`${selectedDoc.district}, ${selectedDoc.state}`} />
               </dl>
-            </div>
+            </Card>
 
             {selectedDoc.keyFindings && selectedDoc.keyFindings.length > 0 && (
               <div className="mt-6">

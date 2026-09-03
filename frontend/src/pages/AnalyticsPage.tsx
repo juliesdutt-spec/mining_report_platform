@@ -15,6 +15,7 @@ import {
 } from "recharts";
 import { Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { Section } from "@/components/shared/Section";
 import { Stat, StatGroup } from "@/components/shared/StatGroup";
@@ -78,7 +79,7 @@ export function AnalyticsPage({ selectedSubsidiary }: AnalyticsPageProps) {
             title="Production by subsidiary"
             description="Actual output against planned target, in million tonnes."
           >
-            <div className="rounded-lg border border-border bg-card p-5 shadow-xs">
+            <Card className="p-5">
               <div className="h-72 w-full">
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={SUBSIDIARY_PRODUCTION} margin={{ top: 8, right: 8, left: -16, bottom: 0 }}>
@@ -102,13 +103,13 @@ export function AnalyticsPage({ selectedSubsidiary }: AnalyticsPageProps) {
                   Target
                 </span>
               </div>
-            </div>
+            </Card>
           </Section>
         </div>
 
         <div className="lg:col-span-4">
           <Section title="Mineral classification" description="Share of audited output by grade.">
-            <div className="rounded-lg border border-border bg-card p-5 shadow-xs">
+            <Card className="p-5">
               <div className="h-44 w-full">
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
@@ -147,7 +148,7 @@ export function AnalyticsPage({ selectedSubsidiary }: AnalyticsPageProps) {
                   </div>
                 ))}
               </dl>
-            </div>
+            </Card>
           </Section>
         </div>
       </div>
@@ -156,7 +157,7 @@ export function AnalyticsPage({ selectedSubsidiary }: AnalyticsPageProps) {
         title="Multi-year trajectory"
         description="Progress toward the one-billion-tonne national production mandate."
       >
-        <div className="rounded-lg border border-border bg-card p-5 shadow-xs">
+        <Card className="p-5">
           <div className="h-56 w-full">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={YOY} margin={{ top: 8, right: 16, left: -16, bottom: 0 }}>
@@ -184,7 +185,7 @@ export function AnalyticsPage({ selectedSubsidiary }: AnalyticsPageProps) {
               </LineChart>
             </ResponsiveContainer>
           </div>
-        </div>
+        </Card>
       </Section>
     </div>
   );

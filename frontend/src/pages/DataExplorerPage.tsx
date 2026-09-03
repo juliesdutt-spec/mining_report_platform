@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, Download, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -217,7 +218,7 @@ export function DataExplorerPage({ onInspectEvidence, selectedSubsidiary }: Data
       </div>
 
       {/* The table is the page — one container, no nesting */}
-      <div className="overflow-hidden rounded-lg border border-border bg-card">
+      <Card className="overflow-hidden">
         <Table>
           <TableHeader>
             <TableRow className="hover:bg-transparent">
@@ -285,7 +286,7 @@ export function DataExplorerPage({ onInspectEvidence, selectedSubsidiary }: Data
             </Button>
           </div>
         </div>
-      </div>
+      </Card>
     </div>
   );
 }

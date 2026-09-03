@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { ArrowUpRight, ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { Section, FieldLabel } from "@/components/shared/Section";
@@ -78,7 +79,7 @@ export function TopicsPage({ onInspectEvidence }: TopicsPageProps) {
       />
 
       {/* Term cloud on one calm surface */}
-      <div className="rounded-lg border border-border bg-card px-6 py-8 shadow-xs">
+      <Card className="px-6 py-8">
         <div className="flex flex-wrap items-baseline justify-center gap-x-6 gap-y-4">
           {filteredTopics.map((topic) => {
             const isSelected = selectedTopic?.id === topic.id;
@@ -102,7 +103,7 @@ export function TopicsPage({ onInspectEvidence }: TopicsPageProps) {
         <p className="mt-8 border-t border-border pt-3 text-center text-xs text-muted-foreground">
           Size reflects term frequency weighted by inverse document frequency.
         </p>
-      </div>
+      </Card>
 
       {selectedTopic && (
         <div className="grid grid-cols-1 gap-8 lg:grid-cols-12">

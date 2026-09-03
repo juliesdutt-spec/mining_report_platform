@@ -10,6 +10,7 @@ import {
 } from "recharts";
 import { ArrowRight, FileText, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Table,
@@ -142,7 +143,7 @@ export function DashboardPage({
           </Tabs>
         }
       >
-        <div className="rounded-lg border border-border bg-card p-5 shadow-xs">
+        <Card className="p-5">
           <div className="h-64 w-full">
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={trendData} margin={{ top: 8, right: 8, left: -16, bottom: 0 }}>
@@ -203,7 +204,7 @@ export function DashboardPage({
               <ArrowRight className="h-3 w-3" />
             </button>
           </div>
-        </div>
+        </Card>
       </Section>
 
       {/* Operational tables — rows, not stacks of cards */}

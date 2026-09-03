@@ -1,5 +1,6 @@
 import React from "react";
 import { cn } from "@/lib/utils";
+import { Card } from "@/components/ui/card";
 import { ConfidenceMeter } from "@/components/shared/ConfidenceMeter";
 import { FieldLabel } from "@/components/shared/Section";
 
@@ -76,7 +77,7 @@ export function SourceComparator({
   className,
 }: SourceComparatorProps) {
   return (
-    <div className={cn("overflow-hidden rounded-lg border border-border bg-card", className)}>
+    <Card className={cn("overflow-hidden", className)}>
       <div className="flex items-center justify-between gap-3 border-b border-border bg-muted/40 px-5 py-2.5">
         <FieldLabel>Disputed field</FieldLabel>
         <code className="font-mono text-xs font-medium text-foreground">{fieldName}</code>
@@ -93,6 +94,6 @@ export function SourceComparator({
           </div>
         )}
       </div>
-    </div>
+    </Card>
   );
 }

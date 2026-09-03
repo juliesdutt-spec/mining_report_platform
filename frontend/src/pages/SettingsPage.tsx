@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { CheckCircle2, Save } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
@@ -25,13 +26,13 @@ function SettingsGroup({
   children: React.ReactNode;
 }) {
   return (
-    <div className="rounded-lg border border-border bg-card p-5 shadow-xs">
+    <Card className="p-5">
       <div className="border-b border-border pb-3">
         <h3 className="text-sm font-semibold tracking-tight text-foreground">{title}</h3>
         {description && <p className="mt-1 text-xs text-muted-foreground">{description}</p>}
       </div>
       <div className="pt-4">{children}</div>
-    </div>
+    </Card>
   );
 }
 

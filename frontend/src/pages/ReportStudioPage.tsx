@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { Download, Printer, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import {
@@ -83,7 +84,7 @@ export function ReportStudioPage() {
       <div className="grid grid-cols-1 gap-8 lg:grid-cols-12">
         {/* Configuration — a real form */}
         <div className="lg:col-span-4">
-          <div className="space-y-5 rounded-lg border border-border bg-card p-5 shadow-xs">
+          <Card className="space-y-5 p-5">
             <div className="space-y-1.5">
               <Label htmlFor="report-template">Template</Label>
               <Select value={reportType} onValueChange={setReportType}>
@@ -133,7 +134,7 @@ export function ReportStudioPage() {
               <RefreshCw className={isGenerating ? "h-3.5 w-3.5 animate-spin" : "h-3.5 w-3.5"} />
               {isGenerating ? "Compiling…" : "Generate report"}
             </Button>
-          </div>
+          </Card>
         </div>
 
         {/* Preview — an authoritative paper surface */}
