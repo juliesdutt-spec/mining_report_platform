@@ -1,34 +1,31 @@
-﻿import React, { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import {
-  AreaChart,
   Area,
+  AreaChart,
+  CartesianGrid,
+  ResponsiveContainer,
+  Tooltip,
   XAxis,
   YAxis,
-  Tooltip,
-  ResponsiveContainer,
-  CartesianGrid,
 } from "recharts";
-import {
-  FileText,
-  Clock,
-  CheckCircle2,
-  AlertTriangle,
-  ArrowRight,
-  Sparkles,
-  TrendingUp,
-  Filter,
-  SlidersHorizontal,
-  ChevronRight,
-  Database,
-  Search,
-  ExternalLink,
-  Bot
-} from "lucide-react";
-import { KpiCard } from "@/components/shared/KpiCard";
-import { StatusBadge } from "@/components/shared/StatusBadge";
-import { SourceCitation } from "@/components/shared/SourceCitation";
+import { ArrowRight, FileText, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { PageHeader } from "@/components/shared/PageHeader";
+import { Section } from "@/components/shared/Section";
+import { Stat, StatGroup } from "@/components/shared/StatGroup";
+import { StatusBadge } from "@/components/shared/StatusBadge";
+import { ConfidenceMeter } from "@/components/shared/ConfidenceMeter";
+import { SourceCitation } from "@/components/shared/SourceCitation";
+import { useChartColors, tooltipStyle } from "@/lib/chart";
 import {
   KpiMetrics,
   MiningDocument,
@@ -37,7 +34,7 @@ import {
   QueryResult,
   EvidenceSnippet,
   NavigationTab,
-  Subsidiary
+  Subsidiary,
 } from "@/types";
 import { fetchKpiMetrics, fetchProductionTrends } from "@/services/analytics";
 import { fetchDocuments } from "@/services/documents";
@@ -61,7 +58,7 @@ export function DashboardPage({
   const [documents, setDocuments] = useState<MiningDocument[]>([]);
   const [validationAlerts, setValidationAlerts] = useState<ValidationItem[]>([]);
   const [recentQueries, setRecentQueries] = useState<QueryResult[]>([]);
-  const [activeTableTab, setActiveTableTab] = useState<"documents" | "alerts" | "queries">("documents");
+  const colors = useChartColors();
 
   useEffect(() => {
     fetchKpiMetrics().then(setKpiData);
@@ -74,481 +71,278 @@ export function DashboardPage({
     fetchProductionTrends(trendInterval).then(setTrendData);
   }, [trendInterval]);
 
-  // Filter documents by subsidiary if one is selected
-  const filteredDocs = selectedSubsidiary === "ALL"
-    ? documents
-    : documents.filter(d => d.subsidiary === selectedSubsidiary);
+  const filteredDocs =
+    selectedSubsidiary === "ALL"
+      ? documents
+      : documents.filter((d) => d.subsidiary === selectedSubsidiary);
+
+  const openAlerts = validationAlerts.filter((a) => a.status === "pending");
 
   return (
-    <div className="space-y-6">
-      {/* Top Banner / Operational Context */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-zinc-800/80 pb-4">
-        <div>
-          <h1 className="text-xl font-bold tracking-tight text-zinc-100 flex items-center gap-2">
-            Operational Intelligence Console
-            <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-zinc-800 text-zinc-400 border border-zinc-700">
-              Live Pipeline
-            </span>
-          </h1>
-          <p className="text-xs text-zinc-400 mt-1">
-            CMPDI / Coal India Limited AI ingestion pipeline • Automated extraction, cross-subsidiary validation & query synthesis.
-          </p>
-        </div>
+    <div className="space-y-8">
+      <PageHeader
+        title="Dashboard"
+        description="Ingestion, extraction and validation across the CMPDI and Coal India document estate."
+        actions={
+          <>
+            <Button variant="outline" size="sm" onClick={() => onNavigate("ask")}>
+              <Sparkles className="h-3.5 w-3.5" />
+              Ask DataForge
+            </Button>
+            <Button size="sm" onClick={() => onNavigate("documents")}>
+              <FileText className="h-3.5 w-3.5" />
+              Ingest
+            </Button>
+          </>
+        }
+      />
 
-        <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => onNavigate("ask")}
-            className="gap-1.5 text-xs"
-          >
-            <Sparkles className="h-3.5 w-3.5 text-sky-400" />
-            <span>Ask DataForge</span>
-          </Button>
-          <Button
-            variant="default"
-            size="sm"
-            onClick={() => onNavigate("documents")}
-            className="gap-1.5 text-xs"
-          >
-            <FileText className="h-3.5 w-3.5" />
-            <span>Ingest Document</span>
-          </Button>
-        </div>
-      </div>
-
-      {/* KPI Cards Grid (Ref: Screenshot 4 top row) */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3.5">
-        {/* Tier 1 Primary Hero KPIs */}
-        <KpiCard
-          title="Automation Rate"
+      {/* One stat strip replaces eight bordered boxes */}
+      <StatGroup>
+        <Stat
+          label="Automation rate"
           value={`${kpiData?.automationRate ?? 94.2}%`}
           delta="+3.8%"
           deltaType="positive"
-          subtitleTop="Manual effort reduction"
-          subtitleBottom="80% target achieved"
-          icon={<CheckCircle2 className="h-4 w-4 text-emerald-400" />}
+          hint="Against an 80% target"
         />
-        <KpiCard
-          title="Extraction Accuracy"
+        <Stat
+          label="Extraction accuracy"
           value={`${kpiData?.extractionAccuracy ?? 98.6}%`}
           delta="+0.4%"
           deltaType="positive"
-          subtitleTop="Verified by CMPDI auditors"
-          subtitleBottom="Strict entity grounding"
-          icon={<Sparkles className="h-4 w-4 text-sky-400" />}
+          hint="Verified by CMPDI auditors"
         />
-        <KpiCard
-          title="Documents Ingested"
-          value={kpiData?.documentsProcessed ?? 1428}
+        <Stat
+          label="Documents ingested"
+          value={(kpiData?.documentsProcessed ?? 1428).toLocaleString("en-IN")}
           delta="+12.5%"
           deltaType="positive"
-          subtitleTop="Across 8 CIL subsidiaries"
-          subtitleBottom={`${kpiData?.pagesProcessed ?? 28410} pages indexed`}
-          icon={<FileText className="h-4 w-4 text-zinc-400" />}
+          hint={`${(kpiData?.pagesProcessed ?? 28410).toLocaleString("en-IN")} pages indexed`}
         />
-        <KpiCard
-          title="Turnaround Time Saved"
-          value={`${kpiData?.processingTimeSavedHours ?? 84.5} hrs`}
-          delta="-82%"
-          deltaType="positive"
-          subtitleTop="Turnaround: weeks → minutes"
-          subtitleBottom="Direct parliamentary speedup"
-          icon={<Clock className="h-4 w-4 text-amber-400" />}
+        <Stat
+          label="Open discrepancies"
+          value={openAlerts.length}
+          tone={openAlerts.length > 0 ? "warning" : "success"}
+          hint="Awaiting auditor triage"
         />
-      </div>
+      </StatGroup>
 
-      {/* Secondary Compact Metrics Row */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
-        <div className="rounded-md border border-zinc-800/80 bg-zinc-900/40 px-3.5 py-2.5 flex items-center justify-between">
-          <span className="text-zinc-400">Records Extracted</span>
-          <span className="font-mono font-semibold text-zinc-200">{kpiData?.recordsExtracted.toLocaleString() ?? "94,620"}</span>
-        </div>
-        <div className="rounded-md border border-zinc-800/80 bg-zinc-900/40 px-3.5 py-2.5 flex items-center justify-between">
-          <span className="text-zinc-400">Reports Generated</span>
-          <span className="font-mono font-semibold text-zinc-200">{kpiData?.reportsGenerated ?? 412} synthesized</span>
-        </div>
-        <div className="rounded-md border border-zinc-800/80 bg-zinc-900/40 px-3.5 py-2.5 flex items-center justify-between">
-          <span className="text-zinc-400">Queries Answered</span>
-          <span className="font-mono font-semibold text-zinc-200">{kpiData?.queriesAnswered.toLocaleString() ?? "3,890"} queries</span>
-        </div>
-        <div className="rounded-md border border-zinc-800/80 bg-zinc-900/40 px-3.5 py-2.5 flex items-center justify-between">
-          <span className="text-zinc-400">Active Validation Alerts</span>
-          <span className="font-mono font-semibold text-rose-400 flex items-center gap-1">
-            <AlertTriangle className="h-3 w-3" />
-            {validationAlerts.filter(a => a.status === 'pending').length} discrepancies
-          </span>
-        </div>
-      </div>
-
-      {/* Main Analytics Area Chart (Ref: Screenshot 4 "Total Visitors / Area Chart with filter tabs") */}
-      <Card className="border-zinc-800 bg-zinc-900/50">
-        <CardHeader className="flex flex-row items-center justify-between pb-2">
-          <div>
-            <CardTitle className="text-sm font-semibold text-zinc-100 flex items-center gap-2">
-              <span>Subsidiary Coal Production & Extraction Velocity</span>
-              <span className="text-[10px] font-mono text-zinc-400 px-1.5 py-0.5 rounded bg-zinc-800 border border-zinc-700">
-                Million Tonnes (MT)
-              </span>
-            </CardTitle>
-            <CardDescription className="text-xs text-zinc-400 mt-0.5">
-              Historical actual production vs. statutory planned target across opencast & underground mines.
-            </CardDescription>
-          </div>
-
-          {/* Time Interval Selector (Ref: Screenshot 4 "Last 3 months | Last 30 days | Last 7 days") */}
-          <div className="flex items-center rounded-md border border-zinc-800 bg-zinc-950 p-0.5 text-xs">
-            <button
-              onClick={() => setTrendInterval("3m")}
-              className={`rounded px-2.5 py-1 transition-colors ${
-                trendInterval === "3m"
-                  ? "bg-zinc-800 text-zinc-100 font-medium"
-                  : "text-zinc-400 hover:text-zinc-200"
-              }`}
-            >
-              Last 3 months
-            </button>
-            <button
-              onClick={() => setTrendInterval("30d")}
-              className={`rounded px-2.5 py-1 transition-colors ${
-                trendInterval === "30d"
-                  ? "bg-zinc-800 text-zinc-100 font-medium"
-                  : "text-zinc-400 hover:text-zinc-200"
-              }`}
-            >
-              Last 30 days
-            </button>
-            <button
-              onClick={() => setTrendInterval("7d")}
-              className={`rounded px-2.5 py-1 transition-colors ${
-                trendInterval === "7d"
-                  ? "bg-zinc-800 text-zinc-100 font-medium"
-                  : "text-zinc-400 hover:text-zinc-200"
-              }`}
-            >
-              Last 7 days
-            </button>
-          </div>
-        </CardHeader>
-
-        <CardContent>
-          <div className="h-64 w-full pt-4">
+      {/* Production trend — a chart genuinely benefits from containment */}
+      <Section
+        title="Production against target"
+        description="Actual output versus statutory planned target, in million tonnes."
+        actions={
+          <Tabs value={trendInterval} onValueChange={(v) => setTrendInterval(v as typeof trendInterval)}>
+            <TabsList>
+              <TabsTrigger value="3m">3 months</TabsTrigger>
+              <TabsTrigger value="30d">30 days</TabsTrigger>
+              <TabsTrigger value="7d">7 days</TabsTrigger>
+            </TabsList>
+          </Tabs>
+        }
+      >
+        <div className="rounded-lg border border-border bg-card p-5 shadow-xs">
+          <div className="h-64 w-full">
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={trendData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                <defs>
-                  <linearGradient id="colorActual" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#38bdf8" stopOpacity={0.4} />
-                    <stop offset="95%" stopColor="#38bdf8" stopOpacity={0.0} />
-                  </linearGradient>
-                  <linearGradient id="colorTarget" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#10b981" stopOpacity={0.3} />
-                    <stop offset="95%" stopColor="#10b981" stopOpacity={0.0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="#27272a" vertical={false} />
+              <AreaChart data={trendData} margin={{ top: 8, right: 8, left: -16, bottom: 0 }}>
+                <CartesianGrid stroke={colors.border} vertical={false} />
                 <XAxis
                   dataKey="date"
-                  stroke="#71717a"
+                  stroke={colors["muted-foreground"]}
                   fontSize={11}
                   tickLine={false}
                   axisLine={false}
                 />
                 <YAxis
-                  stroke="#71717a"
+                  stroke={colors["muted-foreground"]}
                   fontSize={11}
                   tickLine={false}
                   axisLine={false}
-                  tickFormatter={(val) => `${val}M`}
+                  tickFormatter={(val) => `${val}`}
                 />
-                <Tooltip
-                  contentStyle={{
-                    backgroundColor: "#09090b",
-                    borderColor: "#27272a",
-                    borderRadius: "6px",
-                    fontSize: "12px",
-                    color: "#f4f4f5",
-                  }}
-                  itemStyle={{ color: "#f4f4f5" }}
-                />
+                <Tooltip {...tooltipStyle(colors)} />
                 <Area
                   type="monotone"
                   dataKey="actual"
-                  name="Actual Output (MT)"
-                  stroke="#38bdf8"
+                  name="Actual (MT)"
+                  stroke={colors.primary}
                   strokeWidth={2}
-                  fillOpacity={1}
-                  fill="url(#colorActual)"
+                  fill={colors.primary}
+                  fillOpacity={0.08}
                 />
                 <Area
                   type="monotone"
                   dataKey="target"
-                  name="Planned Target (MT)"
-                  stroke="#10b981"
+                  name="Target (MT)"
+                  stroke={colors.teal}
                   strokeWidth={1.5}
                   strokeDasharray="4 4"
-                  fillOpacity={1}
-                  fill="url(#colorTarget)"
+                  fill="none"
                 />
               </AreaChart>
             </ResponsiveContainer>
           </div>
 
-          <div className="mt-3 flex items-center justify-between border-t border-zinc-800/80 pt-3 text-[11px] text-zinc-400">
-            <div className="flex items-center gap-4">
+          <div className="mt-4 flex items-center justify-between border-t border-border pt-3 text-xs">
+            <div className="flex items-center gap-4 text-muted-foreground">
               <span className="flex items-center gap-1.5">
-                <span className="h-2 w-2 rounded-full bg-sky-400" />
-                Actual Output (Million Tonnes)
+                <span className="h-0.5 w-3 rounded" style={{ backgroundColor: colors.primary }} />
+                Actual output
               </span>
               <span className="flex items-center gap-1.5">
-                <span className="h-2 w-2 rounded-full bg-emerald-400" />
-                Planned Ministry Target
+                <span className="h-0.5 w-3 rounded" style={{ backgroundColor: colors.teal }} />
+                Planned target
               </span>
             </div>
             <button
               onClick={() => onNavigate("analytics")}
-              className="flex items-center gap-1 text-zinc-300 hover:text-white transition-colors"
+              className="inline-flex items-center gap-1 font-medium text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
-              <span>Explore full analytical breakdown</span>
-              <ChevronRight className="h-3 w-3" />
+              Full analytics
+              <ArrowRight className="h-3 w-3" />
             </button>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Operational Table & Audit Area (Ref: Screenshot 4 bottom table section) */}
-      <Card className="border-zinc-800 bg-zinc-900/50">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-zinc-800 px-4 py-3 gap-2">
-          {/* Table Tab Selector (Ref: Screenshot 4 "Outline | Past Performance | Focus Documents") */}
-          <div className="flex items-center gap-1 bg-zinc-950 p-1 rounded-md border border-zinc-800 text-xs">
-            <button
-              onClick={() => setActiveTableTab("documents")}
-              className={`rounded px-2.5 py-1 transition-colors flex items-center gap-1.5 ${
-                activeTableTab === "documents"
-                  ? "bg-zinc-800 text-zinc-100 font-medium"
-                  : "text-zinc-400 hover:text-zinc-200"
-              }`}
-            >
-              <span>Recent Ingested Documents</span>
-              <span className="font-mono text-[10px] text-zinc-500">({filteredDocs.length})</span>
-            </button>
-            <button
-              onClick={() => setActiveTableTab("alerts")}
-              className={`rounded px-2.5 py-1 transition-colors flex items-center gap-1.5 ${
-                activeTableTab === "alerts"
-                  ? "bg-zinc-800 text-rose-400 font-medium"
-                  : "text-zinc-400 hover:text-zinc-200"
-              }`}
-            >
-              <AlertTriangle className="h-3 w-3" />
-              <span>Validation Alerts</span>
-              <span className="font-mono text-[10px] text-rose-400">
-                ({validationAlerts.filter(a => a.status === "pending").length})
-              </span>
-            </button>
-            <button
-              onClick={() => setActiveTableTab("queries")}
-              className={`rounded px-2.5 py-1 transition-colors flex items-center gap-1.5 ${
-                activeTableTab === "queries"
-                  ? "bg-zinc-800 text-sky-400 font-medium"
-                  : "text-zinc-400 hover:text-zinc-200"
-              }`}
-            >
-              <Sparkles className="h-3 w-3" />
-              <span>Recent Grounded Queries</span>
-            </button>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => onNavigate("explorer")}
-              className="text-xs gap-1"
-            >
-              <Database className="h-3.5 w-3.5 text-zinc-400" />
-              <span>Open Data Explorer</span>
-            </Button>
           </div>
         </div>
+      </Section>
 
-        {/* Tab 1: Documents Table */}
-        {activeTableTab === "documents" && (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead className="border-b border-zinc-800 bg-zinc-950/40 text-[11px] uppercase tracking-wider text-zinc-500 font-mono">
-                <tr>
-                  <th className="px-4 py-2.5 font-medium">Document / File</th>
-                  <th className="px-4 py-2.5 font-medium">Subsidiary</th>
-                  <th className="px-4 py-2.5 font-medium">Mine / Area</th>
-                  <th className="px-4 py-2.5 font-medium">Extracted Output</th>
-                  <th className="px-4 py-2.5 font-medium">Extraction Confidence</th>
-                  <th className="px-4 py-2.5 font-medium">Status</th>
-                  <th className="px-4 py-2.5 text-right font-medium">Traceability</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-zinc-800/60 font-sans">
-                {filteredDocs.map((doc) => (
-                  <tr
-                    key={doc.id}
-                    className="hover:bg-zinc-800/40 transition-colors group cursor-pointer"
-                    onClick={() => {
-                      if (doc.evidenceSnippets[0]) {
-                        onInspectEvidence(doc.evidenceSnippets[0]);
-                      }
-                    }}
-                  >
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2.5">
-                        <FileText className="h-4 w-4 text-zinc-400 group-hover:text-zinc-200" />
-                        <div>
-                          <div className="font-medium text-zinc-200 group-hover:text-white truncate max-w-xs">
-                            {doc.filename}
-                          </div>
-                          <div className="text-[11px] text-zinc-500 font-mono">
-                            {doc.fileType} • {doc.pageCount} pages • {(doc.fileSizeBytes / (1024 * 1024)).toFixed(1)} MB
-                          </div>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className="font-mono text-zinc-300 font-medium">
-                        {doc.subsidiary}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-zinc-300">
-                      {doc.mineName}
-                    </td>
-                    <td className="px-4 py-3 font-mono font-medium text-emerald-400">
-                      {doc.quantityExtracted}
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        <div className="w-16 h-1.5 rounded-full bg-zinc-800 overflow-hidden">
-                          <div
-                            className="h-full bg-emerald-400 rounded-full"
-                            style={{ width: `${Math.round(doc.confidenceScore * 100)}%` }}
-                          />
-                        </div>
-                        <span className="font-mono text-[11px] text-zinc-400">
-                          {Math.round(doc.confidenceScore * 100)}%
-                        </span>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3">
-                      <StatusBadge status={doc.validationStatus} />
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (doc.evidenceSnippets[0]) {
-                            onInspectEvidence(doc.evidenceSnippets[0]);
-                          }
-                        }}
-                        className="h-7 text-[11px] gap-1 text-zinc-400 hover:text-white"
-                      >
-                        <span>Evidence</span>
-                        <ExternalLink className="h-3 w-3" />
-                      </Button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+      {/* Operational tables — rows, not stacks of cards */}
+      <Tabs defaultValue="documents">
+        <div className="flex items-center justify-between gap-3 border-b border-border pb-3">
+          <h2 className="text-base font-semibold tracking-tight text-foreground">Activity</h2>
+          <TabsList>
+            <TabsTrigger value="documents">Documents ({filteredDocs.length})</TabsTrigger>
+            <TabsTrigger value="alerts">Discrepancies ({openAlerts.length})</TabsTrigger>
+            <TabsTrigger value="queries">Queries</TabsTrigger>
+          </TabsList>
+        </div>
 
-        {/* Tab 2: Validation Alerts */}
-        {activeTableTab === "alerts" && (
-          <div className="p-4 space-y-3">
-            {validationAlerts.map((alert) => (
-              <div
-                key={alert.id}
-                className="rounded-lg border border-zinc-800 bg-zinc-950/60 p-4 flex flex-col md:flex-row md:items-center justify-between gap-4"
-              >
-                <div className="space-y-1.5 max-w-2xl">
-                  <div className="flex items-center gap-2">
-                    <span className="inline-flex items-center gap-1 rounded bg-rose-950/80 text-rose-400 border border-rose-800/60 px-2 py-0.5 text-[11px] font-mono font-medium">
-                      <AlertTriangle className="h-3 w-3" />
-                      {alert.type.toUpperCase()} DISCREPANCY
-                    </span>
-                    <span className="font-mono text-xs text-zinc-400">{alert.subsidiary} • {alert.mineName}</span>
-                  </div>
-                  <h4 className="text-sm font-semibold text-zinc-200">{alert.title}</h4>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs pt-1">
-                    <div className="rounded border border-zinc-800 bg-zinc-900 p-2">
-                      <span className="text-[10px] text-zinc-500 font-mono block">SOURCE A: {alert.sourceA.documentName}</span>
-                      <span className="text-sm font-bold font-mono text-amber-400">{alert.sourceA.value}</span>
-                      <span className="text-[10px] text-zinc-400 block mt-0.5">Page {alert.sourceA.pageNumber} • Conf: {Math.round(alert.sourceA.confidence * 100)}%</span>
+        <TabsContent value="documents" className="pt-2">
+          <Table>
+            <TableHeader>
+              <TableRow className="hover:bg-transparent">
+                <TableHead>Document</TableHead>
+                <TableHead>Subsidiary</TableHead>
+                <TableHead>Mine</TableHead>
+                <TableHead className="text-right">Output</TableHead>
+                <TableHead>Confidence</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead className="text-right">Source</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {filteredDocs.map((doc) => (
+                <TableRow key={doc.id}>
+                  <TableCell>
+                    <div className="font-medium text-foreground">{doc.filename}</div>
+                    <div className="mt-0.5 text-xs text-muted-foreground">
+                      {doc.fileType} · {doc.pageCount} pp.
                     </div>
-                    {alert.sourceB && (
-                      <div className="rounded border border-zinc-800 bg-zinc-900 p-2">
-                        <span className="text-[10px] text-zinc-500 font-mono block">SOURCE B: {alert.sourceB.documentName}</span>
-                        <span className="text-sm font-bold font-mono text-emerald-400">{alert.sourceB.value}</span>
-                        <span className="text-[10px] text-zinc-400 block mt-0.5">Page {alert.sourceB.pageNumber} • Conf: {Math.round(alert.sourceB.confidence * 100)}%</span>
-                      </div>
+                  </TableCell>
+                  <TableCell className="font-mono text-xs text-muted-foreground">
+                    {doc.subsidiary}
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">{doc.mineName}</TableCell>
+                  <TableCell className="text-right font-mono font-medium tabular-nums text-foreground">
+                    {doc.quantityExtracted}
+                  </TableCell>
+                  <TableCell>
+                    <ConfidenceMeter value={doc.confidenceScore} />
+                  </TableCell>
+                  <TableCell>
+                    <StatusBadge status={doc.validationStatus} />
+                  </TableCell>
+                  <TableCell className="text-right">
+                    {doc.evidenceSnippets[0] && (
+                      <SourceCitation
+                        evidence={doc.evidenceSnippets[0]}
+                        compact
+                        onClick={() => onInspectEvidence(doc.evidenceSnippets[0])}
+                      />
                     )}
-                  </div>
-                </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </TabsContent>
 
-                <div className="flex items-center gap-2 flex-shrink-0">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => onNavigate("validation")}
-                    className="text-xs"
-                  >
-                    Compare Sources
-                  </Button>
-                  <Button
-                    variant="default"
-                    size="sm"
-                    onClick={() => onNavigate("validation")}
-                    className="text-xs"
-                  >
-                    Triage Discrepancy
-                  </Button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
+        <TabsContent value="alerts" className="pt-2">
+          <Table>
+            <TableHeader>
+              <TableRow className="hover:bg-transparent">
+                <TableHead>Discrepancy</TableHead>
+                <TableHead>Field</TableHead>
+                <TableHead className="text-right">Source A</TableHead>
+                <TableHead className="text-right">Source B</TableHead>
+                <TableHead className="text-right">Action</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {openAlerts.map((alert) => (
+                <TableRow key={alert.id}>
+                  <TableCell>
+                    <div className="font-medium text-foreground">{alert.title}</div>
+                    <div className="mt-0.5 text-xs text-muted-foreground">
+                      {alert.subsidiary} · {alert.mineName}
+                    </div>
+                  </TableCell>
+                  <TableCell className="font-mono text-xs text-muted-foreground">
+                    {alert.fieldName}
+                  </TableCell>
+                  <TableCell className="text-right font-mono tabular-nums text-warning">
+                    {alert.sourceA.value}
+                  </TableCell>
+                  <TableCell className="text-right font-mono tabular-nums text-success">
+                    {alert.sourceB?.value ?? "—"}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <Button variant="outline" size="sm" onClick={() => onNavigate("validation")}>
+                      Reconcile
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))}
 
-        {/* Tab 3: Recent AI Queries */}
-        {activeTableTab === "queries" && (
-          <div className="p-4 space-y-3">
+              {openAlerts.length === 0 && (
+                <TableRow className="hover:bg-transparent">
+                  <TableCell colSpan={5} className="py-12 text-center text-sm text-muted-foreground">
+                    No open discrepancies.
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </TabsContent>
+
+        <TabsContent value="queries" className="pt-2">
+          <ul className="divide-y divide-border">
             {recentQueries.map((q) => (
-              <div
-                key={q.id}
-                className="rounded-lg border border-zinc-800 bg-zinc-950/60 p-4 space-y-2"
-              >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Bot className="h-4 w-4 text-sky-400" />
-                    <span className="text-xs font-semibold text-zinc-200">{q.question}</span>
-                  </div>
-                  <span className="text-[10px] font-mono text-zinc-500">{new Date(q.timestamp).toLocaleDateString()}</span>
+              <li key={q.id} className="py-4">
+                <div className="flex items-baseline justify-between gap-4">
+                  <h3 className="text-sm font-medium text-foreground">{q.question}</h3>
+                  <span className="shrink-0 font-mono text-xs tabular-nums text-muted-foreground">
+                    {new Date(q.timestamp).toLocaleDateString("en-IN")}
+                  </span>
                 </div>
-                <p className="text-xs text-zinc-300 leading-relaxed border-l-2 border-zinc-700 pl-3 py-1">
+                <p className="mt-1.5 max-w-3xl text-sm leading-relaxed text-muted-foreground">
                   {q.answer}
                 </p>
-                <div className="flex flex-wrap items-center gap-2 pt-1">
-                  <span className="text-[10px] text-zinc-500 uppercase font-mono">Evidence Trace:</span>
+                <div className="mt-2.5 flex flex-wrap gap-2">
                   {q.evidence.map((ev) => (
                     <SourceCitation
                       key={ev.id}
                       evidence={ev}
+                      compact
                       onClick={() => onInspectEvidence(ev)}
                     />
                   ))}
                 </div>
-              </div>
+              </li>
             ))}
-          </div>
-        )}
-      </Card>
+          </ul>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

@@ -71,9 +71,7 @@ export function App() {
         />
       )}
 
-      {currentTab === "reports" && (
-        <ReportStudioPage selectedSubsidiary={selectedSubsidiary} />
-      )}
+      {currentTab === "reports" && <ReportStudioPage />}
 
       {currentTab === "explorer" && (
         <DataExplorerPage
