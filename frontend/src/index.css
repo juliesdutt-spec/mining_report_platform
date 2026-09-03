@@ -1,66 +1,134 @@
-﻿@tailwind base;
+@tailwind base;
 @tailwind components;
 @tailwind utilities;
 
+/*
+  DataForge design tokens.
+  Light-first, institutional palette. Blue (#1D4ED8) drives navigation,
+  primary actions, links and focus. Teal (#0F766E) is a sparing analytical
+  accent. Hierarchy comes from neutrals, type and space — not from color.
+  All values are HSL triplets so Tailwind's hsl(var(--token)) mapping works.
+*/
+
 @layer base {
   :root {
-    --background: 240 10% 3.9%;
-    --foreground: 0 0% 98%;
+    --background: 210 40% 98%;        /* #F8FAFC app canvas */
+    --foreground: 222 38% 15%;        /* #172033 primary text */
 
-    --card: 240 10% 3.9%;
-    --card-foreground: 0 0% 98%;
+    --card: 0 0% 100%;                /* #FFFFFF opaque surface */
+    --card-foreground: 222 38% 15%;
 
-    --popover: 240 10% 3.9%;
-    --popover-foreground: 0 0% 98%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 38% 15%;
 
-    --primary: 0 0% 98%;
-    --primary-foreground: 240 5.9% 10%;
+    --primary: 224 76% 48%;           /* #1D4ED8 deep professional blue */
+    --primary-foreground: 0 0% 100%;
 
-    --secondary: 240 3.7% 15.9%;
-    --secondary-foreground: 0 0% 98%;
+    --secondary: 210 40% 96%;         /* slate-100 quiet fill */
+    --secondary-foreground: 222 38% 15%;
 
-    --muted: 240 3.7% 15.9%;
-    --muted-foreground: 240 5% 64.9%;
+    --muted: 210 40% 96%;             /* slate-100 */
+    --muted-foreground: 215 16% 47%;  /* #64748B secondary text */
 
-    --accent: 240 3.7% 15.9%;
-    --accent-foreground: 0 0% 98%;
+    --accent: 210 40% 96%;            /* neutral hover accent */
+    --accent-foreground: 222 38% 15%;
 
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 0 0% 98%;
+    /* Analytical accent — data emphasis only, used sparingly */
+    --teal: 175 79% 26%;              /* #0F766E mineral teal */
+    --teal-foreground: 0 0% 100%;
+    --teal-muted: 175 60% 95%;        /* teal wash for grounded-evidence surfaces */
 
-    --border: 240 3.7% 15.9%;
-    --input: 240 3.7% 15.9%;
-    --ring: 240 4.9% 83.9%;
+    --success: 142 72% 29%;           /* #15803D validated */
+    --success-foreground: 0 0% 100%;
+    --success-muted: 142 72% 96%;
+
+    --warning: 26 90% 37%;            /* #B45309 needs review */
+    --warning-foreground: 0 0% 100%;
+    --warning-muted: 38 92% 95%;
+
+    --destructive: 0 74% 42%;         /* #B91C1C conflict / error */
+    --destructive-foreground: 0 0% 100%;
+    --destructive-muted: 0 86% 97%;
+
+    --border: 214 32% 91%;            /* #E2E8F0 hairline */
+    --input: 214 32% 91%;
+    --ring: 224 76% 48%;              /* focus = primary blue */
 
     --radius: 0.5rem;
+  }
+
+  .dark {
+    --background: 222 47% 7%;         /* slate-950-ish canvas (no pure black) */
+    --foreground: 210 40% 96%;
+
+    --card: 222 40% 11%;             /* raised slate surface */
+    --card-foreground: 210 40% 96%;
+
+    --popover: 222 40% 11%;
+    --popover-foreground: 210 40% 96%;
+
+    --primary: 217 91% 60%;          /* blue-500, lifted for dark */
+    --primary-foreground: 222 47% 11%;
+
+    --secondary: 217 33% 17%;
+    --secondary-foreground: 210 40% 96%;
+
+    --muted: 217 33% 17%;
+    --muted-foreground: 215 20% 65%;
+
+    --accent: 217 33% 17%;
+    --accent-foreground: 210 40% 96%;
+
+    --teal: 172 66% 45%;             /* teal-500 lifted */
+    --teal-foreground: 222 47% 11%;
+    --teal-muted: 175 40% 16%;
+
+    --success: 142 69% 45%;
+    --success-foreground: 222 47% 11%;
+    --success-muted: 142 40% 16%;
+
+    --warning: 38 92% 55%;
+    --warning-foreground: 222 47% 11%;
+    --warning-muted: 30 40% 16%;
+
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 222 47% 11%;
+    --destructive-muted: 0 40% 18%;
+
+    --border: 217 33% 20%;
+    --input: 217 33% 22%;
+    --ring: 217 91% 60%;
   }
 }
 
 @layer base {
   * {
-    @apply border-zinc-800;
+    @apply border-border;
   }
   body {
-    @apply bg-zinc-950 text-zinc-100 font-sans;
-    font-feature-settings: "rlig" 1, "calt" 1;
+    @apply bg-background text-foreground font-sans antialiased;
+    font-feature-settings: "cv11", "ss01";
+    font-variant-numeric: tabular-nums;
+  }
+  /* Data cells and figures get tabular mono where marked */
+  .font-mono {
+    font-feature-settings: "tnum" 1;
   }
 }
 
-/* Custom minimal scrollbar for enterprise dense view */
+/* Minimal enterprise scrollbar, theme-aware */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 10px;
+  height: 10px;
 }
-
 ::-webkit-scrollbar-track {
-  background: #09090b;
+  background: transparent;
 }
-
 ::-webkit-scrollbar-thumb {
-  background: #27272a;
-  border-radius: 3px;
+  background: hsl(var(--border));
+  border-radius: 5px;
+  border: 2px solid hsl(var(--background));
 }
-
 ::-webkit-scrollbar-thumb:hover {
-  background: #3f3f46;
+  background: hsl(var(--muted-foreground) / 0.5);
 }
