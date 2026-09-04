@@ -1,14 +1,33 @@
-﻿import React, { useState } from "react";
+﻿import React, { Suspense, lazy, useState } from "react";
 import { AppShell } from "@/components/layout/AppShell";
-import { DashboardPage } from "@/pages/DashboardPage";
-import { DocumentsPage } from "@/pages/DocumentsPage";
-import { AskPage } from "@/pages/AskPage";
-import { AnalyticsPage } from "@/pages/AnalyticsPage";
-import { TopicsPage } from "@/pages/TopicsPage";
-import { ReportStudioPage } from "@/pages/ReportStudioPage";
-import { DataExplorerPage } from "@/pages/DataExplorerPage";
-import { ValidationPage } from "@/pages/ValidationPage";
-import { SettingsPage } from "@/pages/SettingsPage";
+import { Skeleton } from "@/components/ui/skeleton";
+const DashboardPage = lazy(() =>
+  import("@/pages/DashboardPage").then((m) => ({ default: m.DashboardPage }))
+);
+const DocumentsPage = lazy(() =>
+  import("@/pages/DocumentsPage").then((m) => ({ default: m.DocumentsPage }))
+);
+const AskPage = lazy(() =>
+  import("@/pages/AskPage").then((m) => ({ default: m.AskPage }))
+);
+const AnalyticsPage = lazy(() =>
+  import("@/pages/AnalyticsPage").then((m) => ({ default: m.AnalyticsPage }))
+);
+const TopicsPage = lazy(() =>
+  import("@/pages/TopicsPage").then((m) => ({ default: m.TopicsPage }))
+);
+const ReportStudioPage = lazy(() =>
+  import("@/pages/ReportStudioPage").then((m) => ({ default: m.ReportStudioPage }))
+);
+const DataExplorerPage = lazy(() =>
+  import("@/pages/DataExplorerPage").then((m) => ({ default: m.DataExplorerPage }))
+);
+const ValidationPage = lazy(() =>
+  import("@/pages/ValidationPage").then((m) => ({ default: m.ValidationPage }))
+);
+const SettingsPage = lazy(() =>
+  import("@/pages/SettingsPage").then((m) => ({ default: m.SettingsPage }))
+);
 import { NavigationTab, Subsidiary, EvidenceSnippet } from "@/types";
 import { useHashRoute } from "@/lib/useHashRoute";
 
@@ -40,6 +59,16 @@ export function App() {
       onCloseEvidence={handleCloseEvidence}
       onQuickUpload={handleQuickUpload}
     >
+      {/* Pages are code-split, so a brief fallback covers the chunk fetch. */}
+      <Suspense
+        fallback={
+          <div className="space-y-4">
+            <Skeleton className="h-8 w-64" />
+            <Skeleton className="h-4 w-96" />
+            <Skeleton className="h-64 w-full" />
+          </div>
+        }
+      >
       {currentTab === "dashboard" && (
         <DashboardPage
           onNavigate={setCurrentTab}
@@ -92,6 +121,7 @@ export function App() {
       {currentTab === "settings" && (
         <SettingsPage />
       )}
+      </Suspense>
     </AppShell>
   );
 }
