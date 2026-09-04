@@ -1,6 +1,7 @@
 ﻿import React, { Suspense, lazy, useState } from "react";
 import { AppShell } from "@/components/layout/AppShell";
 import { Skeleton } from "@/components/ui/skeleton";
+import { ErrorBoundary } from "@/components/shared/ErrorBoundary";
 const DashboardPage = lazy(() =>
   import("@/pages/DashboardPage").then((m) => ({ default: m.DashboardPage }))
 );
@@ -59,6 +60,8 @@ export function App() {
       onCloseEvidence={handleCloseEvidence}
       onQuickUpload={handleQuickUpload}
     >
+      {/* A page crash is contained here rather than blanking the whole app. */}
+      <ErrorBoundary resetKey={currentTab}>
       {/* Pages are code-split, so a brief fallback covers the chunk fetch. */}
       <Suspense
         fallback={
@@ -122,6 +125,7 @@ export function App() {
         <SettingsPage />
       )}
       </Suspense>
+      </ErrorBoundary>
     </AppShell>
   );
 }
