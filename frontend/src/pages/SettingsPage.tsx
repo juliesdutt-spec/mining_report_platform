@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { CheckCircle2, Save } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -36,15 +36,33 @@ function SettingsGroup({
   );
 }
 
+import { DEFAULT_SETTINGS, loadSettings, saveSettings } from "@/lib/settings";
+
 export function SettingsPage() {
-  const [apiUrl, setApiUrl] = useState("http://localhost:8000");
-  const [modelName, setModelName] = useState("claude-sonnet-4-20250514");
-  const [ocrConfidence, setOcrConfidence] = useState(85);
+  const [apiUrl, setApiUrl] = useState(DEFAULT_SETTINGS.apiUrl);
+  const [modelName, setModelName] = useState(DEFAULT_SETTINGS.modelName);
+  const [ocrConfidence, setOcrConfidence] = useState(DEFAULT_SETTINGS.ocrConfidence);
   const [isSaved, setIsSaved] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+
+  // Restore whatever was saved on this machine; defaults apply otherwise.
+  useEffect(() => {
+    const saved = loadSettings();
+    setApiUrl(saved.apiUrl);
+    setModelName(saved.modelName);
+    setOcrConfidence(saved.ocrConfidence);
+  }, []);
 
   const handleSave = () => {
-    setIsSaved(true);
-    setTimeout(() => setIsSaved(false), 2000);
+    const ok = saveSettings({ apiUrl, modelName, ocrConfidence });
+    if (ok) {
+      setSaveError(null);
+      setIsSaved(true);
+      setTimeout(() => setIsSaved(false), 2000);
+    } else {
+      setIsSaved(false);
+      setSaveError("Could not save — browser storage is unavailable.");
+    }
   };
 
   return (
@@ -93,9 +111,9 @@ export function SettingsPage() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="claude-sonnet-4-20250514">claude-sonnet-4-20250514</SelectItem>
-                  <SelectItem value="claude-3-7-sonnet">claude-3-7-sonnet</SelectItem>
-                  <SelectItem value="claude-3-5-haiku">claude-3-5-haiku</SelectItem>
+                  <SelectItem value="claude-opus-5">claude-opus-5</SelectItem>
+                  <SelectItem value="claude-sonnet-5">claude-sonnet-5</SelectItem>
+                  <SelectItem value="claude-haiku-4-5">claude-haiku-4-5</SelectItem>
                   <SelectItem value="mock-ai-engine">Deterministic mock engine</SelectItem>
                 </SelectContent>
               </Select>
@@ -144,6 +162,11 @@ export function SettingsPage() {
       </Section>
 
       <div className="flex items-center justify-end gap-3 border-t border-border pt-5">
+        {saveError && (
+          <span role="alert" className="text-xs text-destructive">
+            {saveError}
+          </span>
+        )}
         {isSaved && (
           <span className="inline-flex items-center gap-1.5 text-sm text-success">
             <CheckCircle2 className="h-4 w-4" />

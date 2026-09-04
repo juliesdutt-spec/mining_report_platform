@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Check, CheckCircle2 } from "lucide-react";
+import { AlertTriangle, Check, CheckCircle2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -66,6 +66,23 @@ export function ValidationPage({ selectedSubsidiary }: ValidationPageProps) {
         title="Validation & traceability"
         description="Reconcile conflicting figures across subsidiary ledgers and verify low-confidence extractions against their source pages."
       />
+
+      {/*
+        The backend models no discrepancy or conflict concept, so this screen is
+        a design prototype over sample records. Saying so plainly is better than
+        presenting fabricated findings as real audit results.
+      */}
+      <div
+        role="note"
+        className="flex items-start gap-2 rounded-lg border border-warning/40 bg-warning-muted px-4 py-3 text-sm text-warning"
+      >
+        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+        <span>
+          <strong className="font-medium">Planned capability — sample data.</strong>{" "}
+          Cross-document discrepancy detection is not implemented in the backend yet. The records
+          below are illustrative and are not derived from your uploaded documents.
+        </span>
+      </div>
 
       <StatGroup>
         <Stat label="Audited records" value="94,620" hint="Across 8 subsidiaries" />

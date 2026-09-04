@@ -89,6 +89,11 @@ export async function getDocumentById(id: number): Promise<MiningDocument | unde
   }
 }
 
+/** DELETE /reports/{id} — permanently removes a report and its word cloud. */
+export async function deleteDocument(id: number): Promise<void> {
+  await apiFetch<{ message: string }>(`/reports/${id}`, { method: 'DELETE' });
+}
+
 /**
  * POST /upload — multipart form with a single `file` field. The backend only
  * accepts PDFs and runs text extraction plus AI extraction synchronously, so

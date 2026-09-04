@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Download, Printer, RefreshCw } from "lucide-react";
+import { AlertTriangle, Download, Printer } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -41,7 +41,6 @@ const PRODUCTION_ROWS = [
 export function ReportStudioPage() {
   const [reportType, setReportType] = useState("executive_summary");
   const [reportingPeriod, setReportingPeriod] = useState("fy2023_24");
-  const [isGenerating, setIsGenerating] = useState(false);
   const [selectedSections, setSelectedSections] = useState<Record<SectionKey, boolean>>({
     execSummary: true,
     productionOverview: true,
@@ -53,10 +52,9 @@ export function ReportStudioPage() {
   const toggleSection = (key: SectionKey) =>
     setSelectedSections((prev) => ({ ...prev, [key]: !prev[key] }));
 
-  const handleGenerate = () => {
-    setIsGenerating(true);
-    setTimeout(() => setIsGenerating(false), 900);
-  };
+  // The preview below re-renders directly from the section toggles, so there is
+  // nothing to "generate" — no simulated delay is shown.
+  const handlePrint = () => window.print();
 
   return (
     <div className="space-y-6">
@@ -65,21 +63,44 @@ export function ReportStudioPage() {
         description="Compose statutory reports and parliamentary dossiers from indexed sources."
         actions={
           <>
-            <Button variant="ghost" size="sm">
+            {/* Print is the only export that needs no backend. */}
+            <Button variant="ghost" size="sm" onClick={handlePrint}>
               <Printer className="h-3.5 w-3.5" />
               Print
             </Button>
-            <Button variant="outline" size="sm">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled
+              title="DOCX export is not implemented — the backend has no document generator."
+            >
               <Download className="h-3.5 w-3.5" />
               DOCX
             </Button>
-            <Button size="sm">
+            <Button
+              size="sm"
+              disabled
+              title="Composed-dossier PDF export is not implemented. Per-document PDFs are available on the Documents page."
+            >
               <Download className="h-3.5 w-3.5" />
               PDF
             </Button>
           </>
         }
       />
+
+      <div
+        role="note"
+        className="flex items-start gap-2 rounded-lg border border-warning/40 bg-warning-muted px-4 py-3 text-sm text-warning"
+      >
+        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+        <span>
+          <strong className="font-medium">Template preview — not generated from your documents.</strong>{" "}
+          There is no report-composition endpoint in the backend yet, so the layout below is a
+          static sample with illustrative figures. Real per-document PDFs are available from the
+          Documents page.
+        </span>
+      </div>
 
       <div className="grid grid-cols-1 gap-8 lg:grid-cols-12">
         {/* Configuration — a real form */}
@@ -130,10 +151,9 @@ export function ReportStudioPage() {
               ))}
             </div>
 
-            <Button onClick={handleGenerate} disabled={isGenerating} className="w-full">
-              <RefreshCw className={isGenerating ? "h-3.5 w-3.5 animate-spin" : "h-3.5 w-3.5"} />
-              {isGenerating ? "Compiling…" : "Generate report"}
-            </Button>
+            <p className="text-xs text-muted-foreground">
+              The preview updates as you change these options.
+            </p>
           </Card>
         </div>
 
@@ -262,7 +282,7 @@ export function ReportStudioPage() {
                 <section className="border-t border-border pt-5">
                   <FieldLabel>Grounding lineage</FieldLabel>
                   <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
-                    Synthesised from SECL_Gevra_Annual_Production_2023_24.pdf (p.14),
+                    Illustrative source list for this template. Sample references: SECL_Gevra_Annual_Production_2023_24.pdf (p.14),
                     NCL_Jayant_Expansion_Review_FY24.pdf (p.19), and
                     BCCL_Jharia_Seam_XVI_Geological_Survey.pdf (p.38).
                   </p>

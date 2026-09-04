@@ -18,6 +18,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Skeleton } from "@/components/ui/skeleton";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import { ConfidenceMeter } from "@/components/shared/ConfidenceMeter";
@@ -189,7 +190,18 @@ export function DataExplorerPage({ onInspectEvidence, selectedSubsidiary }: Data
           </TableHeader>
 
           <TableBody>
-            {sorted.map((row) => (
+            {isLoading &&
+              [0, 1, 2, 3].map((i) => (
+                <TableRow key={`sk-${i}`} className="hover:bg-transparent">
+                  {Array.from({ length: 9 }).map((_, c) => (
+                    <TableCell key={c}>
+                      <Skeleton className="h-4 w-full" />
+                    </TableCell>
+                  ))}
+                </TableRow>
+              ))}
+
+            {!isLoading && sorted.map((row) => (
               <TableRow key={row.id}>
                 <TableCell className="font-medium text-foreground">{row.mineName}</TableCell>
                 <TableCell className="font-mono text-xs text-muted-foreground">{row.subsidiary ?? "\u2014"}</TableCell>
@@ -221,7 +233,7 @@ export function DataExplorerPage({ onInspectEvidence, selectedSubsidiary }: Data
               </TableRow>
             ))}
 
-            {sorted.length === 0 && (
+            {!isLoading && sorted.length === 0 && (
               <TableRow className="hover:bg-transparent">
                 <TableCell colSpan={9} className="py-12 text-center text-sm text-muted-foreground">
                   No records match the current filters.

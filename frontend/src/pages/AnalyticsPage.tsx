@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { Section } from "@/components/shared/Section";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Stat, StatGroup } from "@/components/shared/StatGroup";
 import { useChartColors, tooltipStyle } from "@/lib/chart";
 import { Subsidiary } from "@/types";
@@ -97,6 +98,9 @@ export function AnalyticsPage({ selectedSubsidiary }: AnalyticsPageProps) {
           >
             <Card className="p-5">
               <div className="h-72 w-full">
+                {stats === null ? (
+                  <Skeleton className="h-full w-full" />
+                ) : (
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={locationCounts} margin={{ top: 8, right: 8, left: -16, bottom: 0 }}>
                     <CartesianGrid stroke={colors.border} vertical={false} />
@@ -106,6 +110,7 @@ export function AnalyticsPage({ selectedSubsidiary }: AnalyticsPageProps) {
                     <Bar dataKey="documents" name="Documents" fill={colors.primary} radius={[3, 3, 0, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
+                )}
               </div>
 
               <div className="mt-4 flex items-center gap-4 border-t border-border pt-3 text-xs text-muted-foreground">

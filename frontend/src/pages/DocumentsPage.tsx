@@ -1,17 +1,32 @@
 import React, { useState, useEffect, useRef } from "react";
-import { AlertCircle, CheckCircle2, Download, Upload } from "lucide-react";
+import { AlertCircle, CheckCircle2, Download, Trash2, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { FieldLabel } from "@/components/shared/Section";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import { ConfidenceMeter } from "@/components/shared/ConfidenceMeter";
 import { cn } from "@/lib/utils";
 import { MiningDocument, EvidenceSnippet, Subsidiary } from "@/types";
-import { fetchDocuments, getDocumentById, uploadMiningDocument } from "@/services/documents";
-import { ApiError, reportDownloadUrl } from "@/services/api";
+import {
+  deleteDocument,
+  fetchDocuments,
+  getDocumentById,
+  uploadMiningDocument,
+} from "@/services/documents";
+import { ApiError, reportDownloadUrl, reportWordCloudUrl } from "@/services/api";
 
 interface DocumentsPageProps {
   onInspectEvidence: (evidence: EvidenceSnippet) => void;
@@ -24,6 +39,44 @@ function orDash(value: React.ReactNode): React.ReactNode {
     return <span className="text-muted-foreground">&mdash;</span>;
   }
   return value;
+}
+
+/**
+ * Renders GET /reports/{id}/wordcloud. The backend returns a PNG built from the
+ * report's stored text, or 400/404 when there is nothing to render — treated
+ * here as an honest "unavailable" state rather than a placeholder graphic.
+ */
+function WordCloud({ reportId }: { reportId: number }) {
+  const [state, setState] = React.useState<"loading" | "ready" | "unavailable">("loading");
+
+  // Reset whenever the selected report changes.
+  React.useEffect(() => {
+    setState("loading");
+  }, [reportId]);
+
+  return (
+    <div className="relative min-h-[120px]">
+      {state === "loading" && <Skeleton className="h-[120px] w-full" />}
+
+      {state === "unavailable" && (
+        <p className="py-8 text-center text-xs text-muted-foreground">
+          No word cloud available for this document.
+        </p>
+      )}
+
+      <img
+        key={reportId}
+        src={reportWordCloudUrl(reportId)}
+        alt={`Word frequency cloud generated from the text of report ${reportId}`}
+        onLoad={() => setState("ready")}
+        onError={() => setState("unavailable")}
+        className={cn(
+          "w-full rounded-md",
+          state === "ready" ? "block" : "hidden"
+        )}
+      />
+    </div>
+  );
 }
 
 function Attribute({ label, value }: { label: string; value: React.ReactNode }) {
@@ -44,6 +97,9 @@ export function DocumentsPage({ onInspectEvidence, selectedSubsidiary }: Documen
   const [loadError, setLoadError] = useState<string | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploadNotice, setUploadNotice] = useState<string | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<MiningDocument | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   /** Reload the index from GET /reports, keeping the current selection if it survives. */
@@ -88,6 +144,32 @@ export function DocumentsPage({ onInspectEvidence, selectedSubsidiary }: Documen
       cancelled = true;
     };
   }, [selectedDoc?.id, selectedDoc?.keyFindings]);
+
+  /** DELETE /reports/{id}, then drop the row locally so nothing stale remains. */
+  const handleConfirmDelete = async () => {
+    const target = pendingDelete;
+    if (!target) return;
+
+    setIsDeleting(true);
+    setDeleteError(null);
+    try {
+      await deleteDocument(target.id);
+      setPendingDelete(null);
+      setDocuments((prev) => {
+        const next = prev.filter((d) => d.id !== target.id);
+        setSelectedDoc((current) => (current?.id === target.id ? next[0] ?? null : current));
+        return next;
+      });
+      setUploadNotice(`Deleted "${target.filename}".`);
+      setUploadError(null);
+    } catch (err) {
+      setDeleteError(
+        err instanceof ApiError ? err.message : `Could not delete "${target.filename}".`
+      );
+    } finally {
+      setIsDeleting(false);
+    }
+  };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
@@ -225,7 +307,7 @@ export function DocumentsPage({ onInspectEvidence, selectedSubsidiary }: Documen
               <h2 className="min-w-0 truncate text-base font-semibold tracking-tight text-foreground">
                 {selectedDoc.filename}
               </h2>
-              <div className="flex shrink-0 items-baseline gap-3">
+              <div className="flex shrink-0 items-center gap-2">
                 <span className="font-mono text-xs tabular-nums text-muted-foreground">
                   {selectedDoc.pageCount !== undefined ? `${selectedDoc.pageCount} pp.` : "\u2014"}
                 </span>
@@ -240,42 +322,97 @@ export function DocumentsPage({ onInspectEvidence, selectedSubsidiary }: Documen
                     PDF
                   </a>
                 </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => {
+                    setDeleteError(null);
+                    setPendingDelete(selectedDoc);
+                  }}
+                  aria-label={`Delete ${selectedDoc.filename}`}
+                  title="Delete this document"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </Button>
               </div>
             </div>
 
-            <article className="rounded-lg border border-border bg-card p-6 shadow-xs">
-              <header className="border-b border-border pb-4">
-                <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                  Ministry of Coal{selectedDoc.subsidiary ? ` · ${selectedDoc.subsidiary}` : ""}
-                </div>
-                <h3 className="mt-1.5 font-serif text-lg font-semibold leading-snug text-foreground">
-                  {selectedDoc.mineName ?? selectedDoc.filename}
-                </h3>
-                <p className="mt-1 text-xs text-muted-foreground">{selectedDoc.location ?? "Location not reported"}</p>
-              </header>
+            <Tabs defaultValue="document">
+              <TabsList>
+                <TabsTrigger value="document">Document</TabsTrigger>
+                <TabsTrigger value="summary">Summary</TabsTrigger>
+                <TabsTrigger value="wordcloud">Word cloud</TabsTrigger>
+              </TabsList>
 
-              <div className="mt-5 space-y-4 font-serif text-sm leading-relaxed text-foreground">
-                {/* The grounded passage is the visual anchor of the reader */}
-                <blockquote className="border-l-2 border-teal bg-teal-muted/50 py-3 pl-4 pr-3">
-                  {selectedDoc.evidenceSnippets[0]?.originalContext || selectedDoc.summary}
-                </blockquote>
+              {/* The generated PDF itself, rendered by the browser's viewer. */}
+              <TabsContent value="document">
+                <object
+                  key={selectedDoc.id}
+                  data={reportDownloadUrl(selectedDoc.id)}
+                  type="application/pdf"
+                  className="h-[560px] w-full rounded-lg border border-border bg-card"
+                  aria-label={`PDF report for ${selectedDoc.filename}`}
+                >
+                  {/* Shown when the browser cannot embed a PDF inline. */}
+                  <div className="flex h-[560px] flex-col items-center justify-center gap-3 p-6 text-center">
+                    <p className="text-sm text-muted-foreground">
+                      Your browser cannot display this PDF inline.
+                    </p>
+                    <Button variant="outline" size="sm" asChild>
+                      <a href={reportDownloadUrl(selectedDoc.id)} download>
+                        <Download className="h-3.5 w-3.5" />
+                        Download the PDF
+                      </a>
+                    </Button>
+                  </div>
+                </object>
+              </TabsContent>
 
-                <p>
-                  Geological borehole reconnaissance confirmed structural continuity across the coal
-                  seams during the recorded operational cycle. Production excavation yielded{" "}
-                  <strong className="font-mono text-sm font-semibold">
-                    {orDash(selectedDoc.quantityExtracted)}
-                  </strong>{" "}
-                  with heavy mining equipment in continuous operation.
-                </p>
+              {/* Only what the backend actually extracted — no narrative filler. */}
+              <TabsContent value="summary">
+                <article className="rounded-lg border border-border bg-card p-6 shadow-xs">
+                  <header className="border-b border-border pb-4">
+                    <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                      Ministry of Coal{selectedDoc.subsidiary ? ` \u00b7 ${selectedDoc.subsidiary}` : ""}
+                    </div>
+                    <h3 className="mt-1.5 font-serif text-lg font-semibold leading-snug text-foreground">
+                      {selectedDoc.mineName ?? selectedDoc.filename}
+                    </h3>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {selectedDoc.location ?? "Location not reported"}
+                    </p>
+                  </header>
 
-                <p className="text-muted-foreground">
-                  Statutory safety and environmental regulations under DGMS and MoEFCC were adhered
-                  to, with vibration, noise and PM10 monitoring stations recording no
-                  non-compliance points.
-                </p>
-              </div>
-            </article>
+                  <div className="mt-5 space-y-4 font-serif text-sm leading-relaxed text-foreground">
+                    {selectedDoc.summary ? (
+                      <blockquote className="border-l-2 border-teal bg-teal-muted/50 py-3 pl-4 pr-3">
+                        {selectedDoc.summary}
+                      </blockquote>
+                    ) : (
+                      <p className="text-sm text-muted-foreground">
+                        No summary was extracted from this document.
+                      </p>
+                    )}
+
+                    {selectedDoc.evidenceSnippets[0]?.originalContext && (
+                      <blockquote className="border-l-2 border-border py-2 pl-4 pr-3 text-muted-foreground">
+                        {selectedDoc.evidenceSnippets[0].originalContext}
+                      </blockquote>
+                    )}
+                  </div>
+                </article>
+              </TabsContent>
+
+              {/* GET /reports/{id}/wordcloud */}
+              <TabsContent value="wordcloud">
+                <Card className="p-5">
+                  <WordCloud reportId={selectedDoc.id} />
+                  <p className="mt-3 border-t border-border pt-3 text-xs text-muted-foreground">
+                    Term frequency computed by the backend from this document's extracted text.
+                  </p>
+                </Card>
+              </TabsContent>
+            </Tabs>
           </div>
 
           {/* Extracted entities — a definition list, not a grid of boxes */}
@@ -361,7 +498,23 @@ export function DocumentsPage({ onInspectEvidence, selectedSubsidiary }: Documen
           </div>
         </div>
       ) : isLoading ? (
-        <p className="py-16 text-center text-sm text-muted-foreground">Loading documents…</p>
+        // Skeletons mirror the three-pane layout rather than showing placeholder data.
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
+          <div className="space-y-2 lg:col-span-3">
+            <Skeleton className="h-8 w-full" />
+            {[0, 1, 2].map((i) => (
+              <Skeleton key={i} className="h-16 w-full" />
+            ))}
+          </div>
+          <div className="lg:col-span-5">
+            <Skeleton className="h-8 w-2/3" />
+            <Skeleton className="mt-3 h-[560px] w-full" />
+          </div>
+          <div className="lg:col-span-4">
+            <Skeleton className="h-8 w-1/3" />
+            <Skeleton className="mt-3 h-64 w-full" />
+          </div>
+        </div>
       ) : loadError ? (
         <div className="py-16 text-center">
           <p className="text-sm font-medium text-destructive">{loadError}</p>
@@ -390,6 +543,52 @@ export function DocumentsPage({ onInspectEvidence, selectedSubsidiary }: Documen
           </Button>
         </div>
       )}
+
+      {/* Delete confirmation — DELETE /reports/{id} is irreversible. */}
+      <Dialog
+        open={pendingDelete !== null}
+        onOpenChange={(open) => {
+          if (!open && !isDeleting) {
+            setPendingDelete(null);
+            setDeleteError(null);
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete this document?</DialogTitle>
+            <DialogDescription>
+              {pendingDelete?.filename} will be permanently removed from the reports database,
+              along with its extracted entities and word cloud. This cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+
+          {deleteError && (
+            <p role="alert" className="text-sm text-destructive">
+              {deleteError}
+            </p>
+          )}
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setPendingDelete(null)}
+              disabled={isDeleting}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={handleConfirmDelete}
+              disabled={isDeleting}
+            >
+              {isDeleting ? "Deleting…" : "Delete document"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

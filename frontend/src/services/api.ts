@@ -164,4 +164,16 @@ export function reportDownloadUrl(reportId: number): string {
   return `${API_BASE_URL}/reports/${reportId}/download`;
 }
 
+/**
+ * GET /reports/{id}/wordcloud — the backend renders a PNG from the report's
+ * stored raw text (wordcloud_generator.generate_word_cloud_bytes). Returns a
+ * URL so the browser fetches the image directly.
+ *
+ * Note: 400 when the report has no extractable text or the render fails, and
+ * 404 when the report is gone — callers should treat both as "unavailable".
+ */
+export function reportWordCloudUrl(reportId: number): string {
+  return `${API_BASE_URL}/reports/${reportId}/wordcloud`;
+}
+
 export { API_BASE_URL };

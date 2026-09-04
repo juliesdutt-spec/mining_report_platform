@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/table";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { Section } from "@/components/shared/Section";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Stat, StatGroup } from "@/components/shared/StatGroup";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import { ConfidenceMeter } from "@/components/shared/ConfidenceMeter";
@@ -101,6 +102,17 @@ export function DashboardPage({
       />
 
       {/* One stat strip replaces eight bordered boxes */}
+      {stats === null ? (
+        <div className="grid grid-cols-2 gap-6 border-y border-border py-4 lg:grid-cols-4">
+          {[0, 1, 2, 3].map((i) => (
+            <div key={i} className="space-y-2">
+              <Skeleton className="h-3 w-24" />
+              <Skeleton className="h-7 w-16" />
+              <Skeleton className="h-3 w-32" />
+            </div>
+          ))}
+        </div>
+      ) : (
       <StatGroup>
         <Stat
           label="Documents indexed"
@@ -125,6 +137,7 @@ export function DashboardPage({
           hint="Documents needing re-upload"
         />
       </StatGroup>
+      )}
 
       {/* Operational tables — rows, not stacks of cards */}
       <Tabs defaultValue="documents">

@@ -10,9 +10,11 @@ import { DataExplorerPage } from "@/pages/DataExplorerPage";
 import { ValidationPage } from "@/pages/ValidationPage";
 import { SettingsPage } from "@/pages/SettingsPage";
 import { NavigationTab, Subsidiary, EvidenceSnippet } from "@/types";
+import { useHashRoute } from "@/lib/useHashRoute";
 
 export function App() {
-  const [currentTab, setCurrentTab] = useState<NavigationTab>("dashboard");
+  // Tab lives in the URL hash so Back/Forward, deep links and refresh all work.
+  const [currentTab, setCurrentTab] = useHashRoute();
   const [selectedSubsidiary, setSelectedSubsidiary] = useState<Subsidiary | "ALL">("ALL");
   const [activeEvidence, setActiveEvidence] = useState<EvidenceSnippet | null>(null);
 
