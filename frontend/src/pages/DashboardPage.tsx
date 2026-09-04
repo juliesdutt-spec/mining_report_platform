@@ -63,9 +63,13 @@ export function DashboardPage({
 
   useEffect(() => {
     fetchKpiMetrics().then(setKpiData);
-    fetchDocuments().then(setDocuments);
+    fetchDocuments()
+      .then(setDocuments)
+      .catch(() => setDocuments([]));
     fetchValidationItems().then(setValidationAlerts);
-    fetchRecentQueries().then(setRecentQueries);
+    fetchRecentQueries()
+      .then(setRecentQueries)
+      .catch(() => setRecentQueries([]));
   }, []);
 
   useEffect(() => {
@@ -251,7 +255,7 @@ export function DashboardPage({
                     <ConfidenceMeter value={doc.confidenceScore} />
                   </TableCell>
                   <TableCell>
-                    <StatusBadge status={doc.validationStatus} />
+                    <StatusBadge status={doc.validationStatus ?? doc.status} />
                   </TableCell>
                   <TableCell className="text-right">
                     {doc.evidenceSnippets[0] && (

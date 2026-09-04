@@ -34,13 +34,13 @@ interface NavItem {
 
 const NAV_ITEMS: NavItem[] = [
   { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { id: "documents", label: "Documents", icon: FileText, count: 5 },
+  { id: "documents", label: "Documents", icon: FileText },
   { id: "ask", label: "Ask DataForge", icon: Sparkles },
   { id: "analytics", label: "Analytics", icon: BarChart3 },
   { id: "topics", label: "Topic Intelligence", icon: Cloud },
   { id: "reports", label: "Report Studio", icon: FileSpreadsheet },
   { id: "explorer", label: "Data Explorer", icon: Database },
-  { id: "validation", label: "Validation", icon: ShieldCheck, count: 3 },
+  { id: "validation", label: "Validation", icon: ShieldCheck },
   { id: "settings", label: "Settings", icon: Settings },
 ];
 

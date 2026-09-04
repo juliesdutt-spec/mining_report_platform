@@ -44,7 +44,9 @@ export function TopicsPage({ onInspectEvidence }: TopicsPageProps) {
       setTopics(data);
       if (data.length > 0) setSelectedTopic(data[0]);
     });
-    fetchDocuments().then(setDocuments);
+    fetchDocuments()
+      .then(setDocuments)
+      .catch(() => setDocuments([]));
   }, []);
 
   const filteredTopics =

@@ -2,8 +2,8 @@ import React from "react";
 import { cn } from "@/lib/utils";
 
 interface ConfidenceMeterProps {
-  /** Extraction confidence, 0–1. */
-  value: number;
+  /** Extraction confidence, 0–1. Undefined when the source reports none. */
+  value?: number;
   /** Hide the bar and show only the figure. */
   compact?: boolean;
   className?: string;
@@ -21,6 +21,19 @@ function toneFor(pct: number) {
  * Part of the evidence vocabulary — the same reading everywhere it appears.
  */
 export function ConfidenceMeter({ value, compact = false, className }: ConfidenceMeterProps) {
+  // The backend models no confidence score. Say so plainly rather than
+  // rendering a number nothing produced.
+  if (value === undefined || Number.isNaN(value)) {
+    return (
+      <span
+        className={cn("font-mono text-xs text-muted-foreground", className)}
+        title="No extraction confidence reported for this document"
+      >
+        &mdash;
+      </span>
+    );
+  }
+
   const pct = Math.round(value * 100);
   const tone = toneFor(pct);
 

@@ -33,30 +33,43 @@ export interface EvidenceSnippet {
   confidence: number;
 }
 
+/**
+ * A document in the DataForge index.
+ *
+ * Fields the FastAPI backend genuinely supplies are required; everything the
+ * backend has no concept of (page counts, extraction confidence, CIL
+ * subsidiary, validation state, per-snippet evidence) is optional and is left
+ * undefined for real documents rather than filled with invented values. The UI
+ * renders an em dash for those instead of a fabricated figure.
+ */
 export interface MiningDocument {
   id: number;
   filename: string;
   fileType: 'PDF' | 'DOCX' | 'XLSX' | 'IMAGE';
-  fileSizeBytes: number;
-  pageCount: number;
-  uploadDate: string;
   status: 'processing' | 'completed' | 'error' | 'pending';
-  confidenceScore: number;
-  subsidiary: Subsidiary;
-  mineName: string;
-  location: string;
-  district: string;
-  state: string;
-  mineralType: string;
-  quantityExtracted: string;
-  extractionMethod: 'Opencast' | 'Underground' | 'Mixed';
-  reserveEstimate: string;
   topics: string[];
   summary: string;
+  evidenceSnippets: EvidenceSnippet[];
+
+  /** Supplied by the backend when extraction found them. */
+  uploadDate?: string;
+  mineName?: string;
+  location?: string;
+  district?: string;
+  state?: string;
+  mineralType?: string;
+  quantityExtracted?: string;
+  extractionMethod?: string;
+  reserveEstimate?: string;
   keyFindings?: string[];
   rawText?: string;
-  evidenceSnippets: EvidenceSnippet[];
-  validationStatus: ValidationStatus;
+
+  /** Not modelled by the backend — undefined for real documents. */
+  fileSizeBytes?: number;
+  pageCount?: number;
+  confidenceScore?: number;
+  subsidiary?: Subsidiary;
+  validationStatus?: ValidationStatus;
 }
 
 export interface KpiMetrics {
@@ -87,8 +100,9 @@ export interface QueryResult {
   sourceDocuments: {
     id: number;
     filename: string;
-    pageNumbers: number[];
-    relevanceScore: number;
+    /** Not returned by POST /query — undefined for real answers. */
+    pageNumbers?: number[];
+    relevanceScore?: number;
   }[];
   timestamp: string;
 }

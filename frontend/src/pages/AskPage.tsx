@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { ArrowRight, ExternalLink, Search } from "lucide-react";
+import { AlertCircle, ArrowRight, ExternalLink, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { PageHeader } from "@/components/shared/PageHeader";
@@ -8,6 +8,8 @@ import { SourceCitation } from "@/components/shared/SourceCitation";
 import { ConfidenceMeter } from "@/components/shared/ConfidenceMeter";
 import { QueryResult, EvidenceSnippet, Subsidiary } from "@/types";
 import { askDataForgeQuery, fetchRecentQueries } from "@/services/queries";
+import { fetchDocuments } from "@/services/documents";
+import { ApiError } from "@/services/api";
 
 interface AskPageProps {
   onInspectEvidence: (evidence: EvidenceSnippet) => void;
@@ -25,21 +27,38 @@ export function AskPage({ onInspectEvidence, selectedSubsidiary }: AskPageProps)
   const [queryInput, setQueryInput] = useState("");
   const [activeResult, setActiveResult] = useState<QueryResult | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [queryError, setQueryError] = useState<string | null>(null);
+  const [indexedCount, setIndexedCount] = useState<number | null>(null);
 
+  // Report how many documents are actually indexed, rather than a fixed figure.
   useEffect(() => {
-    fetchRecentQueries().then((queries) => {
-      if (queries.length > 0) setActiveResult(queries[0]);
-    });
+    fetchDocuments()
+      .then((docs) => setIndexedCount(docs.length))
+      .catch(() => setIndexedCount(null));
+  }, []);
+
+  // Show the most recent question from GET /query-history on first load.
+  useEffect(() => {
+    fetchRecentQueries()
+      .then((queries) => {
+        if (queries.length > 0) setActiveResult(queries[0]);
+      })
+      .catch(() => {
+        /* History is a convenience; a cold or offline backend is not an error here. */
+      });
   }, []);
 
   const handleRunQuery = async (queryText: string) => {
     if (!queryText.trim()) return;
     setIsLoading(true);
+    setQueryError(null);
     try {
       const res = await askDataForgeQuery(queryText);
       setActiveResult(res);
-    } catch (e) {
-      console.error(e);
+    } catch (err) {
+      setQueryError(
+        err instanceof ApiError ? err.message : "The query failed. Please try again."
+      );
     } finally {
       setIsLoading(false);
     }
@@ -96,12 +115,27 @@ export function AskPage({ onInspectEvidence, selectedSubsidiary }: AskPageProps)
         </div>
 
         <p className="text-xs text-muted-foreground">
-          Grounded in 1,428 archival reports · Scope:{" "}
+          {indexedCount === null
+            ? "Grounded in the indexed report corpus"
+            : `Grounded in ${indexedCount.toLocaleString("en-IN")} indexed ${
+                indexedCount === 1 ? "report" : "reports"
+              }`}{" "}
+          · Scope:{" "}
           <span className="font-medium text-foreground">
             {selectedSubsidiary === "ALL" ? "All subsidiaries" : selectedSubsidiary}
           </span>
         </p>
       </div>
+
+      {queryError && (
+        <div
+          role="alert"
+          className="flex items-start gap-2 rounded-lg border border-destructive/40 bg-destructive-muted px-4 py-3 text-sm text-destructive"
+        >
+          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>{queryError}</span>
+        </div>
+      )}
 
       {activeResult && (
         <div className="space-y-8">
@@ -110,7 +144,7 @@ export function AskPage({ onInspectEvidence, selectedSubsidiary }: AskPageProps)
             <h2 className="text-lg font-semibold leading-snug tracking-tight text-foreground">
               {activeResult.question}
             </h2>
-            <p className="mt-3 max-w-3xl text-sm leading-relaxed text-foreground">
+            <p className="mt-3 max-w-3xl whitespace-pre-wrap text-sm leading-relaxed text-foreground">
               {activeResult.answer}
             </p>
             <div className="mt-4 flex flex-wrap items-center gap-2">
@@ -125,31 +159,37 @@ export function AskPage({ onInspectEvidence, selectedSubsidiary }: AskPageProps)
             </div>
           </section>
 
-          <Separator />
+          {activeResult.keyFindings.length > 0 && (
+            <>
+              <Separator />
 
-          {/* Key findings — a list, not a grid of boxes */}
-          <Section title="Key findings">
-            <ol className="max-w-3xl space-y-3">
-              {activeResult.keyFindings.map((finding, idx) => (
-                <li key={idx} className="flex gap-3 text-sm leading-relaxed text-foreground">
-                  <span className="mt-0.5 shrink-0 font-mono text-xs tabular-nums text-muted-foreground">
-                    {String(idx + 1).padStart(2, "0")}
-                  </span>
-                  <span>{finding}</span>
-                </li>
-              ))}
-            </ol>
-          </Section>
+              {/* Key findings — a list, not a grid of boxes */}
+              <Section title="Key findings">
+                <ol className="max-w-3xl space-y-3">
+                  {activeResult.keyFindings.map((finding, idx) => (
+                    <li key={idx} className="flex gap-3 text-sm leading-relaxed text-foreground">
+                      <span className="mt-0.5 shrink-0 font-mono text-xs tabular-nums text-muted-foreground">
+                        {String(idx + 1).padStart(2, "0")}
+                      </span>
+                      <span>{finding}</span>
+                    </li>
+                  ))}
+                </ol>
+              </Section>
+            </>
+          )}
 
-          <Separator />
+          {activeResult.evidence.length > 0 && (
+            <>
+              <Separator />
 
-          {/* Evidence — the one place cards genuinely earn their keep */}
-          <Section
-            title="Evidence"
-            description="The exact passages this answer was drawn from. Open one to inspect its source page."
-          >
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              {activeResult.evidence.map((ev) => (
+              {/* Evidence — the one place cards genuinely earn their keep */}
+              <Section
+                title="Evidence"
+                description="The exact passages this answer was drawn from. Open one to inspect its source page."
+              >
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  {activeResult.evidence.map((ev) => (
                 <button
                   key={ev.id}
                   onClick={() => onInspectEvidence(ev)}
@@ -172,13 +212,23 @@ export function AskPage({ onInspectEvidence, selectedSubsidiary }: AskPageProps)
                   </div>
                 </button>
               ))}
-            </div>
-          </Section>
+                </div>
+              </Section>
+            </>
+          )}
 
           <Separator />
 
           {/* Sources */}
-          <Section title="Sources">
+          <Section
+            title="Sources"
+            description="The indexed reports this answer drew on."
+          >
+            {activeResult.sourceDocuments.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                The backend did not report which documents this answer drew on.
+              </p>
+            ) : (
             <ul className="divide-y divide-border border-y border-border">
               {activeResult.sourceDocuments.map((src) => (
                 <li
@@ -188,15 +238,20 @@ export function AskPage({ onInspectEvidence, selectedSubsidiary }: AskPageProps)
                   <span className="min-w-0 flex-1 truncate text-sm text-foreground">
                     {src.filename}
                   </span>
-                  <span className="font-mono text-xs tabular-nums text-muted-foreground">
-                    pp. {src.pageNumbers.join(", ")}
-                  </span>
-                  <span className="font-mono text-xs tabular-nums text-teal">
-                    {Math.round(src.relevanceScore * 100)}% match
-                  </span>
+                  {src.pageNumbers && src.pageNumbers.length > 0 && (
+                    <span className="font-mono text-xs tabular-nums text-muted-foreground">
+                      pp. {src.pageNumbers.join(", ")}
+                    </span>
+                  )}
+                  {src.relevanceScore !== undefined && (
+                    <span className="font-mono text-xs tabular-nums text-teal">
+                      {Math.round(src.relevanceScore * 100)}% match
+                    </span>
+                  )}
                 </li>
               ))}
             </ul>
+            )}
           </Section>
         </div>
       )}
