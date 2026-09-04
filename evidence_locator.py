@@ -60,10 +60,30 @@ def _search_variants(value: str) -> List[str]:
     return sorted({v for v in variants if len(v) >= 3}, key=len, reverse=True)
 
 
+def _digit_tolerant_pattern(variant: str) -> str:
+    """
+    Build a pattern that ignores how digits are grouped.
+
+    Extracted values and documents disagree on separators — "125000",
+    "125,000" and the Indian lakh form "1,25,000" are the same number. Allowing
+    optional separators *between digits* matches all three without letting the
+    pattern match a different number.
+    """
+    parts = []
+    for i, char in enumerate(variant):
+        if char.isdigit():
+            if i > 0 and variant[i - 1].isdigit():
+                parts.append(r"[,\s]*")
+            parts.append(re.escape(char))
+        else:
+            parts.append(re.escape(char))
+    return "".join(parts)
+
+
 def _find_in_pages(pages: List[str], value: str) -> Optional[Dict[str, Any]]:
     """Locate a value in the page text, returning its page and passage."""
     for variant in _search_variants(value):
-        pattern = re.compile(re.escape(variant), re.IGNORECASE)
+        pattern = re.compile(_digit_tolerant_pattern(variant), re.IGNORECASE)
         for index, page_text in enumerate(pages):
             if not page_text:
                 continue
