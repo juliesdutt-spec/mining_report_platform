@@ -147,6 +147,9 @@ export interface BackendQueryResponse {
   answer: string;
   reports_used: number;
   report_ids?: number[];
+  /** Passages located in the reports the answer drew on. */
+  evidence?: BackendEvidence[];
+  sources?: { id: number; filename: string }[];
 }
 
 /** GET /query-history */

@@ -11,12 +11,11 @@ import {
  *
  * The backend takes `question` as a QUERY PARAMETER (not a JSON body) — see
  * `query_mining_reports` in backend/api.py — and answers using every completed
- * report as context.
+ * report as context. Alongside the answer it returns the passages it could
+ * locate in those reports and the documents they came from.
  *
- * It returns only `{ question, answer, reports_used, report_ids }`. There are no
- * passage-level citations, page numbers or relevance scores, so `evidence` and
- * `keyFindings` come back empty and `sourceDocuments` carries just the real
- * documents the answer drew on. Nothing here is synthesised to fill the UI.
+ * Relevance scores and key findings are still not modelled server-side, so
+ * those stay empty rather than being synthesised to fill the UI.
  */
 export async function askDataForgeQuery(question: string): Promise<QueryResult> {
   const res = await apiFetch<BackendQueryResponse>(
@@ -25,14 +24,27 @@ export async function askDataForgeQuery(question: string): Promise<QueryResult> 
     120000
   );
 
-  const sourceDocuments = await resolveSourceDocuments(res.report_ids);
+  // Prefer the named sources the backend returns; fall back to resolving ids.
+  const sourceDocuments = res.sources?.length
+    ? res.sources.map((s) => ({ id: s.id, filename: s.filename }))
+    : await resolveSourceDocuments(res.report_ids);
 
   return {
     id: `q-${Date.now()}`,
     question: res.question ?? question,
     answer: res.answer,
     keyFindings: [],
-    evidence: [],
+    // Real passages located in the source documents; empty when none verify.
+    evidence: (res.evidence ?? []).map((e) => ({
+      id: e.id,
+      documentId: e.documentId,
+      documentName: e.documentName,
+      pageNumber: e.pageNumber,
+      sectionHeader: e.sectionHeader,
+      field: e.field,
+      extractedValue: e.extractedValue,
+      originalContext: e.originalContext,
+    })),
     sourceDocuments,
     timestamp: new Date().toISOString(),
   };

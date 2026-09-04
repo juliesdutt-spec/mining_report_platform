@@ -333,11 +333,22 @@ def query_mining_reports(
         db.add(query_record)
         db.commit()
         
+        # Passages located in the reports this answer drew on, so the client can
+        # show where the figures come from. Reports whose values cannot be
+        # verified in their own text contribute nothing.
+        evidence = []
+        for r in reports:
+            evidence.extend(locate_evidence(r))
+
         return {
             "question": question,
             "answer": answer,
             "reports_used": len(reports),
             "report_ids": [r.id for r in reports],
+            "evidence": evidence,
+            "sources": [
+                {"id": r.id, "filename": r.filename} for r in reports
+            ],
         }
         
     except Exception as e:

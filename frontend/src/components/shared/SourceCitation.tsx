@@ -37,9 +37,12 @@ export function SourceCitation({ evidence, onClick, compact = false, className }
         <span className="truncate font-medium">{evidence.documentName}</span>
       )}
       <span className="shrink-0 font-mono tabular-nums opacity-80">p.{evidence.pageNumber}</span>
-      <span className="shrink-0 opacity-40">·</span>
+      {/* The separator belongs to the confidence figure, so both disappear together. */}
       {confPct !== null && (
-        <span className="shrink-0 font-mono tabular-nums opacity-80">{confPct}%</span>
+        <>
+          <span className="shrink-0 opacity-40">·</span>
+          <span className="shrink-0 font-mono tabular-nums opacity-80">{confPct}%</span>
+        </>
       )}
     </button>
   );
