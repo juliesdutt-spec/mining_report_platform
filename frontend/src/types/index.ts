@@ -118,29 +118,34 @@ export interface TopicEntity {
   documentIds: number[];
 }
 
+/**
+ * A discrepancy computed by the backend from the stored reports
+ * (validation_engine.detect_discrepancies).
+ *
+ * Page numbers and per-extraction confidence are not modelled server-side, so
+ * they are absent here rather than invented; the UI omits them.
+ */
 export interface ValidationItem {
   id: string;
-  type: 'conflict' | 'low_confidence' | 'missing_data' | 'duplicate';
+  type: 'conflict' | 'duplicate' | 'missing_data' | 'extraction_error';
   severity: 'high' | 'medium' | 'low';
   title: string;
   fieldName: string;
-  subsidiary: Subsidiary;
-  mineName: string;
-  sourceA: {
-    documentId: number;
-    documentName: string;
-    pageNumber: number;
-    value: string;
-    confidence: number;
-  };
-  sourceB?: {
-    documentId: number;
-    documentName: string;
-    pageNumber: number;
-    value: string;
-    confidence: number;
-  };
+  /** Present when the reports identify a mine or location. */
+  mineName?: string;
+  /** Explains why the finding was raised. */
+  detail?: string;
+  sourceA: ValidationSource;
+  sourceB?: ValidationSource | null;
   status: 'pending' | 'resolved' | 'flagged';
-  dateReported: string;
-  resolutionNote?: string;
+  resolutionNote?: string | null;
+  resolvedAt?: string | null;
+  /** Not modelled by the backend. */
+  subsidiary?: Subsidiary;
+}
+
+export interface ValidationSource {
+  documentId: number;
+  documentName: string;
+  value?: string | null;
 }

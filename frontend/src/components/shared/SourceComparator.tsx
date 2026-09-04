@@ -6,9 +6,10 @@ import { FieldLabel } from "@/components/shared/Section";
 
 export interface ComparatorSource {
   documentName: string;
-  pageNumber: number;
-  value: string;
-  confidence: number;
+  value?: string | null;
+  /** Not modelled by the backend; omitted from the pane when absent. */
+  pageNumber?: number;
+  confidence?: number;
 }
 
 interface SourceComparatorProps {
@@ -35,7 +36,9 @@ function SourcePane({
     <div className="min-w-0 flex-1 p-5">
       <div className="flex items-center justify-between gap-2">
         <FieldLabel>{label}</FieldLabel>
-        <ConfidenceMeter value={source.confidence} compact />
+        {source.confidence !== undefined && (
+          <ConfidenceMeter value={source.confidence} compact />
+        )}
       </div>
 
       <div
@@ -44,7 +47,7 @@ function SourcePane({
           emphasis === "warning" ? "text-warning" : "text-success"
         )}
       >
-        {source.value}
+        {source.value ?? "\u2014"}
       </div>
 
       <dl className="mt-4 space-y-1 border-t border-border pt-3 text-xs">
@@ -54,10 +57,12 @@ function SourcePane({
             {source.documentName}
           </dd>
         </div>
-        <div className="flex justify-between gap-3">
-          <dt className="text-muted-foreground">Page</dt>
-          <dd className="font-mono tabular-nums text-foreground">{source.pageNumber}</dd>
-        </div>
+        {source.pageNumber !== undefined && (
+          <div className="flex justify-between gap-3">
+            <dt className="text-muted-foreground">Page</dt>
+            <dd className="font-mono tabular-nums text-foreground">{source.pageNumber}</dd>
+          </div>
+        )}
       </dl>
     </div>
   );

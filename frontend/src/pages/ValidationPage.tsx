@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { AlertTriangle, Check, CheckCircle2 } from "lucide-react";
+import { AlertCircle, Check, CheckCircle2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -9,7 +9,9 @@ import { Stat, StatGroup } from "@/components/shared/StatGroup";
 import { SourceComparator } from "@/components/shared/SourceComparator";
 import { cn } from "@/lib/utils";
 import { ValidationItem, EvidenceSnippet, Subsidiary } from "@/types";
-import { fetchValidationItems, markItemValidated } from "@/services/validation";
+import { fetchValidation, resolveValidationFinding } from "@/services/validation";
+import { Skeleton } from "@/components/ui/skeleton";
+import { ApiError } from "@/services/api";
 
 interface ValidationPageProps {
   onInspectEvidence: (evidence: EvidenceSnippet) => void;
@@ -19,14 +21,14 @@ interface ValidationPageProps {
 /** Severity is carried by a left rule on the queue row, not a filled badge. */
 const SEVERITY_RULE: Record<ValidationItem["type"], string> = {
   conflict: "bg-destructive",
-  low_confidence: "bg-warning",
+  extraction_error: "bg-destructive",
   missing_data: "bg-warning",
   duplicate: "bg-muted-foreground",
 };
 
 const TYPE_LABEL: Record<ValidationItem["type"], string> = {
   conflict: "Value conflict",
-  low_confidence: "Low confidence",
+  extraction_error: "Extraction failed",
   missing_data: "Missing data",
   duplicate: "Duplicate",
 };
@@ -35,30 +37,64 @@ export function ValidationPage({ selectedSubsidiary }: ValidationPageProps) {
   const [items, setItems] = useState<ValidationItem[]>([]);
   const [activeItem, setActiveItem] = useState<ValidationItem | null>(null);
   const [statusFilter, setStatusFilter] = useState<"all" | "pending" | "resolved">("all");
+  const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [isResolving, setIsResolving] = useState(false);
+
+  /** GET /validation — findings recomputed by the backend on every call. */
+  const load = async (keepId?: string) => {
+    setIsLoading(true);
+    try {
+      const res = await fetchValidation();
+      setItems(res.findings);
+      setLoadError(null);
+      setActiveItem((current) => {
+        const target = keepId ?? current?.id;
+        return res.findings.find((f) => f.id === target) ?? res.findings[0] ?? null;
+      });
+    } catch (err) {
+      setLoadError(err instanceof ApiError ? err.message : "Could not load findings.");
+      setItems([]);
+      setActiveItem(null);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   useEffect(() => {
-    fetchValidationItems().then((res) => {
-      setItems(res);
-      if (res.length > 0) setActiveItem(res[0]);
-    });
+    void load();
   }, []);
 
-  const handleResolve = async (id: string, note: string) => {
-    const updated = await markItemValidated(id, note);
-    setItems(updated);
-    const curr = updated.find((i) => i.id === id);
-    if (curr) setActiveItem(curr);
+  const handleResolve = async (
+    id: string,
+    status: "resolved" | "flagged" | "pending",
+    note?: string
+  ) => {
+    setIsResolving(true);
+    setActionError(null);
+    try {
+      await resolveValidationFinding(id, status, note);
+      await load(id);
+    } catch (err) {
+      setActionError(
+        err instanceof ApiError ? err.message : "Could not record that decision."
+      );
+    } finally {
+      setIsResolving(false);
+    }
   };
 
   const filtered = items.filter((item) => {
-    const matchesSub = selectedSubsidiary === "ALL" || item.subsidiary === selectedSubsidiary;
-    const matchesStatus = statusFilter === "all" || item.status === statusFilter;
-    return matchesSub && matchesStatus;
+    const matchesStatus =
+      statusFilter === "all" ||
+      (statusFilter === "pending" ? item.status === "pending" : item.status !== "pending");
+    return matchesStatus;
   });
 
   const pendingCount = items.filter((i) => i.status === "pending").length;
   const conflictCount = items.filter((i) => i.type === "conflict").length;
-  const lowConfCount = items.filter((i) => i.type === "low_confidence").length;
+  const duplicateCount = items.filter((i) => i.type === "duplicate").length;
 
   return (
     <div className="space-y-8">
@@ -67,28 +103,31 @@ export function ValidationPage({ selectedSubsidiary }: ValidationPageProps) {
         description="Reconcile conflicting figures across subsidiary ledgers and verify low-confidence extractions against their source pages."
       />
 
-      {/*
-        The backend models no discrepancy or conflict concept, so this screen is
-        a design prototype over sample records. Saying so plainly is better than
-        presenting fabricated findings as real audit results.
-      */}
-      <div
-        role="note"
-        className="flex items-start gap-2 rounded-lg border border-warning/40 bg-warning-muted px-4 py-3 text-sm text-warning"
-      >
-        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-        <span>
-          <strong className="font-medium">Planned capability — sample data.</strong>{" "}
-          Cross-document discrepancy detection is not implemented in the backend yet. The records
-          below are illustrative and are not derived from your uploaded documents.
-        </span>
-      </div>
+      {loadError && (
+        <div
+          role="alert"
+          className="flex items-start gap-2 rounded-lg border border-destructive/40 bg-destructive-muted px-4 py-3 text-sm text-destructive"
+        >
+          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>{loadError}</span>
+        </div>
+      )}
+
+      {actionError && (
+        <div
+          role="alert"
+          className="flex items-start gap-2 rounded-lg border border-destructive/40 bg-destructive-muted px-4 py-3 text-sm text-destructive"
+        >
+          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>{actionError}</span>
+        </div>
+      )}
 
       <StatGroup>
-        <Stat label="Audited records" value="94,620" hint="Across 8 subsidiaries" />
-        <Stat label="Compliance rate" value="98.6%" tone="success" delta="+0.4%" deltaType="positive" />
-        <Stat label="Value conflicts" value={conflictCount} tone="destructive" hint="Awaiting reconciliation" />
-        <Stat label="Low-confidence scans" value={lowConfCount} tone="warning" hint="Below OCR threshold" />
+        <Stat label="Open findings" value={pendingCount} tone={pendingCount > 0 ? "warning" : "success"} hint="Awaiting an auditor decision" />
+        <Stat label="Value conflicts" value={conflictCount} tone="destructive" hint="Reports that disagree" />
+        <Stat label="Duplicates" value={duplicateCount} hint="Same document ingested twice" />
+        <Stat label="Total findings" value={items.length} hint="Computed from indexed reports" />
       </StatGroup>
 
       <div className="grid grid-cols-1 gap-8 lg:grid-cols-12">
@@ -107,7 +146,14 @@ export function ValidationPage({ selectedSubsidiary }: ValidationPageProps) {
             }
           >
             <ul className="divide-y divide-border border-y border-border">
-              {filtered.map((item) => {
+              {isLoading &&
+                [0, 1, 2].map((i) => (
+                  <li key={`sk-${i}`}>
+                    <Skeleton className="h-20 w-full" />
+                  </li>
+                ))}
+
+              {!isLoading && filtered.map((item) => {
                 const isSelected = activeItem?.id === item.id;
                 return (
                   <li key={item.id}>
@@ -144,7 +190,7 @@ export function ValidationPage({ selectedSubsidiary }: ValidationPageProps) {
                 );
               })}
 
-              {filtered.length === 0 && (
+              {!isLoading && filtered.length === 0 && (
                 <li className="py-12 text-center text-sm text-muted-foreground">
                   Nothing in the queue for this filter.
                 </li>
@@ -158,40 +204,57 @@ export function ValidationPage({ selectedSubsidiary }: ValidationPageProps) {
           {activeItem ? (
             <Section
               title={activeItem.title}
-              description={`${activeItem.subsidiary} · ${activeItem.mineName}`}
+              description={activeItem.mineName ?? `Field: ${activeItem.fieldName}`}
             >
               <SourceComparator
                 fieldName={activeItem.fieldName}
                 a={activeItem.sourceA}
-                b={activeItem.sourceB}
-                labelA="Annual review"
-                labelB="Dispatch ledger"
+                b={activeItem.sourceB ?? undefined}
+                labelA="First report"
+                labelB="Second report"
               />
 
               <div className="pt-2">
                 <FieldLabel>Reconciliation note</FieldLabel>
                 <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-                  The variance arises between the annual review figure and the subsidiary dispatch
-                  ledger, which records net railway weighbridge tickets. Where the two disagree, the
-                  weighbridge ledger is normally treated as the statutory figure.
+                  {activeItem.detail ??
+                    "This finding was raised automatically from the indexed reports."}
                 </p>
               </div>
 
               <Separator />
 
-              {activeItem.status === "resolved" ? (
-                <p className="flex items-start gap-2 text-sm text-success">
-                  <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
-                  <span>{activeItem.resolutionNote || "Marked validated by the auditor."}</span>
-                </p>
+              {activeItem.status !== "pending" ? (
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <p className="flex items-start gap-2 text-sm text-success">
+                    <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+                    <span>
+                      {activeItem.resolutionNote ||
+                        `Marked ${activeItem.status} by the auditor.`}
+                    </span>
+                  </p>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => handleResolve(activeItem.id, "pending")}
+                    disabled={isResolving}
+                  >
+                    Reopen
+                  </Button>
+                </div>
               ) : (
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <Button
                     variant="ghost"
                     size="sm"
                     onClick={() =>
-                      handleResolve(activeItem.id, "Flagged for physical audit by the CMPDI regional institute")
+                      handleResolve(
+                        activeItem.id,
+                        "flagged",
+                        "Flagged for physical audit by the CMPDI regional institute"
+                      )
                     }
+                    disabled={isResolving}
                   >
                     Flag for site inspection
                   </Button>
@@ -204,9 +267,11 @@ export function ValidationPage({ selectedSubsidiary }: ValidationPageProps) {
                         onClick={() =>
                           handleResolve(
                             activeItem.id,
-                            `Reconciled to the dispatch ledger figure (${activeItem.sourceB?.value})`
+                            "resolved",
+                            `Adopted the second report's value (${activeItem.sourceB?.value})`
                           )
                         }
+                        disabled={isResolving}
                       >
                         Adopt {activeItem.sourceB.value}
                       </Button>
@@ -214,8 +279,13 @@ export function ValidationPage({ selectedSubsidiary }: ValidationPageProps) {
                     <Button
                       size="sm"
                       onClick={() =>
-                        handleResolve(activeItem.id, `Validated ${activeItem.sourceA.value} against the source page`)
+                        handleResolve(
+                          activeItem.id,
+                          "resolved",
+                          `Validated ${activeItem.sourceA.value ?? "this record"} against the source document`
+                        )
                       }
+                      disabled={isResolving}
                     >
                       <Check className="h-3.5 w-3.5" />
                       Mark validated

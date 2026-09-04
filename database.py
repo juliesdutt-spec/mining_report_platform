@@ -57,6 +57,23 @@ class QueryHistory(Base):
     report_ids_used = Column(JSON, nullable=True)
 
 
+class ValidationResolution(Base):
+    """
+    An auditor's decision on a discrepancy.
+
+    Findings themselves are recomputed from the reports on every request, so
+    only the human decision is persisted, keyed by the finding's deterministic
+    id (see validation_engine.detect_discrepancies).
+    """
+    __tablename__ = "validation_resolutions"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    finding_id = Column(String(255), nullable=False, unique=True, index=True)
+    status = Column(String(50), default="resolved")  # resolved, flagged
+    resolution_note = Column(Text, nullable=True)
+    resolved_at = Column(DateTime, default=datetime.utcnow)
+
+
 def init_db():
     """Initialize database tables"""
     Base.metadata.create_all(bind=engine)

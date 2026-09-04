@@ -27,13 +27,14 @@ from sqlalchemy.orm import Session
 # Add parent directory to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from database import init_db, get_db, MiningReport, QueryHistory
+from database import init_db, get_db, MiningReport, QueryHistory, ValidationResolution
 from document_processor import extract_text_from_pdf, chunk_text, get_pdf_metadata
 from ai_extractor import (
     extract_structured_data, summarize_report, identify_topics,
     query_reports, generate_report_content
 )
 from report_generator import generate_pdf_report
+from validation_engine import detect_discrepancies
 from wordcloud_generator import generate_word_cloud_bytes, extract_topics, get_topic_distribution
 
 # Initialize FastAPI app
@@ -361,6 +362,82 @@ def get_statistics(db: Session = Depends(get_db)):
         "mineral_distribution": {m: c for m, c in minerals if m},
         "location_distribution": {l: c for l, c in locations if l},
     }
+
+
+@app.get("/validation")
+def list_validation_findings(db: Session = Depends(get_db)):
+    """
+    Cross-document discrepancies computed from the stored reports.
+
+    Findings are derived, not stored: conflicting field values between reports
+    about the same mine, duplicate ingests, fields the extractor left empty, and
+    failed extractions. Auditor decisions are merged in from
+    validation_resolutions by the finding's deterministic id.
+    """
+    reports = db.query(MiningReport).all()
+    findings = detect_discrepancies(reports)
+
+    resolutions = {
+        r.finding_id: r for r in db.query(ValidationResolution).all()
+    }
+
+    for finding in findings:
+        record = resolutions.get(finding["id"])
+        finding["status"] = record.status if record else "pending"
+        finding["resolutionNote"] = record.resolution_note if record else None
+        finding["resolvedAt"] = (
+            record.resolved_at.isoformat() if record and record.resolved_at else None
+        )
+
+    counts = {
+        "total": len(findings),
+        "pending": sum(1 for f in findings if f["status"] == "pending"),
+        "resolved": sum(1 for f in findings if f["status"] != "pending"),
+        "high": sum(1 for f in findings if f["severity"] == "high"),
+    }
+    return {"counts": counts, "findings": findings}
+
+
+@app.post("/validation/{finding_id}/resolve")
+def resolve_validation_finding(
+    finding_id: str,
+    status: str = Query("resolved", description="resolved or flagged"),
+    note: Optional[str] = Query(None, description="Auditor's resolution note"),
+    db: Session = Depends(get_db),
+):
+    """Record an auditor's decision on a discrepancy."""
+    if status not in ("resolved", "flagged", "pending"):
+        raise HTTPException(status_code=400, detail="status must be resolved, flagged or pending")
+
+    # The id must correspond to a finding that currently exists.
+    valid_ids = {f["id"] for f in detect_discrepancies(db.query(MiningReport).all())}
+    if finding_id not in valid_ids:
+        raise HTTPException(status_code=404, detail="Finding not found")
+
+    record = db.query(ValidationResolution).filter(
+        ValidationResolution.finding_id == finding_id
+    ).first()
+
+    if status == "pending":
+        # Reopening simply removes the stored decision.
+        if record:
+            db.delete(record)
+            db.commit()
+        return {"finding_id": finding_id, "status": "pending"}
+
+    if record:
+        record.status = status
+        record.resolution_note = note
+        record.resolved_at = datetime.utcnow()
+    else:
+        db.add(ValidationResolution(
+            finding_id=finding_id,
+            status=status,
+            resolution_note=note,
+        ))
+    db.commit()
+
+    return {"finding_id": finding_id, "status": status, "resolutionNote": note}
 
 
 @app.get("/query-history")

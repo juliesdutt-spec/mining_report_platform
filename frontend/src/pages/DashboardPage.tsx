@@ -41,7 +41,7 @@ import {
 import { fetchPlatformStats } from "@/services/analytics";
 import { BackendStats } from "@/services/api";
 import { fetchDocuments } from "@/services/documents";
-import { fetchValidationItems } from "@/services/validation";
+import { fetchValidation } from "@/services/validation";
 import { fetchRecentQueries } from "@/services/queries";
 
 interface DashboardPageProps {
@@ -68,7 +68,9 @@ export function DashboardPage({
     fetchDocuments()
       .then(setDocuments)
       .catch(() => setDocuments([]));
-    fetchValidationItems().then(setValidationAlerts);
+    fetchValidation()
+      .then((res) => setValidationAlerts(res.findings))
+      .catch(() => setValidationAlerts([]));
     fetchRecentQueries()
       .then(setRecentQueries)
       .catch(() => setRecentQueries([]));
@@ -217,14 +219,14 @@ export function DashboardPage({
                   <TableCell>
                     <div className="font-medium text-foreground">{alert.title}</div>
                     <div className="mt-0.5 text-xs text-muted-foreground">
-                      {alert.subsidiary} · {alert.mineName}
+                      {alert.mineName ?? alert.sourceA.documentName}
                     </div>
                   </TableCell>
                   <TableCell className="font-mono text-xs text-muted-foreground">
                     {alert.fieldName}
                   </TableCell>
                   <TableCell className="text-right font-mono tabular-nums text-warning">
-                    {alert.sourceA.value}
+                    {alert.sourceA.value ?? "\u2014"}
                   </TableCell>
                   <TableCell className="text-right font-mono tabular-nums text-success">
                     {alert.sourceB?.value ?? "—"}
