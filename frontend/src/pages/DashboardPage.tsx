@@ -37,7 +37,8 @@ import {
   NavigationTab,
   Subsidiary,
 } from "@/types";
-import { fetchKpiMetrics, fetchProductionTrends } from "@/services/analytics";
+import { fetchPlatformStats, fetchProductionTrends } from "@/services/analytics";
+import { BackendStats } from "@/services/api";
 import { fetchDocuments } from "@/services/documents";
 import { fetchValidationItems } from "@/services/validation";
 import { fetchRecentQueries } from "@/services/queries";
@@ -53,7 +54,7 @@ export function DashboardPage({
   onInspectEvidence,
   selectedSubsidiary,
 }: DashboardPageProps) {
-  const [kpiData, setKpiData] = useState<KpiMetrics | null>(null);
+  const [stats, setStats] = useState<BackendStats | null>(null);
   const [trendInterval, setTrendInterval] = useState<"3m" | "30d" | "7d">("3m");
   const [trendData, setTrendData] = useState<ProductionDataPoint[]>([]);
   const [documents, setDocuments] = useState<MiningDocument[]>([]);
@@ -62,7 +63,9 @@ export function DashboardPage({
   const colors = useChartColors();
 
   useEffect(() => {
-    fetchKpiMetrics().then(setKpiData);
+    fetchPlatformStats()
+      .then(setStats)
+      .catch(() => setStats(null));
     fetchDocuments()
       .then(setDocuments)
       .catch(() => setDocuments([]));
@@ -105,31 +108,26 @@ export function DashboardPage({
       {/* One stat strip replaces eight bordered boxes */}
       <StatGroup>
         <Stat
-          label="Automation rate"
-          value={`${kpiData?.automationRate ?? 94.2}%`}
-          delta="+3.8%"
-          deltaType="positive"
-          hint="Against an 80% target"
+          label="Documents indexed"
+          value={stats ? stats.total_reports.toLocaleString("en-IN") : "\u2014"}
+          hint="Uploaded to the reports database"
         />
         <Stat
-          label="Extraction accuracy"
-          value={`${kpiData?.extractionAccuracy ?? 98.6}%`}
-          delta="+0.4%"
-          deltaType="positive"
-          hint="Verified by CMPDI auditors"
+          label="Extracted successfully"
+          value={stats ? stats.completed.toLocaleString("en-IN") : "\u2014"}
+          tone="success"
+          hint="Text and entities extracted"
         />
         <Stat
-          label="Documents ingested"
-          value={(kpiData?.documentsProcessed ?? 1428).toLocaleString("en-IN")}
-          delta="+12.5%"
-          deltaType="positive"
-          hint={`${(kpiData?.pagesProcessed ?? 28410).toLocaleString("en-IN")} pages indexed`}
+          label="Questions answered"
+          value={stats ? stats.total_queries.toLocaleString("en-IN") : "\u2014"}
+          hint="Grounded queries run to date"
         />
         <Stat
-          label="Open discrepancies"
-          value={openAlerts.length}
-          tone={openAlerts.length > 0 ? "warning" : "success"}
-          hint="Awaiting auditor triage"
+          label="Failed extractions"
+          value={stats ? stats.errors.toLocaleString("en-IN") : "\u2014"}
+          tone={stats && stats.errors > 0 ? "warning" : "success"}
+          hint="Documents needing re-upload"
         />
       </StatGroup>
 

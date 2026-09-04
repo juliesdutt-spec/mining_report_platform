@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { AlertCircle, CheckCircle2, Upload } from "lucide-react";
+import { AlertCircle, CheckCircle2, Download, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -11,7 +11,7 @@ import { ConfidenceMeter } from "@/components/shared/ConfidenceMeter";
 import { cn } from "@/lib/utils";
 import { MiningDocument, EvidenceSnippet, Subsidiary } from "@/types";
 import { fetchDocuments, getDocumentById, uploadMiningDocument } from "@/services/documents";
-import { ApiError } from "@/services/api";
+import { ApiError, reportDownloadUrl } from "@/services/api";
 
 interface DocumentsPageProps {
   onInspectEvidence: (evidence: EvidenceSnippet) => void;
@@ -225,9 +225,22 @@ export function DocumentsPage({ onInspectEvidence, selectedSubsidiary }: Documen
               <h2 className="min-w-0 truncate text-base font-semibold tracking-tight text-foreground">
                 {selectedDoc.filename}
               </h2>
-              <span className="shrink-0 font-mono text-xs tabular-nums text-muted-foreground">
-                {selectedDoc.pageCount !== undefined ? `${selectedDoc.pageCount} pp.` : "—"}
-              </span>
+              <div className="flex shrink-0 items-baseline gap-3">
+                <span className="font-mono text-xs tabular-nums text-muted-foreground">
+                  {selectedDoc.pageCount !== undefined ? `${selectedDoc.pageCount} pp.` : "\u2014"}
+                </span>
+                {/* GET /reports/{id}/download — the backend generates the PDF. */}
+                <Button variant="outline" size="sm" asChild>
+                  <a
+                    href={reportDownloadUrl(selectedDoc.id)}
+                    download
+                    aria-label={`Download extracted report PDF for ${selectedDoc.filename}`}
+                  >
+                    <Download className="h-3.5 w-3.5" />
+                    PDF
+                  </a>
+                </Button>
+              </div>
             </div>
 
             <article className="rounded-lg border border-border bg-card p-6 shadow-xs">

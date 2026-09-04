@@ -22,7 +22,7 @@ except ImportError:
 
 # Configuration
 CLAUDE_API_KEY = os.getenv("CLAUDE_API_KEY", "")
-CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-20250514")
+CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-opus-5")
 USE_MOCK = os.getenv("USE_MOCK_AI", "false").lower() == "true" or not CLAUDE_API_KEY
 
 

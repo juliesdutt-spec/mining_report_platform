@@ -145,4 +145,23 @@ export interface BackendQueryHistoryResponse {
   }[];
 }
 
+/** GET /stats */
+export interface BackendStats {
+  total_reports: number;
+  completed: number;
+  errors: number;
+  total_queries: number;
+  mineral_distribution: Record<string, number>;
+  location_distribution: Record<string, number>;
+}
+
+/**
+ * GET /reports/{id}/download — the backend streams a generated PDF
+ * (report_generator.generate_pdf_report). Returned as a URL so the browser
+ * can download it directly rather than buffering it through JS.
+ */
+export function reportDownloadUrl(reportId: number): string {
+  return `${API_BASE_URL}/reports/${reportId}/download`;
+}
+
 export { API_BASE_URL };
