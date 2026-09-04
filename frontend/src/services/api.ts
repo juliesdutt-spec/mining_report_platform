@@ -193,4 +193,27 @@ export function reportWordCloudUrl(reportId: number): string {
   return `${API_BASE_URL}/reports/${reportId}/wordcloud`;
 }
 
+/**
+ * POST /reports/generate — composes a dossier PDF across all completed reports.
+ * Returned as a URL so the browser downloads it directly.
+ */
+export function dossierUrl(options: {
+  title: string;
+  period: string;
+  execSummary: boolean;
+  productionOverview: boolean;
+  keyFindings: boolean;
+  sourceReferences: boolean;
+}): string {
+  const params = new URLSearchParams({
+    title: options.title,
+    period: options.period,
+    exec_summary: String(options.execSummary),
+    production_overview: String(options.productionOverview),
+    key_findings: String(options.keyFindings),
+    source_references: String(options.sourceReferences),
+  });
+  return `${API_BASE_URL}/reports/generate?${params.toString()}`;
+}
+
 export { API_BASE_URL };

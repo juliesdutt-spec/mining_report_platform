@@ -1,5 +1,5 @@
-import React, { useState } from "react";
-import { AlertTriangle, Download, Printer } from "lucide-react";
+import React, { useEffect, useState } from "react";
+import { AlertCircle, Download, Printer } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -21,22 +21,19 @@ import {
 } from "@/components/ui/table";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { FieldLabel } from "@/components/shared/Section";
+import { dossierUrl } from "@/services/api";
+import { fetchDocuments } from "@/services/documents";
+import { MiningDocument } from "@/types";
+import { Skeleton } from "@/components/ui/skeleton";
 
 const SECTIONS = [
   { key: "execSummary", label: "Executive summary" },
   { key: "productionOverview", label: "Production overview" },
   { key: "keyFindings", label: "Key findings" },
-  { key: "aiInsights", label: "Anomaly detection" },
   { key: "sourceReferences", label: "Source references" },
 ] as const;
 
 type SectionKey = (typeof SECTIONS)[number]["key"];
-
-const PRODUCTION_ROWS = [
-  { subsidiary: "SECL", mine: "Gevra OC", actual: "52.50", target: "50.00", ratio: "1:1.18", status: "Validated" },
-  { subsidiary: "NCL", mine: "Jayant OC", actual: "25.00", target: "25.00", ratio: "1:2.05", status: "Weighbridge check" },
-  { subsidiary: "BCCL", mine: "Moonidih UG", actual: "1.42", target: "1.50", ratio: "—", status: "Validated" },
-];
 
 export function ReportStudioPage() {
   const [reportType, setReportType] = useState("executive_summary");
@@ -45,7 +42,6 @@ export function ReportStudioPage() {
     execSummary: true,
     productionOverview: true,
     keyFindings: true,
-    aiInsights: true,
     sourceReferences: true,
   });
 
@@ -55,6 +51,33 @@ export function ReportStudioPage() {
   // The preview below re-renders directly from the section toggles, so there is
   // nothing to "generate" — no simulated delay is shown.
   const handlePrint = () => window.print();
+
+  const [documents, setDocuments] = useState<MiningDocument[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  // The preview and the generated PDF read the same indexed reports.
+  useEffect(() => {
+    fetchDocuments()
+      .then(setDocuments)
+      .catch(() => setDocuments([]))
+      .finally(() => setIsLoading(false));
+  }, []);
+
+  const periodLabel =
+    reportingPeriod === "fy2023_24"
+      ? "FY 2023-24 (annual)"
+      : reportingPeriod === "fy2024_25_q1"
+        ? "FY 2024-25 Q1"
+        : "FY 2024-25 Q2";
+
+  const downloadHref = dossierUrl({
+    title: "Consolidated Mining Report Dossier",
+    period: periodLabel,
+    execSummary: selectedSections.execSummary,
+    productionOverview: selectedSections.productionOverview,
+    keyFindings: selectedSections.keyFindings,
+    sourceReferences: selectedSections.sourceReferences,
+  });
 
   return (
     <div className="space-y-6">
@@ -77,13 +100,12 @@ export function ReportStudioPage() {
               <Download className="h-3.5 w-3.5" />
               DOCX
             </Button>
-            <Button
-              size="sm"
-              disabled
-              title="Composed-dossier PDF export is not implemented. Per-document PDFs are available on the Documents page."
-            >
-              <Download className="h-3.5 w-3.5" />
-              PDF
+            {/* POST /reports/generate composes the dossier from indexed reports. */}
+            <Button size="sm" asChild>
+              <a href={downloadHref} download aria-label="Download the composed dossier as PDF">
+                <Download className="h-3.5 w-3.5" />
+                PDF
+              </a>
             </Button>
           </>
         }
@@ -91,14 +113,13 @@ export function ReportStudioPage() {
 
       <div
         role="note"
-        className="flex items-start gap-2 rounded-lg border border-warning/40 bg-warning-muted px-4 py-3 text-sm text-warning"
+        className="flex items-start gap-2 rounded-lg border border-border bg-card px-4 py-3 text-sm text-muted-foreground"
       >
-        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+        <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
         <span>
-          <strong className="font-medium">Template preview — not generated from your documents.</strong>{" "}
-          There is no report-composition endpoint in the backend yet, so the layout below is a
-          static sample with illustrative figures. Real per-document PDFs are available from the
-          Documents page.
+          The preview and the downloaded PDF are both composed from the{" "}
+          <strong className="font-medium text-foreground">{documents.length}</strong> report(s)
+          currently indexed. Sections with no supporting data say so rather than being filled in.
         </span>
       </div>
 
@@ -182,14 +203,21 @@ export function ReportStudioPage() {
                   <h3 className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                     1 · Executive summary
                   </h3>
-                  <p className="mt-2 font-serif text-sm leading-relaxed text-foreground">
-                    Aggregated raw coal excavation across Coal India Limited subsidiaries reached{" "}
-                    <strong className="font-mono text-sm font-semibold">773.60 MT</strong>, maintaining
-                    a 10.0% annualised expansion. Mechanised opencast quarries contributed 93.8% of
-                    total volume, led by SECL Gevra (52.50 MT) and NCL Jayant (25.00 MT). Operations
-                    maintained compliance with DGMS statutory standards with zero fatal incidents
-                    logged across automated dispatch silos.
-                  </p>
+                  {isLoading ? (
+                    <Skeleton className="mt-2 h-16 w-full" />
+                  ) : (
+                    <p className="mt-2 font-serif text-sm leading-relaxed text-foreground">
+                      This dossier consolidates{" "}
+                      <strong className="font-mono text-sm font-semibold">{documents.length}</strong>{" "}
+                      indexed report(s) for {periodLabel}. Minerals recorded:{" "}
+                      {[...new Set(documents.map((d) => d.mineralType).filter(Boolean))].join(", ") ||
+                        "none recorded"}
+                      . Locations referenced:{" "}
+                      {[...new Set(documents.map((d) => d.location).filter(Boolean))].join(", ") ||
+                        "none recorded"}
+                      .
+                    </p>
+                  )}
                 </section>
               )}
 
@@ -202,41 +230,50 @@ export function ReportStudioPage() {
                     <Table>
                       <TableHeader>
                         <TableRow className="hover:bg-transparent">
-                          <TableHead>Subsidiary</TableHead>
-                          <TableHead>Lead mine</TableHead>
-                          <TableHead className="text-right">Actual</TableHead>
-                          <TableHead className="text-right">Target</TableHead>
-                          <TableHead className="text-right">Stripping</TableHead>
-                          <TableHead>Validation</TableHead>
+                          <TableHead>Document</TableHead>
+                          <TableHead>Mineral</TableHead>
+                          <TableHead className="text-right">Quantity</TableHead>
+                          <TableHead>Method</TableHead>
+                          <TableHead>Status</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {PRODUCTION_ROWS.map((row) => (
-                          <TableRow key={row.subsidiary}>
-                            <TableCell className="font-mono text-xs font-medium text-foreground">
-                              {row.subsidiary}
+                        {isLoading &&
+                          [0, 1].map((i) => (
+                            <TableRow key={`sk-${i}`} className="hover:bg-transparent">
+                              {Array.from({ length: 5 }).map((_, c) => (
+                                <TableCell key={c}>
+                                  <Skeleton className="h-4 w-full" />
+                                </TableCell>
+                              ))}
+                            </TableRow>
+                          ))}
+
+                        {!isLoading && documents.map((doc) => (
+                          <TableRow key={doc.id}>
+                            <TableCell className="max-w-[220px] truncate font-medium text-foreground" title={doc.filename}>
+                              {doc.filename}
                             </TableCell>
-                            <TableCell className="text-muted-foreground">{row.mine}</TableCell>
+                            <TableCell className="text-muted-foreground">
+                              {doc.mineralType ?? "\u2014"}
+                            </TableCell>
                             <TableCell className="text-right font-mono tabular-nums font-medium text-foreground">
-                              {row.actual}
+                              {doc.quantityExtracted ?? "\u2014"}
                             </TableCell>
-                            <TableCell className="text-right font-mono tabular-nums text-muted-foreground">
-                              {row.target}
+                            <TableCell className="text-muted-foreground">
+                              {doc.extractionMethod ?? "\u2014"}
                             </TableCell>
-                            <TableCell className="text-right font-mono tabular-nums text-muted-foreground">
-                              {row.ratio}
-                            </TableCell>
-                            <TableCell
-                              className={
-                                row.status === "Validated"
-                                  ? "text-xs text-success"
-                                  : "text-xs text-warning"
-                              }
-                            >
-                              {row.status}
-                            </TableCell>
+                            <TableCell className="text-xs text-success">{doc.status}</TableCell>
                           </TableRow>
                         ))}
+
+                        {!isLoading && documents.length === 0 && (
+                          <TableRow className="hover:bg-transparent">
+                            <TableCell colSpan={5} className="py-8 text-center text-sm text-muted-foreground">
+                              No documents indexed yet.
+                            </TableCell>
+                          </TableRow>
+                        )}
                       </TableBody>
                     </Table>
                   </div>
@@ -248,44 +285,51 @@ export function ReportStudioPage() {
                   <h3 className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                     3 · Key findings
                   </h3>
-                  <ul className="mt-2 space-y-2">
-                    {[
-                      "First-Mile Connectivity rapid-loading systems eliminated 1,200 truck trips per day at Jayant Project.",
-                      "BCCL longwall face degasification held roadway methane below the 0.3% threshold.",
-                      "Overburden removal across SECL opencast mines held at 1.18 m³/t against a 1.25 ceiling.",
-                    ].map((finding, idx) => (
-                      <li key={idx} className="flex gap-3 font-serif text-sm leading-relaxed text-foreground">
-                        <span className="mt-0.5 shrink-0 font-mono text-xs tabular-nums text-muted-foreground">
-                          {String(idx + 1).padStart(2, "0")}
-                        </span>
-                        <span>{finding}</span>
-                      </li>
-                    ))}
-                  </ul>
+                  {(() => {
+                    const findings = documents.flatMap((d) =>
+                      (d.keyFindings ?? []).map((f) => ({ doc: d.filename, text: f }))
+                    );
+                    if (findings.length === 0) {
+                      return (
+                        <p className="mt-2 text-sm text-muted-foreground">
+                          No key findings were extracted from the indexed documents.
+                        </p>
+                      );
+                    }
+                    return (
+                      <ul className="mt-2 space-y-2">
+                        {findings.map((f, idx) => (
+                          <li key={idx} className="flex gap-3 font-serif text-sm leading-relaxed text-foreground">
+                            <span className="mt-0.5 shrink-0 font-mono text-xs tabular-nums text-muted-foreground">
+                              {String(idx + 1).padStart(2, "0")}
+                            </span>
+                            <span>{f.text}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    );
+                  })()}
                 </section>
               )}
 
-              {selectedSections.aiInsights && (
-                <section>
-                  <h3 className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                    4 · Anomaly detection
-                  </h3>
-                  <p className="mt-2 border-l-2 border-warning bg-warning-muted/40 py-2.5 pl-4 pr-3 font-serif text-sm leading-relaxed text-foreground">
-                    Historical telemetry shows a 1.5% reconciliation gap between bunker weighbridge
-                    readouts and rake dispatch manifests during peak monsoon intervals. Automated
-                    cross-verification with Indian Railways FOIS telemetry is recommended.
-                  </p>
-                </section>
-              )}
 
               {selectedSections.sourceReferences && (
                 <section className="border-t border-border pt-5">
                   <FieldLabel>Grounding lineage</FieldLabel>
-                  <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
-                    Illustrative source list for this template. Sample references: SECL_Gevra_Annual_Production_2023_24.pdf (p.14),
-                    NCL_Jayant_Expansion_Review_FY24.pdf (p.19), and
-                    BCCL_Jharia_Seam_XVI_Geological_Survey.pdf (p.38).
-                  </p>
+                  {documents.length === 0 ? (
+                    <p className="mt-2 text-xs text-muted-foreground">
+                      No source documents are indexed.
+                    </p>
+                  ) : (
+                    <ul className="mt-2 space-y-1 text-xs leading-relaxed text-muted-foreground">
+                      {documents.map((doc) => (
+                        <li key={doc.id} className="font-mono">
+                          [{doc.id}] {doc.filename}
+                          {doc.pageCount !== undefined ? ` (${doc.pageCount} pages)` : ""}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                 </section>
               )}
             </div>

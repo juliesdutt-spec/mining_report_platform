@@ -35,7 +35,7 @@ from ai_extractor import (
     extract_structured_data, summarize_report, identify_topics,
     query_reports, generate_report_content
 )
-from report_generator import generate_pdf_report
+from report_generator import generate_pdf_report, generate_dossier
 from validation_engine import detect_discrepancies
 from evidence_locator import locate_evidence
 from wordcloud_generator import generate_word_cloud_bytes, extract_topics, get_topic_distribution
@@ -189,6 +189,48 @@ def list_reports(
             for r in reports
         ]
     }
+
+
+@app.get("/reports/generate")
+def generate_dossier_pdf(
+    title: str = Query("Consolidated Mining Report Dossier"),
+    period: str = Query("All indexed reports"),
+    exec_summary: bool = Query(True),
+    production_overview: bool = Query(True),
+    key_findings: bool = Query(True),
+    source_references: bool = Query(True),
+    db: Session = Depends(get_db),
+):
+    """
+    Compose a dossier PDF across every completed report.
+
+    GET rather than POST: composing a dossier reads existing rows and changes
+    nothing, so the URL is linkable and can be used directly as a download href.
+
+    Content is read from stored reports only; a section with no supporting data
+    states that rather than being filled in.
+    """
+    reports = db.query(MiningReport).filter(
+        MiningReport.status == "completed"
+    ).order_by(MiningReport.id).all()
+
+    pdf_bytes = generate_dossier(
+        reports,
+        {
+            "execSummary": exec_summary,
+            "productionOverview": production_overview,
+            "keyFindings": key_findings,
+            "sourceReferences": source_references,
+        },
+        title,
+        period,
+    )
+
+    return StreamingResponse(
+        io.BytesIO(pdf_bytes),
+        media_type="application/pdf",
+        headers={"Content-Disposition": 'attachment; filename=dataforge_dossier.pdf'},
+    )
 
 
 @app.get("/reports/{report_id}")
