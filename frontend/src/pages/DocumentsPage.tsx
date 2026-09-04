@@ -17,6 +17,7 @@ import {
 import { PageHeader } from "@/components/shared/PageHeader";
 import { FieldLabel } from "@/components/shared/Section";
 import { StatusBadge } from "@/components/shared/StatusBadge";
+import { WordCloud } from "@/components/shared/WordCloud";
 import { ConfidenceMeter } from "@/components/shared/ConfidenceMeter";
 import { cn } from "@/lib/utils";
 import { MiningDocument, EvidenceSnippet, Subsidiary } from "@/types";
@@ -26,7 +27,7 @@ import {
   getDocumentById,
   uploadMiningDocument,
 } from "@/services/documents";
-import { ApiError, reportDownloadUrl, reportWordCloudUrl } from "@/services/api";
+import { ApiError, reportDownloadUrl } from "@/services/api";
 
 interface DocumentsPageProps {
   onInspectEvidence: (evidence: EvidenceSnippet) => void;
@@ -39,44 +40,6 @@ function orDash(value: React.ReactNode): React.ReactNode {
     return <span className="text-muted-foreground">&mdash;</span>;
   }
   return value;
-}
-
-/**
- * Renders GET /reports/{id}/wordcloud. The backend returns a PNG built from the
- * report's stored text, or 400/404 when there is nothing to render — treated
- * here as an honest "unavailable" state rather than a placeholder graphic.
- */
-function WordCloud({ reportId }: { reportId: number }) {
-  const [state, setState] = React.useState<"loading" | "ready" | "unavailable">("loading");
-
-  // Reset whenever the selected report changes.
-  React.useEffect(() => {
-    setState("loading");
-  }, [reportId]);
-
-  return (
-    <div className="relative min-h-[120px]">
-      {state === "loading" && <Skeleton className="h-[120px] w-full" />}
-
-      {state === "unavailable" && (
-        <p className="py-8 text-center text-xs text-muted-foreground">
-          No word cloud available for this document.
-        </p>
-      )}
-
-      <img
-        key={reportId}
-        src={reportWordCloudUrl(reportId)}
-        alt={`Word frequency cloud generated from the text of report ${reportId}`}
-        onLoad={() => setState("ready")}
-        onError={() => setState("unavailable")}
-        className={cn(
-          "w-full rounded-md",
-          state === "ready" ? "block" : "hidden"
-        )}
-      />
-    </div>
-  );
 }
 
 function Attribute({ label, value }: { label: string; value: React.ReactNode }) {
@@ -97,6 +60,7 @@ export function DocumentsPage({ onInspectEvidence, selectedSubsidiary }: Documen
   const [loadError, setLoadError] = useState<string | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploadNotice, setUploadNotice] = useState<string | null>(null);
+  const [uploadProgress, setUploadProgress] = useState<{ done: number; total: number } | null>(null);
   const [pendingDelete, setPendingDelete] = useState<MiningDocument | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -171,27 +135,55 @@ export function DocumentsPage({ onInspectEvidence, selectedSubsidiary }: Documen
     }
   };
 
+  /**
+   * POST /upload takes one file per request, so a multi-file selection is
+   * uploaded in sequence. Each result is reported individually: one failure
+   * does not discard the documents that succeeded.
+   */
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files || files.length === 0) return;
-    const file = files[0];
+    const files = Array.from(e.target.files ?? []);
+    if (files.length === 0) return;
 
     setIsUploading(true);
     setUploadError(null);
     setUploadNotice(null);
-    try {
-      const newDoc = await uploadMiningDocument(file);
-      setUploadNotice(`Processed "${newDoc.filename}" — extracted and indexed.`);
-      // Re-read the index from the backend so the list reflects real stored state.
-      await loadDocuments(newDoc.id);
-    } catch (err) {
-      setUploadError(
-        err instanceof ApiError ? err.message : `Could not process "${file.name}".`
-      );
-    } finally {
-      setIsUploading(false);
-      if (fileInputRef.current) fileInputRef.current.value = "";
+    setUploadProgress(files.length > 1 ? { done: 0, total: files.length } : null);
+
+    const succeeded: string[] = [];
+    const failed: string[] = [];
+    let lastId: number | undefined;
+
+    for (const [index, file] of files.entries()) {
+      try {
+        const newDoc = await uploadMiningDocument(file);
+        succeeded.push(newDoc.filename);
+        lastId = newDoc.id;
+      } catch (err) {
+        failed.push(
+          `${file.name}: ${err instanceof ApiError ? err.message : "upload failed"}`
+        );
+      }
+      if (files.length > 1) {
+        setUploadProgress({ done: index + 1, total: files.length });
+      }
     }
+
+    if (succeeded.length > 0) {
+      setUploadNotice(
+        succeeded.length === 1
+          ? `Processed "${succeeded[0]}" — extracted and indexed.`
+          : `Processed ${succeeded.length} documents — extracted and indexed.`
+      );
+      // Re-read the index from the backend so the list reflects real stored state.
+      await loadDocuments(lastId);
+    }
+    if (failed.length > 0) {
+      setUploadError(failed.join(" · "));
+    }
+
+    setUploadProgress(null);
+    setIsUploading(false);
+    if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
   const filtered = documents.filter((doc) => {
@@ -216,11 +208,12 @@ export function DocumentsPage({ onInspectEvidence, selectedSubsidiary }: Documen
               ref={fileInputRef}
               onChange={handleFileUpload}
               accept="application/pdf,.pdf"
+              multiple
               className="hidden"
             />
             <Button size="sm" onClick={() => fileInputRef.current?.click()} disabled={isUploading}>
               <Upload className="h-3.5 w-3.5" />
-              {isUploading ? "Extracting…" : "Upload document"}
+              {isUploading ? "Extracting…" : "Upload documents"}
             </Button>
           </>
         }
@@ -252,7 +245,11 @@ export function DocumentsPage({ onInspectEvidence, selectedSubsidiary }: Documen
           className="flex items-start gap-2 rounded-lg border border-border bg-card px-4 py-3 text-sm text-muted-foreground"
         >
           <span className="mt-1.5 h-2 w-2 shrink-0 animate-pulse rounded-full bg-primary" />
-          <span>Uploading and extracting — the backend runs OCR and AI extraction, which can take a minute.</span>
+          <span>
+            {uploadProgress
+              ? `Uploading and extracting — ${uploadProgress.done} of ${uploadProgress.total} done.`
+              : "Uploading and extracting — the backend runs OCR and AI extraction, which can take a minute."}
+          </span>
         </div>
       )}
 

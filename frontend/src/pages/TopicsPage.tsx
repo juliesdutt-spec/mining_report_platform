@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { ArrowUpRight, ExternalLink } from "lucide-react";
+import { ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -32,6 +32,8 @@ function weightStyles(weight: number, isSelected: boolean) {
     ),
   };
 }
+
+import { WordCloud } from "@/components/shared/WordCloud";
 
 export function TopicsPage({ onInspectEvidence }: TopicsPageProps) {
   const [topics, setTopics] = useState<TopicEntity[]>([]);
@@ -125,22 +127,38 @@ export function TopicsPage({ onInspectEvidence }: TopicsPageProps) {
                   </dd>
                 </div>
                 <div className="flex items-baseline justify-between gap-3 py-2.5">
-                  <dt className="text-xs text-muted-foreground">Quarterly trend</dt>
-                  <dd className="inline-flex items-center gap-1 font-mono text-sm tabular-nums font-medium text-success">
-                    <ArrowUpRight className="h-3.5 w-3.5" />
-                    {selectedTopic.trendPercent}%
+                  <dt className="text-xs text-muted-foreground">Share of corpus</dt>
+                  <dd className="font-mono text-sm tabular-nums font-medium text-foreground">
+                    {documents.length > 0
+                      ? `${Math.round((selectedTopic.documentCount / documents.length) * 100)}%`
+                      : "\u2014"}
                   </dd>
                 </div>
               </dl>
 
+              {matchedDocs.length > 0 && (
+                <div>
+                  <FieldLabel>Term cloud · {matchedDocs[0].filename}</FieldLabel>
+                  <div className="mt-2">
+                    <WordCloud reportId={matchedDocs[0].id} />
+                  </div>
+                </div>
+              )}
+
               <div>
                 <FieldLabel>Co-occurring terms</FieldLabel>
                 <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1.5">
-                  {selectedTopic.relatedTerms.map((term, idx) => (
-                    <span key={idx} className="text-sm text-muted-foreground">
-                      {term}
+                  {selectedTopic.relatedTerms.length > 0 ? (
+                    selectedTopic.relatedTerms.map((term, idx) => (
+                      <span key={idx} className="text-sm text-muted-foreground">
+                        {term}
+                      </span>
+                    ))
+                  ) : (
+                    <span className="text-sm text-muted-foreground">
+                      No other terms share a document with this one.
                     </span>
-                  ))}
+                  )}
                 </div>
               </div>
             </Section>
