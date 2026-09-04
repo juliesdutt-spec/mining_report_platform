@@ -17,7 +17,10 @@ interface SourceCitationProps {
  * evidence surfaces so the association stays legible across the product.
  */
 export function SourceCitation({ evidence, onClick, compact = false, className }: SourceCitationProps) {
-  const confPct = Math.round(evidence.confidence * 100);
+  // Confidence is optional: real evidence from the backend carries none, so the
+  // chip simply omits the percentage rather than showing an invented figure.
+  const confPct =
+    evidence.confidence !== undefined ? Math.round(evidence.confidence * 100) : null;
 
   return (
     <button
@@ -35,7 +38,9 @@ export function SourceCitation({ evidence, onClick, compact = false, className }
       )}
       <span className="shrink-0 font-mono tabular-nums opacity-80">p.{evidence.pageNumber}</span>
       <span className="shrink-0 opacity-40">·</span>
-      <span className="shrink-0 font-mono tabular-nums opacity-80">{confPct}%</span>
+      {confPct !== null && (
+        <span className="shrink-0 font-mono tabular-nums opacity-80">{confPct}%</span>
+      )}
     </button>
   );
 }

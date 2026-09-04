@@ -41,6 +41,10 @@ class MiningReport(Base):
     status = Column(String(50), default="pending")  # pending, processing, completed, error
     error_message = Column(Text, nullable=True)
     
+    # Per-page text, so evidence can cite the page a passage came from.
+    # Nullable: reports ingested before this column existed have no pages.
+    page_texts = Column(JSON, nullable=True)
+
     # Word cloud data
     word_cloud_path = Column(String(500), nullable=True)
     topics = Column(JSON, nullable=True)
@@ -74,9 +78,40 @@ class ValidationResolution(Base):
     resolved_at = Column(DateTime, default=datetime.utcnow)
 
 
+def _add_missing_columns():
+    """
+    Add columns that exist on the models but not yet in the database.
+
+    create_all() only creates missing tables, never new columns on existing
+    ones, so a database created before a column was introduced would raise
+    "no such column" at query time. SQLite supports ALTER TABLE ADD COLUMN,
+    which is enough to migrate a prototype forward without dropping data.
+    """
+    from sqlalchemy import inspect, text
+
+    inspector = inspect(engine)
+    existing_tables = set(inspector.get_table_names())
+
+    with engine.begin() as conn:
+        for table in Base.metadata.sorted_tables:
+            if table.name not in existing_tables:
+                continue  # create_all() will have made it in full
+
+            present = {col["name"] for col in inspector.get_columns(table.name)}
+            for column in table.columns:
+                if column.name in present:
+                    continue
+                ddl_type = column.type.compile(engine.dialect)
+                conn.execute(
+                    text(f'ALTER TABLE {table.name} ADD COLUMN {column.name} {ddl_type}')
+                )
+                print(f"[db] added column {table.name}.{column.name}")
+
+
 def init_db():
-    """Initialize database tables"""
+    """Initialize database tables and apply simple forward migrations."""
     Base.metadata.create_all(bind=engine)
+    _add_missing_columns()
 
 
 def get_db():

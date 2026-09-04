@@ -21,6 +21,11 @@ export type Subsidiary =
 
 export type ValidationStatus = 'validated' | 'needs_review' | 'conflicting' | 'low_confidence';
 
+/**
+ * A passage located in a document's own text by evidence_locator, anchoring an
+ * extracted value to the page it appears on. Confidence is not modelled by the
+ * backend, so it is optional and omitted for real evidence.
+ */
 export interface EvidenceSnippet {
   id: string;
   documentId: number | string;
@@ -30,7 +35,7 @@ export interface EvidenceSnippet {
   field: string;
   extractedValue: string;
   originalContext: string;
-  confidence: number;
+  confidence?: number;
 }
 
 /**

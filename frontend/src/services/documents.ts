@@ -68,8 +68,19 @@ export function mapReportToDocument(
     summary: clean(report.summary) ?? clean(extracted.summary) ?? '',
     keyFindings: extracted.key_findings ?? undefined,
 
-    // The backend produces no per-passage evidence for uploaded documents.
-    evidenceSnippets: [],
+    // Passages the backend located in this document's own text. Empty when no
+    // extracted value could be verified against the source — never filled in.
+    evidenceSnippets: (detail.evidence ?? []).map((e) => ({
+      id: e.id,
+      documentId: e.documentId,
+      documentName: e.documentName,
+      pageNumber: e.pageNumber,
+      sectionHeader: e.sectionHeader,
+      field: e.field,
+      extractedValue: e.extractedValue,
+      originalContext: e.originalContext,
+    })),
+    pageCount: detail.page_count ?? undefined,
   };
 }
 

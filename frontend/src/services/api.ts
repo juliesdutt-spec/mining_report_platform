@@ -107,6 +107,18 @@ export interface BackendReportListResponse {
 }
 
 /** GET /reports/{id} */
+/** A passage located in the document's text (evidence_locator.locate_evidence). */
+export interface BackendEvidence {
+  id: string;
+  documentId: number;
+  documentName: string;
+  field: string;
+  sectionHeader: string;
+  extractedValue: string;
+  pageNumber: number;
+  originalContext: string;
+}
+
 export interface BackendReportDetail extends BackendReportListItem {
   extracted_data: BackendExtractedData | null;
   report_date: string | null;
@@ -115,6 +127,8 @@ export interface BackendReportDetail extends BackendReportListItem {
   mine_name: string | null;
   word_cloud_available: boolean;
   error_message: string | null;
+  evidence?: BackendEvidence[];
+  page_count?: number | null;
 }
 
 /** POST /upload */

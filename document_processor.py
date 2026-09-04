@@ -46,6 +46,23 @@ def extract_text_from_pdf(pdf_bytes: bytes, filename: str = "") -> str:
         return f"Error extracting text: {str(e)}"
 
 
+def extract_pages_from_pdf(pdf_bytes: bytes) -> List[str]:
+    """
+    Extract text per page, preserving page boundaries.
+
+    extract_text_from_pdf joins pages into one string, which loses the page a
+    passage came from. Keeping the per-page list lets evidence cite a real page
+    number instead of guessing one. Returns [] when the PDF yields no text
+    (for example a scanned document handled by OCR, which is not paginated).
+    """
+    try:
+        reader = PdfReader(io.BytesIO(pdf_bytes))
+        pages = [(page.extract_text() or "").strip() for page in reader.pages]
+        return pages if any(pages) else []
+    except Exception:
+        return []
+
+
 def _ocr_pdf(pdf_bytes: bytes) -> str:
     """
     Fallback OCR extraction for scanned PDFs.

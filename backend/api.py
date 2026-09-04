@@ -28,13 +28,16 @@ from sqlalchemy.orm import Session
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from database import init_db, get_db, MiningReport, QueryHistory, ValidationResolution
-from document_processor import extract_text_from_pdf, chunk_text, get_pdf_metadata
+from document_processor import (
+    extract_text_from_pdf, extract_pages_from_pdf, chunk_text, get_pdf_metadata
+)
 from ai_extractor import (
     extract_structured_data, summarize_report, identify_topics,
     query_reports, generate_report_content
 )
 from report_generator import generate_pdf_report
 from validation_engine import detect_discrepancies
+from evidence_locator import locate_evidence
 from wordcloud_generator import generate_word_cloud_bytes, extract_topics, get_topic_distribution
 
 # Initialize FastAPI app
@@ -107,6 +110,9 @@ async def upload_report(
         # Step 1: Extract text
         raw_text = extract_text_from_pdf(pdf_bytes, file.filename)
         report.raw_text = raw_text[:50000]  # Limit stored text
+
+        # Keep page boundaries so extracted values can cite a real page number.
+        report.page_texts = [p[:20000] for p in extract_pages_from_pdf(pdf_bytes)]
         
         # Step 2: Extract structured data using AI
         extracted = extract_structured_data(raw_text, file.filename)
@@ -209,6 +215,9 @@ def get_report(report_id: int, db: Session = Depends(get_db)):
         "topics": report.topics,
         "word_cloud_available": report.word_cloud_path is not None,
         "error_message": report.error_message,
+        # Passages located in this document's own text; [] when none verify.
+        "evidence": locate_evidence(report),
+        "page_count": len(report.page_texts or []) or None,
     }
 
 
