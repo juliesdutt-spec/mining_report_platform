@@ -37,7 +37,7 @@ import {
   NavigationTab,
   Subsidiary,
 } from "@/types";
-import { fetchPlatformStats, fetchProductionTrends } from "@/services/analytics";
+import { fetchPlatformStats } from "@/services/analytics";
 import { BackendStats } from "@/services/api";
 import { fetchDocuments } from "@/services/documents";
 import { fetchValidationItems } from "@/services/validation";
@@ -55,8 +55,6 @@ export function DashboardPage({
   selectedSubsidiary,
 }: DashboardPageProps) {
   const [stats, setStats] = useState<BackendStats | null>(null);
-  const [trendInterval, setTrendInterval] = useState<"3m" | "30d" | "7d">("3m");
-  const [trendData, setTrendData] = useState<ProductionDataPoint[]>([]);
   const [documents, setDocuments] = useState<MiningDocument[]>([]);
   const [validationAlerts, setValidationAlerts] = useState<ValidationItem[]>([]);
   const [recentQueries, setRecentQueries] = useState<QueryResult[]>([]);
@@ -75,9 +73,6 @@ export function DashboardPage({
       .catch(() => setRecentQueries([]));
   }, []);
 
-  useEffect(() => {
-    fetchProductionTrends(trendInterval).then(setTrendData);
-  }, [trendInterval]);
 
   const filteredDocs =
     selectedSubsidiary === "ALL"
@@ -130,84 +125,6 @@ export function DashboardPage({
           hint="Documents needing re-upload"
         />
       </StatGroup>
-
-      {/* Production trend — a chart genuinely benefits from containment */}
-      <Section
-        title="Production against target"
-        description="Actual output versus statutory planned target, in million tonnes."
-        actions={
-          <Tabs value={trendInterval} onValueChange={(v) => setTrendInterval(v as typeof trendInterval)}>
-            <TabsList>
-              <TabsTrigger value="3m">3 months</TabsTrigger>
-              <TabsTrigger value="30d">30 days</TabsTrigger>
-              <TabsTrigger value="7d">7 days</TabsTrigger>
-            </TabsList>
-          </Tabs>
-        }
-      >
-        <Card className="p-5">
-          <div className="h-64 w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={trendData} margin={{ top: 8, right: 8, left: -16, bottom: 0 }}>
-                <CartesianGrid stroke={colors.border} vertical={false} />
-                <XAxis
-                  dataKey="date"
-                  stroke={colors["muted-foreground"]}
-                  fontSize={11}
-                  tickLine={false}
-                  axisLine={false}
-                />
-                <YAxis
-                  stroke={colors["muted-foreground"]}
-                  fontSize={11}
-                  tickLine={false}
-                  axisLine={false}
-                  tickFormatter={(val) => `${val}`}
-                />
-                <Tooltip {...tooltipStyle(colors)} />
-                <Area
-                  type="monotone"
-                  dataKey="actual"
-                  name="Actual (MT)"
-                  stroke={colors.primary}
-                  strokeWidth={2}
-                  fill={colors.primary}
-                  fillOpacity={0.08}
-                />
-                <Area
-                  type="monotone"
-                  dataKey="target"
-                  name="Target (MT)"
-                  stroke={colors.teal}
-                  strokeWidth={1.5}
-                  strokeDasharray="4 4"
-                  fill="none"
-                />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
-
-          <div className="mt-4 flex items-center justify-between border-t border-border pt-3 text-xs">
-            <div className="flex items-center gap-4 text-muted-foreground">
-              <span className="flex items-center gap-1.5">
-                <span className="h-0.5 w-3 rounded" style={{ backgroundColor: colors.primary }} />
-                Actual output
-              </span>
-              <span className="flex items-center gap-1.5">
-                <span className="h-0.5 w-3 rounded" style={{ backgroundColor: colors.teal }} />
-                Planned target
-              </span>
-            </div>
-            <button
-              onClick={() => onNavigate("analytics")}
-              className="inline-flex items-center gap-1 font-medium text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            >
-              Full analytics
-              <ArrowRight className="h-3 w-3" />
-            </button>
-          </div>
-        </Card>
-      </Section>
 
       {/* Operational tables — rows, not stacks of cards */}
       <Tabs defaultValue="documents">

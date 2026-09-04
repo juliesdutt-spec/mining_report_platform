@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, Download, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -23,86 +23,14 @@ import { StatusBadge } from "@/components/shared/StatusBadge";
 import { ConfidenceMeter } from "@/components/shared/ConfidenceMeter";
 import { SourceCitation } from "@/components/shared/SourceCitation";
 import { cn } from "@/lib/utils";
-import { EvidenceSnippet, Subsidiary } from "@/types";
-import { MOCK_DOCUMENTS } from "@/services/mockData";
+import { EvidenceSnippet, MiningDocument, Subsidiary } from "@/types";
+import { fetchDocuments } from "@/services/documents";
 
 interface DataExplorerPageProps {
   onInspectEvidence: (evidence: EvidenceSnippet) => void;
   selectedSubsidiary: Subsidiary | "ALL";
 }
 
-const RECORDS = [
-  {
-    id: "rec-1",
-    mineName: "Gevra OC Mega Project",
-    subsidiary: "SECL",
-    year: "2023-24",
-    production: "52.50 MT",
-    productionNum: 52.5,
-    method: "Opencast",
-    mineral: "Non-Coking Coal (G11)",
-    reserves: "410.20 MT",
-    confidence: 0.99,
-    status: "validated" as const,
-    evidenceSnippet: MOCK_DOCUMENTS[0].evidenceSnippets[0],
-  },
-  {
-    id: "rec-2",
-    mineName: "Moonidih Underground Mine",
-    subsidiary: "BCCL",
-    year: "2023-24",
-    production: "1.42 MT",
-    productionNum: 1.42,
-    method: "Underground",
-    mineral: "Prime Coking (W-II)",
-    reserves: "88.40 MT",
-    confidence: 0.98,
-    status: "validated" as const,
-    evidenceSnippet: MOCK_DOCUMENTS[1].evidenceSnippets[0],
-  },
-  {
-    id: "rec-3",
-    mineName: "Talcher Basin Regional Block V",
-    subsidiary: "CMPDI",
-    year: "2023-24",
-    production: "Proved stage",
-    productionNum: 0,
-    method: "Opencast",
-    mineral: "Thermal (G12-G14)",
-    reserves: "1,240.00 MT",
-    confidence: 0.94,
-    status: "needs_review" as const,
-    evidenceSnippet: MOCK_DOCUMENTS[2].evidenceSnippets[0],
-  },
-  {
-    id: "rec-4",
-    mineName: "Jayant Opencast Project",
-    subsidiary: "NCL",
-    year: "2023-24",
-    production: "25.00 MT",
-    productionNum: 25.0,
-    method: "Opencast",
-    mineral: "Non-Coking Coal (G8)",
-    reserves: "295.10 MT",
-    confidence: 0.89,
-    status: "conflicting" as const,
-    evidenceSnippet: MOCK_DOCUMENTS[3].evidenceSnippets[0],
-  },
-  {
-    id: "rec-5",
-    mineName: "Lakhanpur Opencast Mine",
-    subsidiary: "MCL",
-    year: "2023-24",
-    production: "21.80 MT",
-    productionNum: 21.8,
-    method: "Opencast",
-    mineral: "Thermal Coal (G13)",
-    reserves: "182.00 MT",
-    confidence: 0.98,
-    status: "validated" as const,
-    evidenceSnippet: MOCK_DOCUMENTS[4].evidenceSnippets[0],
-  },
-];
 
 type SortField = "mineName" | "subsidiary" | "productionNum" | "confidence";
 
@@ -143,13 +71,39 @@ export function DataExplorerPage({ onInspectEvidence, selectedSubsidiary }: Data
   const [sortField, setSortField] = useState<SortField>("mineName");
   const [sortAsc, setSortAsc] = useState(true);
   const [filterMethod, setFilterMethod] = useState<string>("all");
+  const [documents, setDocuments] = useState<MiningDocument[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
-  const filtered = RECORDS.filter((item) => {
+  // Rows are the real indexed reports from GET /reports.
+  useEffect(() => {
+    fetchDocuments()
+      .then(setDocuments)
+      .catch(() => setDocuments([]))
+      .finally(() => setIsLoading(false));
+  }, []);
+
+  const records = documents.map((doc) => ({
+    id: String(doc.id),
+    mineName: doc.mineName ?? doc.filename,
+    subsidiary: doc.subsidiary,
+    production: doc.quantityExtracted,
+    productionNum: parseFloat((doc.quantityExtracted ?? "").replace(/[^0-9.]/g, "")) || 0,
+    method: doc.extractionMethod,
+    mineral: doc.mineralType,
+    reserves: doc.reserveEstimate,
+    confidence: doc.confidenceScore,
+    status: doc.validationStatus ?? doc.status,
+    filename: doc.filename,
+    evidenceSnippet: doc.evidenceSnippets[0],
+  }));
+
+  const filtered = records.filter((item) => {
     const matchesSub = selectedSubsidiary === "ALL" || item.subsidiary === selectedSubsidiary;
-    const matchesMethod = filterMethod === "all" || item.method.toLowerCase() === filterMethod;
+    const matchesMethod =
+      filterMethod === "all" || (item.method ?? "").toLowerCase() === filterMethod;
     const q = search.toLowerCase();
     const matchesSearch =
-      item.mineName.toLowerCase().includes(q) || item.mineral.toLowerCase().includes(q);
+      item.mineName.toLowerCase().includes(q) || (item.mineral ?? "").toLowerCase().includes(q);
     return matchesSub && matchesMethod && matchesSearch;
   });
 
@@ -238,13 +192,13 @@ export function DataExplorerPage({ onInspectEvidence, selectedSubsidiary }: Data
             {sorted.map((row) => (
               <TableRow key={row.id}>
                 <TableCell className="font-medium text-foreground">{row.mineName}</TableCell>
-                <TableCell className="font-mono text-xs text-muted-foreground">{row.subsidiary}</TableCell>
+                <TableCell className="font-mono text-xs text-muted-foreground">{row.subsidiary ?? "\u2014"}</TableCell>
                 <TableCell className={cn("text-right font-mono tabular-nums", row.productionNum > 0 ? "font-medium text-foreground" : "text-muted-foreground")}>
-                  {row.production}
+                  {row.production ?? "\u2014"}
                 </TableCell>
-                <TableCell className="text-muted-foreground">{row.method}</TableCell>
-                <TableCell className="text-muted-foreground">{row.mineral}</TableCell>
-                <TableCell className="text-right font-mono tabular-nums text-muted-foreground">{row.reserves}</TableCell>
+                <TableCell className="text-muted-foreground">{row.method ?? "\u2014"}</TableCell>
+                <TableCell className="text-muted-foreground">{row.mineral ?? "\u2014"}</TableCell>
+                <TableCell className="text-right font-mono tabular-nums text-muted-foreground">{row.reserves ?? "\u2014"}</TableCell>
                 <TableCell>
                   <ConfidenceMeter value={row.confidence} />
                 </TableCell>
@@ -252,11 +206,17 @@ export function DataExplorerPage({ onInspectEvidence, selectedSubsidiary }: Data
                   <StatusBadge status={row.status} />
                 </TableCell>
                 <TableCell className="text-right">
-                  <SourceCitation
-                    evidence={row.evidenceSnippet}
-                    compact
-                    onClick={() => onInspectEvidence(row.evidenceSnippet)}
-                  />
+                  {row.evidenceSnippet ? (
+                    <SourceCitation
+                      evidence={row.evidenceSnippet}
+                      compact
+                      onClick={() => onInspectEvidence(row.evidenceSnippet!)}
+                    />
+                  ) : (
+                    <span className="font-mono text-xs text-muted-foreground" title={row.filename}>
+                      {row.filename}
+                    </span>
+                  )}
                 </TableCell>
               </TableRow>
             ))}
@@ -274,7 +234,7 @@ export function DataExplorerPage({ onInspectEvidence, selectedSubsidiary }: Data
         <div className="flex items-center justify-between border-t border-border px-4 py-3 text-xs text-muted-foreground">
           <span>
             Showing <span className="font-mono tabular-nums text-foreground">{sorted.length}</span> of{" "}
-            <span className="font-mono tabular-nums text-foreground">{RECORDS.length}</span> records
+            <span className="font-mono tabular-nums text-foreground">{records.length}</span> records
           </span>
           <div className="flex items-center gap-1">
             <Button variant="outline" size="icon" className="h-7 w-7" disabled aria-label="Previous page">

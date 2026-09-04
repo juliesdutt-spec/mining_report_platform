@@ -1,11 +1,9 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import {
   Bar,
   BarChart,
   CartesianGrid,
   Cell,
-  Line,
-  LineChart,
   Pie,
   PieChart,
   ResponsiveContainer,
@@ -21,43 +19,43 @@ import { Section } from "@/components/shared/Section";
 import { Stat, StatGroup } from "@/components/shared/StatGroup";
 import { useChartColors, tooltipStyle } from "@/lib/chart";
 import { Subsidiary } from "@/types";
+import { fetchPlatformStats } from "@/services/analytics";
+import { BackendStats } from "@/services/api";
 
 interface AnalyticsPageProps {
   selectedSubsidiary: Subsidiary | "ALL";
 }
 
-const SUBSIDIARY_PRODUCTION = [
-  { subsidiary: "MCL", actual: 193.2, target: 185.0 },
-  { subsidiary: "SECL", actual: 167.0, target: 160.0 },
-  { subsidiary: "NCL", actual: 131.0, target: 128.0 },
-  { subsidiary: "CCL", actual: 84.5, target: 80.0 },
-  { subsidiary: "WCL", actual: 64.3, target: 62.0 },
-  { subsidiary: "BCCL", actual: 41.2, target: 40.0 },
-  { subsidiary: "ECL", actual: 36.8, target: 38.0 },
-];
-
-const YOY = [
-  { year: "FY 21-22", production: 622.6, target: 600.0 },
-  { year: "FY 22-23", production: 703.2, target: 670.0 },
-  { year: "FY 23-24", production: 773.6, target: 780.0 },
-  { year: "FY 24-25", production: 838.0, target: 825.0 },
-];
-
 export function AnalyticsPage({ selectedSubsidiary }: AnalyticsPageProps) {
   const colors = useChartColors();
+  const [stats, setStats] = useState<BackendStats | null>(null);
 
-  // Mineral split shares the chart palette so the whole page reads as one system.
-  const mineralShare = [
-    { name: "Non-coking (thermal G7–G14)", value: 84, color: colors.primary },
-    { name: "Prime & medium coking", value: 11, color: colors.teal },
-    { name: "Lignite & other", value: 5, color: colors["muted-foreground"] },
-  ];
+  // Everything on this page comes from GET /stats — real aggregates over the
+  // indexed reports. The backend has no production time series or per-
+  // subsidiary targets, so no such chart is shown.
+  useEffect(() => {
+    fetchPlatformStats()
+      .then(setStats)
+      .catch(() => setStats(null));
+  }, []);
+
+  const palette = [colors.primary, colors.teal, colors["muted-foreground"]];
+
+  // Documents per mineral type, as extracted from the uploaded reports.
+  const mineralShare = Object.entries(stats?.mineral_distribution ?? {})
+    .sort((a, b) => b[1] - a[1])
+    .map(([name, value], i) => ({ name, value, color: palette[i % palette.length] }));
+
+  // Documents per location, as extracted from the uploaded reports.
+  const locationCounts = Object.entries(stats?.location_distribution ?? {})
+    .sort((a, b) => b[1] - a[1])
+    .map(([location, documents]) => ({ location, documents }));
 
   return (
     <div className="space-y-8">
       <PageHeader
         title="Analytics"
-        description="Cross-subsidiary extraction metrics, year-on-year trajectory and mechanised mining splits."
+        description="Aggregates over the indexed report corpus, computed by the backend."
         actions={
           <Button variant="outline" size="sm">
             <Download className="h-3.5 w-3.5" />
@@ -67,28 +65,45 @@ export function AnalyticsPage({ selectedSubsidiary }: AnalyticsPageProps) {
       />
 
       <StatGroup>
-        <Stat label="Total CIL production" value="773.60" hint="Million tonnes, FY 23-24" delta="+10.0%" deltaType="positive" />
-        <Stat label="Opencast share" value="93.8%" tone="teal" hint="Dragline & surface miners" />
-        <Stat label="Underground share" value="6.2%" hint="Prime coking focus" />
-        <Stat label="Stripping ratio" value="1:1.82" hint="Aggregate overburden" />
+        <Stat
+          label="Documents indexed"
+          value={stats ? stats.total_reports.toLocaleString("en-IN") : "\u2014"}
+          hint="Reports in the database"
+        />
+        <Stat
+          label="Extracted successfully"
+          value={stats ? stats.completed.toLocaleString("en-IN") : "\u2014"}
+          tone="success"
+          hint="Entities parsed from source"
+        />
+        <Stat
+          label="Distinct minerals"
+          value={stats ? Object.keys(stats.mineral_distribution).length : "\u2014"}
+          tone="teal"
+          hint="Identified across the corpus"
+        />
+        <Stat
+          label="Distinct locations"
+          value={stats ? Object.keys(stats.location_distribution).length : "\u2014"}
+          hint="Sites referenced in reports"
+        />
       </StatGroup>
 
       <div className="grid grid-cols-1 gap-8 lg:grid-cols-12">
         <div className="lg:col-span-8">
           <Section
-            title="Production by subsidiary"
-            description="Actual output against planned target, in million tonnes."
+            title="Documents by location"
+            description="How many indexed reports reference each site."
           >
             <Card className="p-5">
               <div className="h-72 w-full">
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={SUBSIDIARY_PRODUCTION} margin={{ top: 8, right: 8, left: -16, bottom: 0 }}>
+                  <BarChart data={locationCounts} margin={{ top: 8, right: 8, left: -16, bottom: 0 }}>
                     <CartesianGrid stroke={colors.border} vertical={false} />
-                    <XAxis dataKey="subsidiary" stroke={colors["muted-foreground"]} fontSize={11} tickLine={false} axisLine={false} />
+                    <XAxis dataKey="location" stroke={colors["muted-foreground"]} fontSize={11} tickLine={false} axisLine={false} />
                     <YAxis stroke={colors["muted-foreground"]} fontSize={11} tickLine={false} axisLine={false} />
                     <Tooltip {...tooltipStyle(colors)} cursor={{ fill: colors.border, opacity: 0.3 }} />
-                    <Bar dataKey="actual" name="Actual (MT)" fill={colors.primary} radius={[3, 3, 0, 0]} />
-                    <Bar dataKey="target" name="Target (MT)" fill={colors.teal} radius={[3, 3, 0, 0]} />
+                    <Bar dataKey="documents" name="Documents" fill={colors.primary} radius={[3, 3, 0, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
@@ -96,11 +111,7 @@ export function AnalyticsPage({ selectedSubsidiary }: AnalyticsPageProps) {
               <div className="mt-4 flex items-center gap-4 border-t border-border pt-3 text-xs text-muted-foreground">
                 <span className="flex items-center gap-1.5">
                   <span className="h-2 w-2 rounded-sm" style={{ backgroundColor: colors.primary }} />
-                  Actual
-                </span>
-                <span className="flex items-center gap-1.5">
-                  <span className="h-2 w-2 rounded-sm" style={{ backgroundColor: colors.teal }} />
-                  Target
+                  Indexed documents
                 </span>
               </div>
             </Card>
@@ -108,7 +119,7 @@ export function AnalyticsPage({ selectedSubsidiary }: AnalyticsPageProps) {
         </div>
 
         <div className="lg:col-span-4">
-          <Section title="Mineral classification" description="Share of audited output by grade.">
+          <Section title="Mineral classification" description="Indexed documents per extracted mineral type.">
             <Card className="p-5">
               <div className="h-44 w-full">
                 <ResponsiveContainer width="100%" height="100%">
@@ -143,7 +154,7 @@ export function AnalyticsPage({ selectedSubsidiary }: AnalyticsPageProps) {
                       <span className="truncate">{item.name}</span>
                     </dt>
                     <dd className="shrink-0 font-mono text-xs tabular-nums font-medium text-foreground">
-                      {item.value}%
+                      {item.value}
                     </dd>
                   </div>
                 ))}
@@ -153,40 +164,6 @@ export function AnalyticsPage({ selectedSubsidiary }: AnalyticsPageProps) {
         </div>
       </div>
 
-      <Section
-        title="Multi-year trajectory"
-        description="Progress toward the one-billion-tonne national production mandate."
-      >
-        <Card className="p-5">
-          <div className="h-56 w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={YOY} margin={{ top: 8, right: 16, left: -16, bottom: 0 }}>
-                <CartesianGrid stroke={colors.border} vertical={false} />
-                <XAxis dataKey="year" stroke={colors["muted-foreground"]} fontSize={11} tickLine={false} axisLine={false} />
-                <YAxis stroke={colors["muted-foreground"]} fontSize={11} tickLine={false} axisLine={false} />
-                <Tooltip {...tooltipStyle(colors)} />
-                <Line
-                  type="monotone"
-                  dataKey="production"
-                  name="Actual (MT)"
-                  stroke={colors.primary}
-                  strokeWidth={2}
-                  dot={{ r: 3, fill: colors.primary, strokeWidth: 0 }}
-                />
-                <Line
-                  type="monotone"
-                  dataKey="target"
-                  name="Target (MT)"
-                  stroke={colors.teal}
-                  strokeWidth={1.5}
-                  strokeDasharray="4 4"
-                  dot={{ r: 3, fill: colors.teal, strokeWidth: 0 }}
-                />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-        </Card>
-      </Section>
     </div>
   );
 }
