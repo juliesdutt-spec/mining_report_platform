@@ -42,25 +42,28 @@ An AI-powered platform that automates the entire mining reporting pipeline:
 ## 🏗️ Architecture
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                    STREAMLIT UI                          │
-│  (Upload, View Reports, Query, Analytics, Word Cloud)   │
-└─────────────────────────┬───────────────────────────────┘
-                          │
+┌──────────────────────────────────────────────────────────┐
+│              REACT + VITE FRONTEND (primary)             │
+│  shadcn/ui · Dashboard, Documents, Ask, Analytics,       │
+│  Topics, Report Studio, Data Explorer, Validation        │
+└─────────────────────────┬────────────────────────────────┘
+                          │  REST (VITE_API_URL)
                           ▼
-┌─────────────────────────────────────────────────────────┐
-│                   FASTAPI BACKEND                        │
-│  (Upload, Process, Query, Generate Reports)             │
-└───────┬──────────────────┬──────────────────┬───────────┘
-        │                  │                  │
-        ▼                  ▼                  ▼
-┌──────────────┐  ┌──────────────┐  ┌──────────────┐
-│  DOCUMENT    │  │   CLAUDE     │  │   SQLite     │
-│  PROCESSING  │  │   AI API     │  │   DATABASE   │
-│ (pypdf +     │  │  (Extract,   │  │  (Storage)   │
-│  pytesseract)│  │   Analyze)   │  │              │
-└──────────────┘  └──────────────┘  └──────────────┘
+┌──────────────────────────────────────────────────────────┐
+│                    FASTAPI BACKEND                       │
+│  upload · reports · query · stats · validation · dossier │
+└───┬────────────┬──────────────┬───────────────┬──────────┘
+    ▼            ▼              ▼               ▼
+┌─────────┐ ┌──────────┐ ┌────────────┐ ┌──────────────┐
+│DOCUMENT │ │  CLAUDE  │ │  SQLite    │ │ VALIDATION + │
+│PROCESSING│ │  AI API  │ │  DATABASE  │ │  EVIDENCE    │
+│pypdf +  │ │ (extract,│ │ (SQLAlchemy)│ │  ENGINES     │
+│tesseract│ │  answer) │ │            │ │              │
+└─────────┘ └──────────┘ └────────────┘ └──────────────┘
 ```
+
+> A legacy Streamlit UI (`app.py`) still exists and talks to the same backend,
+> but the React frontend in `frontend/` is the one that is maintained.
 
 ---
 
@@ -68,46 +71,64 @@ An AI-powered platform that automates the entire mining reporting pipeline:
 
 ### Prerequisites
 - Python 3.10+
-- pip
+- Node.js 18+ (for the React frontend)
 
-### 1. Clone & Setup
+### 1. Install
 
 ```bash
-cd mining_report_platform
 pip install -r requirements.txt
+cd frontend && npm install && cd ..
 ```
 
-### 2. Configure Environment (Optional)
+### 2. Configure
 
 ```bash
-# Copy .env.example to .env
 cp .env.example .env
-
-# Edit .env to add your Claude API key (optional - works in demo mode without it)
-# Set USE_MOCK_AI=true for demo mode (no API key needed)
 ```
 
-### 3. Run the System
+`.env` is gitignored and untracked — safe to put a key in. Without
+`CLAUDE_API_KEY` the backend falls back to deterministic mock extraction and
+answers, so everything still runs; see *AI modes* below.
+
+### 3. Run
 
 ```bash
-# Option A: Run everything with the startup script
-python start.py
+# Terminal 1 — backend
+uvicorn backend.api:app --reload --port 8000
 
-# Option B: Run backend and frontend separately
-# Terminal 1 - Backend
-cd mining_report_platform
-python -m uvicorn backend.api:app --host 0.0.0.0 --port 8000 --reload
-
-# Terminal 2 - Frontend
-cd mining_report_platform
-python -m streamlit run app.py --server.port 8501
+# Terminal 2 — frontend
+cd frontend && npm run dev
 ```
 
-### 4. Access the Application
-
-- **Frontend:** http://localhost:8501
+- **Frontend:** http://localhost:5173
 - **Backend API:** http://localhost:8000
-- **API Documentation:** http://localhost:8000/docs
+- **API docs:** http://localhost:8000/docs
+
+The frontend targets `http://localhost:8000` by default; override with
+`VITE_API_URL`.
+
+### Tests
+
+```bash
+python -m unittest discover -s tests    # validation + evidence engines
+cd frontend && npx tsc --noEmit         # frontend type check
+```
+
+---
+
+## 🤖 AI modes
+
+| `CLAUDE_API_KEY` | `USE_MOCK_AI` | Behaviour |
+|---|---|---|
+| set | `false` | Real Claude extraction and answers |
+| set | `true` | Forced mock (useful for offline demos) |
+| unset | either | Mock — the key is required for real AI |
+
+The key is read server-side only. It is never exposed to the browser and must
+never be committed; `.env` is untracked for that reason.
+
+Independent of the AI mode, PDF text extraction, OCR, storage, word clouds,
+PDF generation, discrepancy detection and evidence location are all real.
 
 ---
 
@@ -123,9 +144,39 @@ python -m streamlit run app.py --server.port 8501
 | `DELETE` | `/reports/{id}` | Delete a report |
 | `GET` | `/reports/{id}/download` | Download PDF report |
 | `GET` | `/reports/{id}/wordcloud` | Get word cloud image |
-| `POST` | `/query` | AI-powered query |
-| `GET` | `/stats` | System statistics |
+| `GET` | `/reports/generate` | Compose a dossier PDF across all reports |
+| `POST` | `/query` | AI query; returns the answer, sources and located evidence |
+| `GET` | `/stats` | Document, query, mineral and location counts |
+| `GET` | `/validation` | Cross-document discrepancies with their status |
+| `POST` | `/validation/{id}/resolve` | Record an auditor decision (resolved / flagged / pending) |
 | `GET` | `/query-history` | Query history |
+
+`question` on `/query` is a **query parameter**, not a JSON body.
+
+---
+
+## ✅ What is real, and what is not
+
+Everything below is computed from uploaded documents:
+
+- **Upload → extraction → indexing** — real PDF text extraction and OCR
+- **Ask DataForge** — answers from the stored corpus, citing the pages the
+  values were found on
+- **Evidence** — passages located in a document's own text; a value that cannot
+  be found is not cited
+- **Validation** — conflicts between reports on the same mine, duplicate
+  ingests, missing fields and failed extractions, with persisted decisions
+- **Dashboard / Analytics / Topics / Data Explorer** — aggregates over the
+  indexed corpus
+- **Word clouds and PDFs** — generated by the backend
+
+Deliberately absent, rather than simulated:
+
+- **DOCX export** — no document generator exists; the action is disabled
+- **Production time series** — the schema stores no history, so no trend chart
+  is shown
+- **Per-extraction confidence and subsidiary attribution** — not modelled, so
+  the UI shows an em dash instead of a number
 
 ---
 
