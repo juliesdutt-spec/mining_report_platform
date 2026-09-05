@@ -80,31 +80,25 @@ def root():
 @app.get("/health")
 def health_check():
     """
-    Liveness, plus which AI mode the backend is actually in.
+    Liveness, plus which AI provider the backend is actually talking to.
 
-    `ai_mode` is how an operator confirms a configured key took effect without
-    the key ever being read back: "claude" means answers and extraction come
-    from the API, "mock" means they are deterministic stand-ins. The key itself
-    is never returned, logged or echoed anywhere.
+    This is how an operator confirms a configured key took effect without the
+    key ever being read back. `ai_mode` names the live provider - "claude",
+    "gemini", "openrouter", "ollama" - or "mock" when answers are
+    deterministic stand-ins, in which case `ai_mode_reason` says what is
+    missing. No key, or any part of one, is ever returned here.
     """
-    from ai_extractor import ANTHROPIC_AVAILABLE, CLAUDE_MODEL, USE_MOCK
+    import ai_providers
 
-    if USE_MOCK:
-        if not ANTHROPIC_AVAILABLE:
-            reason = "The anthropic package is not installed."
-        elif os.getenv("USE_MOCK_AI", "false").lower() == "true":
-            reason = "USE_MOCK_AI is set to true, which forces mock mode."
-        else:
-            reason = "No CLAUDE_API_KEY is configured."
-    else:
-        reason = None
-
+    described = ai_providers.describe()
     return {
         "status": "healthy",
         "timestamp": datetime.utcnow().isoformat(),
-        "ai_mode": "mock" if USE_MOCK else "claude",
-        "ai_model": None if USE_MOCK else CLAUDE_MODEL,
-        "ai_mode_reason": reason,
+        "ai_mode": described["mode"],
+        "ai_model": described["model"],
+        "ai_mode_reason": described["reason"],
+        "ai_provider_requested": described["requested"],
+        "ai_providers_available": described["available"],
     }
 
 

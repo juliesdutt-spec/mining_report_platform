@@ -1,17 +1,12 @@
 import React, { useEffect, useState } from "react";
 import { CheckCircle2, Save } from "lucide-react";
+import { AiStatus, fetchAiStatus } from "@/services/api";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { Section } from "@/components/shared/Section";
 
@@ -40,8 +35,9 @@ import { DEFAULT_SETTINGS, loadSettings, saveSettings } from "@/lib/settings";
 
 export function SettingsPage() {
   const [apiUrl, setApiUrl] = useState(DEFAULT_SETTINGS.apiUrl);
-  const [modelName, setModelName] = useState(DEFAULT_SETTINGS.modelName);
   const [ocrConfidence, setOcrConfidence] = useState(DEFAULT_SETTINGS.ocrConfidence);
+  const [ai, setAi] = useState<AiStatus | null>(null);
+  const [aiLoading, setAiLoading] = useState(true);
   const [isSaved, setIsSaved] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
@@ -49,12 +45,22 @@ export function SettingsPage() {
   useEffect(() => {
     const saved = loadSettings();
     setApiUrl(saved.apiUrl);
-    setModelName(saved.modelName);
     setOcrConfidence(saved.ocrConfidence);
   }, []);
 
+  // The provider is the backend's to decide; this page only reports it.
+  useEffect(() => {
+    let active = true;
+    fetchAiStatus()
+      .then((status) => active && setAi(status))
+      .finally(() => active && setAiLoading(false));
+    return () => {
+      active = false;
+    };
+  }, []);
+
   const handleSave = () => {
-    const ok = saveSettings({ apiUrl, modelName, ocrConfidence });
+    const ok = saveSettings({ apiUrl, ocrConfidence });
     if (ok) {
       setSaveError(null);
       setIsSaved(true);
@@ -101,22 +107,35 @@ export function SettingsPage() {
 
         <SettingsGroup
           title="Extraction engine"
-          description="Model used for summarisation, entity tagging and grounded answers."
+          description="Which model answers, as reported by the backend. Configured server-side so a key never reaches the browser."
         >
           <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
             <div className="space-y-1.5">
-              <Label htmlFor="model">Model</Label>
-              <Select value={modelName} onValueChange={setModelName}>
-                <SelectTrigger id="model" className="font-mono">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="claude-opus-5">claude-opus-5</SelectItem>
-                  <SelectItem value="claude-sonnet-5">claude-sonnet-5</SelectItem>
-                  <SelectItem value="claude-haiku-4-5">claude-haiku-4-5</SelectItem>
-                  <SelectItem value="mock-ai-engine">Deterministic mock engine</SelectItem>
-                </SelectContent>
-              </Select>
+              <Label htmlFor="model">Active provider</Label>
+              <div
+                id="model"
+                className="flex h-8 items-center gap-2 rounded-md border border-border bg-muted/40 px-3 text-sm"
+              >
+                {aiLoading ? (
+                  <span className="text-muted-foreground">Checking…</span>
+                ) : !ai ? (
+                  <span className="text-muted-foreground">Backend unreachable</span>
+                ) : (
+                  <>
+                    <Badge variant={ai.ai_mode === "mock" ? "outline" : "default"}>
+                      {ai.ai_mode}
+                    </Badge>
+                    <span className="truncate font-mono text-xs text-muted-foreground">
+                      {ai.ai_model ?? "deterministic stand-in answers"}
+                    </span>
+                  </>
+                )}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {ai?.ai_mode_reason
+                  ? ai.ai_mode_reason
+                  : "Set by the backend's .env — see .env.example for the options."}
+              </p>
             </div>
 
             <div className="space-y-1.5">

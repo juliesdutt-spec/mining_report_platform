@@ -3,12 +3,15 @@
  *
  * There is no backend settings endpoint, so these preferences live in
  * localStorage on the viewer's own machine. Only non-sensitive display
- * preferences are stored here — never an API key. CLAUDE_API_KEY is a
- * server-side environment variable and must never reach the browser.
+ * preferences are stored here — never an API key. Provider keys are
+ * server-side environment variables and must never reach the browser.
+ *
+ * The model is deliberately absent: which provider answers is decided by the
+ * backend's .env, so storing a choice here would let the page claim a model
+ * it has no way to select. Settings reads the live one from /health instead.
  */
 export interface DataForgeSettings {
   apiUrl: string;
-  modelName: string;
   ocrConfidence: number;
 }
 
@@ -16,7 +19,6 @@ const STORAGE_KEY = "dataforge-settings";
 
 export const DEFAULT_SETTINGS: DataForgeSettings = {
   apiUrl: "http://localhost:8000",
-  modelName: "claude-opus-5",
   ocrConfidence: 85,
 };
 
@@ -29,8 +31,6 @@ export function loadSettings(): DataForgeSettings {
     const parsed = JSON.parse(raw) as Partial<DataForgeSettings>;
     return {
       apiUrl: typeof parsed.apiUrl === "string" ? parsed.apiUrl : DEFAULT_SETTINGS.apiUrl,
-      modelName:
-        typeof parsed.modelName === "string" ? parsed.modelName : DEFAULT_SETTINGS.modelName,
       ocrConfidence:
         typeof parsed.ocrConfidence === "number" && Number.isFinite(parsed.ocrConfidence)
           ? parsed.ocrConfidence

@@ -64,6 +64,32 @@ export async function checkBackendHealth(): Promise<{ isOnline: boolean; statusT
   }
 }
 
+/** Which model is answering, as reported by GET /health. Never includes a key. */
+export interface AiStatus {
+  /** Live provider name, or "mock" when answers are deterministic stand-ins. */
+  ai_mode: string;
+  ai_model: string | null;
+  /** Present only in mock mode: what is missing, in an operator's terms. */
+  ai_mode_reason: string | null;
+  ai_provider_requested: string;
+  ai_providers_available: string[];
+}
+
+/**
+ * Read the active AI provider.
+ *
+ * The model in play is decided by the backend's environment, never by the
+ * browser, so Settings reports this rather than offering a choice it could
+ * not honour. Returns null when the backend is unreachable.
+ */
+export async function fetchAiStatus(): Promise<AiStatus | null> {
+  try {
+    return await apiFetch<AiStatus>('/health', undefined, 5000);
+  } catch {
+    return null;
+  }
+}
+
 /* ---------- Backend response contracts (see backend/api.py) ---------- */
 
 /** The AI extraction payload — schema defined in ai_extractor.extract_structured_data. */

@@ -15,6 +15,9 @@ pytesseract>=0.3.10
 Pillow==10.4.0
 
 # AI / LLM
+# Gemini, OpenRouter and Ollama need no package - ai_providers reaches them
+# over stdlib urllib. The Anthropic SDK is used for Claude when present;
+# without it that provider falls back to the same REST path as the others.
 anthropic==0.40.0
 
 # Database

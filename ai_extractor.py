@@ -1,12 +1,17 @@
 """
-AI Extraction Module - Claude API Integration
+AI Extraction Module - multi-provider LLM integration
 SIH26023 - AI-Powered Geological & Mining Reporting Solution
 
-Uses Claude for:
+Builds the prompts for:
 1. Structured data extraction from mining reports
 2. Report summarization
 3. Topic identification
 4. AI-powered Q&A
+
+Which model answers them is `ai_providers`' decision - Claude, Gemini,
+OpenRouter or a local Ollama, selected from the environment. When none is
+configured, or a call fails, every function here falls back to its
+deterministic mock answer, so the platform runs with no key at all.
 """
 import os
 import json
@@ -15,34 +20,41 @@ from typing import Optional
 
 # Populates os.environ from .env before any getenv below runs.
 import utils.env  # noqa: F401
+import ai_providers
+from ai_providers import ProviderError
 
-# Try importing anthropic
+# Whether the Anthropic SDK is importable. Still reported by /health, but no
+# longer decisive: ai_providers reaches Claude over REST when it is missing.
 try:
-    import anthropic
+    import anthropic  # noqa: F401
     ANTHROPIC_AVAILABLE = True
 except ImportError:
     ANTHROPIC_AVAILABLE = False
 
-# Configuration
-CLAUDE_API_KEY = os.getenv("CLAUDE_API_KEY", "")
-CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-opus-5")
-USE_MOCK = os.getenv("USE_MOCK_AI", "false").lower() == "true" or not CLAUDE_API_KEY
+# Re-exported for callers that predate the provider layer (/health, tests).
+CLAUDE_API_KEY = ai_providers.CLAUDE_API_KEY
+CLAUDE_MODEL = ai_providers.CLAUDE_MODEL
+USE_MOCK = ai_providers.USE_MOCK
+AI_MODE = ai_providers.describe()["mode"]
 
 
 def get_client():
-    """Get Claude API client"""
-    if not ANTHROPIC_AVAILABLE or not CLAUDE_API_KEY:
-        return None
-    return anthropic.Anthropic(api_key=CLAUDE_API_KEY)
+    """
+    The active provider, or None in mock mode.
+
+    Transport moved to `ai_providers`; this remains so existing guards that
+    ask "is there anything to call?" keep reading naturally.
+    """
+    return ai_providers.ACTIVE_PROVIDER
 
 
 def extract_structured_data(text: str, filename: str = "") -> dict:
     """
-    Extract structured data from mining report text using Claude.
+    Extract structured data from mining report text using the active provider.
     Returns a dict with: date, location, mineral_type, quantity, 
     extraction_method, company, mine_name, summary, topics, etc.
     """
-    if USE_MOCK or not get_client():
+    if USE_MOCK:
         return _mock_extraction(text, filename)
     
     prompt = f"""You are an expert geological and mining data analyst working for CMPDI/CIL 
@@ -78,25 +90,15 @@ TEXT:
 Respond ONLY with valid JSON. No markdown, no explanation."""
 
     try:
-        client = get_client()
-        response = client.messages.create(
-            model=CLAUDE_MODEL,
-            max_tokens=2000,
-            messages=[{"role": "user", "content": prompt}]
-        )
-        
-        result_text = response.content[0].text.strip()
-        # Try to parse JSON
-        return _parse_json_response(result_text)
-        
-    except Exception as e:
-        print(f"Claude API error: {e}")
+        return _parse_json_response(ai_providers.complete(prompt, max_tokens=2000))
+    except ProviderError as exc:
+        print(f"AI extraction failed, using mock data: {exc}")
         return _mock_extraction(text, filename)
 
 
 def summarize_report(text: str) -> str:
     """Generate a summary of a mining report"""
-    if USE_MOCK or not get_client():
+    if USE_MOCK:
         return _mock_summary(text)
     
     prompt = f"""Summarize the following mining/geological report in 2-3 clear sentences.
@@ -108,20 +110,15 @@ TEXT:
 Provide only the summary text, no labels."""
 
     try:
-        client = get_client()
-        response = client.messages.create(
-            model=CLAUDE_MODEL,
-            max_tokens=500,
-            messages=[{"role": "user", "content": prompt}]
-        )
-        return response.content[0].text.strip()
-    except Exception as e:
+        return ai_providers.complete(prompt, max_tokens=500)
+    except ProviderError as exc:
+        print(f"AI summary failed, using mock summary: {exc}")
         return _mock_summary(text)
 
 
 def identify_topics(text: str) -> list:
     """Identify key topics and themes from the document"""
-    if USE_MOCK or not get_client():
+    if USE_MOCK:
         return _mock_topics(text)
     
     prompt = f"""Analyze this mining/geological report and identify the main topics/themes.
@@ -133,14 +130,9 @@ TEXT:
 Return ONLY a JSON array like ["topic1", "topic2", ...]"""
 
     try:
-        client = get_client()
-        response = client.messages.create(
-            model=CLAUDE_MODEL,
-            max_tokens=500,
-            messages=[{"role": "user", "content": prompt}]
-        )
-        return _parse_json_array(response.content[0].text.strip())
-    except Exception:
+        return _parse_json_array(ai_providers.complete(prompt, max_tokens=500))
+    except ProviderError as exc:
+        print(f"AI topic detection failed, using mock topics: {exc}")
         return _mock_topics(text)
 
 
@@ -149,7 +141,7 @@ def query_reports(question: str, reports_context: str) -> str:
     Answer a natural language question about mining reports.
     Uses the extracted data as context.
     """
-    if USE_MOCK or not get_client():
+    if USE_MOCK:
         return _mock_query(question, reports_context)
     
     prompt = f"""You are an AI assistant for CMPDI/CIL mining data analysis.
@@ -165,14 +157,9 @@ contain enough information to fully answer, say so and mention what data is avai
 Be specific with numbers, dates, and locations where possible."""
 
     try:
-        client = get_client()
-        response = client.messages.create(
-            model=CLAUDE_MODEL,
-            max_tokens=1000,
-            messages=[{"role": "user", "content": prompt}]
-        )
-        return response.content[0].text.strip()
-    except Exception as e:
+        return ai_providers.complete(prompt, max_tokens=1000)
+    except ProviderError as exc:
+        print(f"AI query failed, using mock answer: {exc}")
         return _mock_query(question, reports_context)
 
 
@@ -239,7 +226,7 @@ def generate_report_content(extracted_data: dict) -> str:
 # ==================== MOCK/DEMO FUNCTIONS ====================
 
 def _parse_json_response(text: str) -> dict:
-    """Parse JSON from Claude response, handling markdown code blocks"""
+    """Parse JSON from a model response, handling markdown code blocks"""
     # Remove markdown code blocks if present
     text = re.sub(r'```json\s*', '', text)
     text = re.sub(r'```\s*', '', text)
@@ -259,7 +246,7 @@ def _parse_json_response(text: str) -> dict:
 
 
 def _parse_json_array(text: str) -> list:
-    """Parse JSON array from Claude response"""
+    """Parse JSON array from a model response"""
     text = re.sub(r'```json\s*', '', text)
     text = re.sub(r'```\s*', '', text)
     text = text.strip()
@@ -282,7 +269,7 @@ def _parse_json_array(text: str) -> list:
 
 
 def _mock_extraction(text: str, filename: str = "") -> dict:
-    """Demo/mock extraction when Claude API is not available"""
+    """Deterministic stand-in used when no AI provider is configured"""
     text_lower = text.lower() if text else ""
     
     # Try to detect mineral type
@@ -366,6 +353,8 @@ def _mock_query(question: str, context: str) -> str:
             f"**Question:** {question}\n\n"
             f"**Answer:** The mining reports in the database contain information about "
             f"coal extraction operations across various locations in India. "
-            f"For detailed analysis, please upload specific mining reports or "
-            f"configure the CLAUDE_API_KEY environment variable for AI-powered responses.\n\n"
-            f"*This is a demo response. Configure CLAUDE_API_KEY for real AI analysis.*")
+            f"For a real answer grounded in these documents, configure an AI "
+            f"provider - GEMINI_API_KEY (free tier), OPENROUTER_API_KEY (free "
+            f"models), a local Ollama, or CLAUDE_API_KEY.\n\n"
+            f"*This is a deterministic demo response, not model output. "
+            f"See README.md > AI providers, or GET /health for the active mode.*")

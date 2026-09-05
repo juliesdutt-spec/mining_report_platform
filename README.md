@@ -55,8 +55,8 @@ An AI-powered platform that automates the entire mining reporting pipeline:
 └───┬────────────┬──────────────┬───────────────┬──────────┘
     ▼            ▼              ▼               ▼
 ┌─────────┐ ┌──────────┐ ┌────────────┐ ┌──────────────┐
-│DOCUMENT │ │  CLAUDE  │ │  SQLite    │ │ VALIDATION + │
-│PROCESSING│ │  AI API  │ │  DATABASE  │ │  EVIDENCE    │
+│DOCUMENT │ │    AI    │ │  SQLite    │ │ VALIDATION + │
+│PROCESSING│ │ PROVIDER │ │  DATABASE  │ │  EVIDENCE    │
 │pypdf +  │ │ (extract,│ │ (SQLAlchemy)│ │  ENGINES     │
 │tesseract│ │  answer) │ │            │ │              │
 └─────────┘ └──────────┘ └────────────┘ └──────────────┘
@@ -86,9 +86,11 @@ cd frontend && npm install && cd ..
 cp .env.example .env
 ```
 
-`.env` is gitignored and untracked — safe to put a key in. Without
-`CLAUDE_API_KEY` the backend falls back to deterministic mock extraction and
-answers, so everything still runs; see *AI modes* below.
+`.env` is gitignored and untracked — safe to put a key in. Nothing in it is
+required: with no provider configured the backend falls back to deterministic
+mock extraction and answers, so everything still runs. To get real answers you
+need one AI provider, and three of the four cost nothing — see *AI providers*
+below.
 
 ### 3. Run
 
@@ -110,37 +112,81 @@ The frontend targets `http://localhost:8000` by default; override with
 ### Tests
 
 ```bash
-python -m unittest discover -s tests    # validation, evidence, env bootstrap
+python -m unittest discover -s tests    # validation, evidence, env, AI providers
 cd frontend && npx tsc --noEmit         # frontend type check
 ```
 
 ---
 
-## 🤖 AI modes
+## 🤖 AI providers
 
-| `CLAUDE_API_KEY` | `USE_MOCK_AI` | Behaviour |
+Every AI feature is the same shape — build a prompt, get text back — so
+`ai_providers.py` puts one `complete()` method behind four transports. Pick one
+in `.env`; the rest of the platform does not change.
+
+| Provider | `.env` | Cost |
 |---|---|---|
-| set | `false` | Real Claude extraction and answers |
-| set | `true` | Forced mock (useful for offline demos) |
-| unset | either | Mock — the key is required for real AI |
+| **Gemini** | `GEMINI_API_KEY` | Free tier, no payment method needed |
+| **OpenRouter** | `OPENROUTER_API_KEY` + `OPENROUTER_MODEL` | Free models (ids end in `:free`) |
+| **Ollama** | `AI_PROVIDER=ollama` | Free, local, offline, no key |
+| **Claude** | `CLAUDE_API_KEY` | Paid — requires a card on the Anthropic account |
+| *(none)* | — | Deterministic mock answers; every screen still works |
+
+`AI_PROVIDER` selects one explicitly. Left at `auto` (the default) the first
+provider with credentials wins, in the order above. Ollama is never chosen by
+`auto` — having it installed is not the same as wanting it — so point at it
+with `AI_PROVIDER=ollama`. `USE_MOCK_AI=true` forces mock over any key, which
+is how you keep a live key from being spent during development.
+
+`OPENROUTER_MODEL` has no default on purpose: free model ids rotate as
+providers add and drop promotions, so a baked-in guess would 404 on your first
+call. Pick a current one from <https://openrouter.ai/models?max_price=0>.
+
+`OPENROUTER_BASE_URL` also makes that provider work against any
+OpenAI-compatible server — LM Studio, vLLM, LiteLLM, Groq.
+
+### Quickest free setup (Gemini)
+
+```bash
+# 1. Get a key at https://aistudio.google.com/apikey  (no card required)
+# 2. Put it in .env
+echo 'GEMINI_API_KEY=your_key_here' >> .env
+# 3. Confirm the backend picked it up
+curl -s localhost:8000/health
+# {"status":"healthy", ..., "ai_mode":"gemini", "ai_model":"gemini-2.5-flash", "ai_mode_reason":null}
+```
+
+### Fully local setup (Ollama)
+
+```bash
+# 1. Install from https://ollama.com/download, then pull a model
+ollama pull llama3.2
+# 2. Point the backend at it
+printf 'AI_PROVIDER=ollama\nOLLAMA_MODEL=llama3.2\n' >> .env
+```
+
+Ollama on CPU is slow; raise `AI_TIMEOUT_SECONDS` if calls time out.
+
+### Confirming which provider is live
+
+`GET /health` reports the active provider without ever reading a key back, and
+the Settings page shows the same thing. `ai_mode` is the live provider name, or
+`mock`, in which case `ai_mode_reason` names exactly what is missing.
 
 `.env` is read at startup by `utils/env.py`, which every module that reads
 configuration imports before its first `os.getenv`. A variable already exported
 in the shell takes precedence over the file.
 
-To confirm a key took effect without reading it back, ask the backend:
+Keys are read server-side only: never returned by an endpoint, never logged
+(error text is scrubbed of any configured key before it is printed), never
+exposed to the browser, and never committed — `.env` is untracked for that
+reason. Gemini's key travels in a header rather than the URL so it cannot be
+captured by proxy and access logs.
 
-```bash
-curl -s localhost:8000/health
-# {"status":"healthy", ..., "ai_mode":"claude", "ai_model":"claude-opus-5", "ai_mode_reason":null}
-```
+If a provider call fails — wrong model id, rate limit, Ollama not running —
+the request degrades to a mock answer and logs why, rather than erroring.
 
-`ai_mode` is `mock` until a key is configured, and `ai_mode_reason` says which
-of the three causes applies. The key itself is read server-side only: it is
-never returned by an endpoint, never logged, never exposed to the browser and
-must never be committed — `.env` is untracked for that reason.
-
-Independent of the AI mode, PDF text extraction, OCR, storage, word clouds,
+Independent of the provider, PDF text extraction, OCR, storage, word clouds,
 PDF generation, discrepancy detection and evidence location are all real.
 
 ---
@@ -234,7 +280,7 @@ Deliberately absent, rather than simulated:
 
 1. **ACT 1 (2 min):** Problem Explanation - Show the manual reporting bottleneck
 2. **ACT 2 (3 min):** Live PDF Upload - Upload sample mining report
-3. **ACT 3 (2 min):** Data Extraction - Claude extracts structured data → JSON shown
+3. **ACT 3 (2 min):** Data Extraction - the configured model extracts structured data → JSON shown
 4. **ACT 4 (2 min):** Report Generation - Download formatted PDF report
 5. **ACT 5 (2 min):** AI Query - "What was total coal extracted?" → AI answers
 6. **ACT 6 (1 min):** Q&A - Explain architecture to judges
@@ -247,7 +293,7 @@ Deliberately absent, rather than simulated:
 |-----------|-----------|-----|
 | Frontend | Streamlit | Pure Python, zero JS, fast development |
 | Backend | FastAPI | Async, auto-docs, fast performance |
-| AI/LLM | Claude API | Best document analysis, 200K context |
+| AI/LLM | Gemini / OpenRouter / Ollama / Claude | Swappable in `.env`; free options first |
 | Document Processing | pypdf + pytesseract | PDF extraction + OCR |
 | Database | SQLite | Zero setup, perfect for MVP |
 | Report Generation | fpdf2 | Python PDF generation |
@@ -266,7 +312,8 @@ mining_report_platform/
 │   └── api.py               # FastAPI backend
 ├── database.py               # SQLite + SQLAlchemy models
 ├── document_processor.py     # PDF text extraction + OCR
-├── ai_extractor.py           # Claude API integration
+├── ai_providers.py           # Gemini / OpenRouter / Ollama / Claude transports
+├── ai_extractor.py           # Prompts, parsing and mock fallbacks
 ├── report_generator.py       # PDF report generation
 ├── wordcloud_generator.py    # Word cloud & topics
 ├── create_sample_pdf.py      # Sample PDF generator
@@ -283,8 +330,8 @@ mining_report_platform/
 
 | Risk | Mitigation |
 |------|------------|
-| Claude API rate limits | Start with small PDFs, cache responses |
-| OCR accuracy | pytesseract + Claude validation |
+| Provider rate limits | Free tiers are capped; swap `AI_PROVIDER` or run Ollama locally |
+| OCR accuracy | pytesseract + model validation |
 | Database schema changes | Start with SQLite, SQLAlchemy handles migrations |
 | Deployment issues | Demo locally on laptop; backup mobile hotspot |
 | PDF parsing edge cases | Test with 10+ different mining report formats early |
