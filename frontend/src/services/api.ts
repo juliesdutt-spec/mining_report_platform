@@ -99,6 +99,8 @@ export interface BackendReportListItem {
   quantity_extracted: string | null;
   summary: string | null;
   topics: string[] | null;
+  company_name?: string | null;
+  mine_name?: string | null;
 }
 
 export interface BackendReportListResponse {

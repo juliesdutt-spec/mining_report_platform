@@ -6,36 +6,27 @@ import { PageHeader } from "@/components/shared/PageHeader";
 import { Section, FieldLabel } from "@/components/shared/Section";
 import { SourceCitation } from "@/components/shared/SourceCitation";
 import { ConfidenceMeter } from "@/components/shared/ConfidenceMeter";
-import { QueryResult, EvidenceSnippet, Subsidiary } from "@/types";
+import { QueryResult, EvidenceSnippet, OrganisationFilter } from "@/types";
 import { askDataForgeQuery, fetchRecentQueries } from "@/services/queries";
-import { fetchDocuments } from "@/services/documents";
+import { exampleQuestions, filterByOrganisation, useCorpus } from "@/lib/corpus";
 import { ApiError } from "@/services/api";
 
 interface AskPageProps {
   onInspectEvidence: (evidence: EvidenceSnippet) => void;
-  selectedSubsidiary: Subsidiary | "ALL";
+  selectedOrganisation: OrganisationFilter;
 }
 
-const EXAMPLES = [
-  "Compare coal production and stripping ratios across SECL and NCL in FY 2023-24.",
-  "What are the proved reserves and seam thicknesses in Talcher Basin Block V?",
-  "Summarise prime coking coal extraction at Moonidih and methane pre-drainage levels.",
-  "Verify bio-reclamation targets achieved at Lakhanpur OC.",
-];
-
-export function AskPage({ onInspectEvidence, selectedSubsidiary }: AskPageProps) {
+export function AskPage({ onInspectEvidence, selectedOrganisation }: AskPageProps) {
   const [queryInput, setQueryInput] = useState("");
   const [activeResult, setActiveResult] = useState<QueryResult | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [queryError, setQueryError] = useState<string | null>(null);
-  const [indexedCount, setIndexedCount] = useState<number | null>(null);
-
-  // Report how many documents are actually indexed, rather than a fixed figure.
-  useEffect(() => {
-    fetchDocuments()
-      .then((docs) => setIndexedCount(docs.length))
-      .catch(() => setIndexedCount(null));
-  }, []);
+  // Both the indexed count and the suggested questions describe the corpus in
+  // scope, so neither can name a document that is not there.
+  const { documents, isLoading: isCorpusLoading } = useCorpus();
+  const scopedDocs = filterByOrganisation(documents, selectedOrganisation);
+  const indexedCount = isCorpusLoading ? null : scopedDocs.length;
+  const examples = exampleQuestions(scopedDocs);
 
   // Show the most recent question from GET /query-history on first load.
   useEffect(() => {
@@ -53,7 +44,7 @@ export function AskPage({ onInspectEvidence, selectedSubsidiary }: AskPageProps)
     setIsLoading(true);
     setQueryError(null);
     try {
-      const res = await askDataForgeQuery(queryText);
+      const res = await askDataForgeQuery(queryText, selectedOrganisation);
       setActiveResult(res);
     } catch (err) {
       setQueryError(
@@ -97,22 +88,24 @@ export function AskPage({ onInspectEvidence, selectedSubsidiary }: AskPageProps)
           </Button>
         </form>
 
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-          <FieldLabel>Try</FieldLabel>
-          {EXAMPLES.map((q) => (
-            <button
-              key={q}
-              type="button"
-              onClick={() => {
-                setQueryInput(q);
-                handleRunQuery(q);
-              }}
-              className="max-w-sm truncate text-left text-xs text-primary underline-offset-4 transition-colors hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            >
-              {q}
-            </button>
-          ))}
-        </div>
+        {examples.length > 0 && (
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+            <FieldLabel>Try</FieldLabel>
+            {examples.map((q) => (
+              <button
+                key={q}
+                type="button"
+                onClick={() => {
+                  setQueryInput(q);
+                  handleRunQuery(q);
+                }}
+                className="max-w-sm truncate text-left text-xs text-primary underline-offset-4 transition-colors hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                {q}
+              </button>
+            ))}
+          </div>
+        )}
 
         <p className="text-xs text-muted-foreground">
           {indexedCount === null
@@ -122,7 +115,7 @@ export function AskPage({ onInspectEvidence, selectedSubsidiary }: AskPageProps)
               }`}{" "}
           · Scope:{" "}
           <span className="font-medium text-foreground">
-            {selectedSubsidiary === "ALL" ? "All subsidiaries" : selectedSubsidiary}
+            {selectedOrganisation === "ALL" ? "All organisations" : selectedOrganisation}
           </span>
         </p>
       </div>

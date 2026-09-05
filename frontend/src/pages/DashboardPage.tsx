@@ -1,13 +1,4 @@
 import React, { useState, useEffect } from "react";
-import {
-  Area,
-  AreaChart,
-  CartesianGrid,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
 import { ArrowRight, FileText, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -27,60 +18,59 @@ import { Stat, StatGroup } from "@/components/shared/StatGroup";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import { ConfidenceMeter } from "@/components/shared/ConfidenceMeter";
 import { SourceCitation } from "@/components/shared/SourceCitation";
-import { useChartColors, tooltipStyle } from "@/lib/chart";
 import {
-  KpiMetrics,
   MiningDocument,
-  ProductionDataPoint,
   ValidationItem,
   QueryResult,
   EvidenceSnippet,
   NavigationTab,
-  Subsidiary,
+  OrganisationFilter,
 } from "@/types";
 import { fetchPlatformStats } from "@/services/analytics";
 import { BackendStats } from "@/services/api";
 import { fetchDocuments } from "@/services/documents";
 import { fetchValidation } from "@/services/validation";
+import { filterByOrganisation } from "@/lib/corpus";
 import { fetchRecentQueries } from "@/services/queries";
 
 interface DashboardPageProps {
   onNavigate: (tab: NavigationTab) => void;
   onInspectEvidence: (evidence: EvidenceSnippet) => void;
-  selectedSubsidiary: Subsidiary | "ALL";
+  selectedOrganisation: OrganisationFilter;
 }
 
 export function DashboardPage({
   onNavigate,
   onInspectEvidence,
-  selectedSubsidiary,
+  selectedOrganisation,
 }: DashboardPageProps) {
   const [stats, setStats] = useState<BackendStats | null>(null);
   const [documents, setDocuments] = useState<MiningDocument[]>([]);
   const [validationAlerts, setValidationAlerts] = useState<ValidationItem[]>([]);
   const [recentQueries, setRecentQueries] = useState<QueryResult[]>([]);
-  const colors = useChartColors();
 
   useEffect(() => {
-    fetchPlatformStats()
-      .then(setStats)
-      .catch(() => setStats(null));
     fetchDocuments()
       .then(setDocuments)
       .catch(() => setDocuments([]));
-    fetchValidation()
-      .then((res) => setValidationAlerts(res.findings))
-      .catch(() => setValidationAlerts([]));
+
     fetchRecentQueries()
       .then(setRecentQueries)
       .catch(() => setRecentQueries([]));
   }, []);
 
+  // Counts are aggregated server-side, so the organisation scope has to go
+  // with the request rather than being applied to the result.
+  useEffect(() => {
+    fetchPlatformStats(selectedOrganisation)
+      .then(setStats)
+      .catch(() => setStats(null));
+    fetchValidation(selectedOrganisation)
+      .then((res) => setValidationAlerts(res.findings))
+      .catch(() => setValidationAlerts([]));
+  }, [selectedOrganisation]);
 
-  const filteredDocs =
-    selectedSubsidiary === "ALL"
-      ? documents
-      : documents.filter((d) => d.subsidiary === selectedSubsidiary);
+  const filteredDocs = filterByOrganisation(documents, selectedOrganisation);
 
   const openAlerts = validationAlerts.filter((a) => a.status === "pending");
 
@@ -157,7 +147,7 @@ export function DashboardPage({
             <TableHeader>
               <TableRow className="hover:bg-transparent">
                 <TableHead>Document</TableHead>
-                <TableHead>Subsidiary</TableHead>
+                <TableHead>Organisation</TableHead>
                 <TableHead>Mine</TableHead>
                 <TableHead className="text-right">Output</TableHead>
                 <TableHead>Confidence</TableHead>
@@ -175,9 +165,9 @@ export function DashboardPage({
                     </div>
                   </TableCell>
                   <TableCell className="font-mono text-xs text-muted-foreground">
-                    {doc.subsidiary}
+                    {doc.organisation ?? "—"}
                   </TableCell>
-                  <TableCell className="text-muted-foreground">{doc.mineName}</TableCell>
+                  <TableCell className="text-muted-foreground">{doc.mineName ?? "—"}</TableCell>
                   <TableCell className="text-right font-mono font-medium tabular-nums text-foreground">
                     {doc.quantityExtracted}
                   </TableCell>

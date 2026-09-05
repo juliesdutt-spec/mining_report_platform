@@ -1,4 +1,4 @@
-import { QueryResult } from '../types';
+import { OrganisationFilter, QueryResult } from '../types';
 import {
   apiFetch,
   BackendQueryHistoryResponse,
@@ -11,15 +11,22 @@ import {
  *
  * The backend takes `question` as a QUERY PARAMETER (not a JSON body) — see
  * `query_mining_reports` in backend/api.py — and answers using every completed
- * report as context. Alongside the answer it returns the passages it could
- * locate in those reports and the documents they came from.
+ * report as context, narrowed to one organisation when a scope is selected.
+ * Alongside the answer it returns the passages it could locate in those
+ * reports and the documents they came from.
  *
  * Relevance scores and key findings are still not modelled server-side, so
  * those stay empty rather than being synthesised to fill the UI.
  */
-export async function askDataForgeQuery(question: string): Promise<QueryResult> {
+export async function askDataForgeQuery(
+  question: string,
+  organisation: OrganisationFilter = 'ALL'
+): Promise<QueryResult> {
+  const params = new URLSearchParams({ question });
+  if (organisation !== 'ALL') params.set('organisation', organisation);
+
   const res = await apiFetch<BackendQueryResponse>(
-    `/query?question=${encodeURIComponent(question)}`,
+    `/query?${params.toString()}`,
     { method: 'POST' },
     120000
   );

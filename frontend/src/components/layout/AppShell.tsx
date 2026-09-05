@@ -4,14 +4,14 @@ import { Header } from "./Header";
 import { CommandPalette } from "./CommandPalette";
 import { EvidenceSheet } from "@/components/shared/EvidenceSheet";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { NavigationTab, Subsidiary, EvidenceSnippet } from "@/types";
+import { NavigationTab, OrganisationFilter, EvidenceSnippet } from "@/types";
 import { checkBackendHealth } from "@/services/api";
 
 interface AppShellProps {
   currentTab: NavigationTab;
-  onSelectTab: (tab: NavigationTab) => void;
-  selectedSubsidiary: Subsidiary | "ALL";
-  onSelectSubsidiary: (sub: Subsidiary | "ALL") => void;
+  onSelectTab: (tab: NavigationTab, param?: string) => void;
+  selectedOrganisation: OrganisationFilter;
+  onSelectOrganisation: (sub: OrganisationFilter) => void;
   activeEvidence: EvidenceSnippet | null;
   onCloseEvidence: () => void;
   onQuickUpload: () => void;
@@ -21,8 +21,8 @@ interface AppShellProps {
 export function AppShell({
   currentTab,
   onSelectTab,
-  selectedSubsidiary,
-  onSelectSubsidiary,
+  selectedOrganisation,
+  onSelectOrganisation,
   activeEvidence,
   onCloseEvidence,
   onQuickUpload,
@@ -65,8 +65,8 @@ export function AppShell({
         <Sidebar
           currentTab={currentTab}
           onSelectTab={onSelectTab}
-          selectedSubsidiary={selectedSubsidiary}
-          onSelectSubsidiary={onSelectSubsidiary}
+          selectedOrganisation={selectedOrganisation}
+          onSelectOrganisation={onSelectOrganisation}
           isCollapsed={isSidebarCollapsed}
           onToggleCollapse={() => setIsSidebarCollapsed((prev) => !prev)}
         />
@@ -77,7 +77,7 @@ export function AppShell({
             isCollapsed={isSidebarCollapsed}
             onToggleSidebar={() => setIsSidebarCollapsed((prev) => !prev)}
             onOpenCommandPalette={() => setIsCommandPaletteOpen(true)}
-            selectedSubsidiary={selectedSubsidiary}
+            selectedOrganisation={selectedOrganisation}
             onQuickUpload={onQuickUpload}
             backendStatus={backendStatus}
           />

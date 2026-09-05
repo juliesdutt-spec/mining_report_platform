@@ -6,13 +6,14 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { Section, FieldLabel } from "@/components/shared/Section";
 import { cn } from "@/lib/utils";
-import { TopicEntity, MiningDocument, EvidenceSnippet, Subsidiary } from "@/types";
+import { TopicEntity, MiningDocument, EvidenceSnippet, OrganisationFilter } from "@/types";
 import { fetchTopics } from "@/services/topics";
 import { fetchDocuments } from "@/services/documents";
+import { filterByOrganisation } from "@/lib/corpus";
 
 interface TopicsPageProps {
   onInspectEvidence: (evidence: EvidenceSnippet) => void;
-  selectedSubsidiary: Subsidiary | "ALL";
+  selectedOrganisation: OrganisationFilter;
 }
 
 const CATEGORIES = ["all", "operation", "mineral", "environment", "safety"] as const;
@@ -35,7 +36,7 @@ function weightStyles(weight: number, isSelected: boolean) {
 
 import { WordCloud } from "@/components/shared/WordCloud";
 
-export function TopicsPage({ onInspectEvidence }: TopicsPageProps) {
+export function TopicsPage({ onInspectEvidence, selectedOrganisation }: TopicsPageProps) {
   const [topics, setTopics] = useState<TopicEntity[]>([]);
   const [selectedTopic, setSelectedTopic] = useState<TopicEntity | null>(null);
   const [documents, setDocuments] = useState<MiningDocument[]>([]);
@@ -54,8 +55,10 @@ export function TopicsPage({ onInspectEvidence }: TopicsPageProps) {
   const filteredTopics =
     filterCategory === "all" ? topics : topics.filter((t) => t.category === filterCategory);
 
+  const scopedDocs = filterByOrganisation(documents, selectedOrganisation);
+
   const matchedDocs = selectedTopic
-    ? documents.filter((d) =>
+    ? scopedDocs.filter((d) =>
         d.topics.some(
           (t) =>
             t.toLowerCase().includes(selectedTopic.name.toLowerCase()) ||
@@ -188,9 +191,13 @@ export function TopicsPage({ onInspectEvidence }: TopicsPageProps) {
                       {doc.summary}
                     </p>
                     <div className="mt-1.5 flex items-center gap-2 text-xs text-muted-foreground">
-                      <span className="font-mono">{doc.subsidiary}</span>
-                      <span aria-hidden>·</span>
-                      <span>{doc.mineName}</span>
+                      {doc.organisation && (
+                        <>
+                          <span className="truncate font-mono">{doc.organisation}</span>
+                          <span aria-hidden>·</span>
+                        </>
+                      )}
+                      <span>{doc.mineName ?? doc.filename}</span>
                     </div>
                   </li>
                 ))}

@@ -1,4 +1,4 @@
-import { ValidationItem } from '../types';
+import { OrganisationFilter, ValidationItem } from '../types';
 import { apiFetch } from './api';
 
 /** GET /validation — findings the backend computes from the stored reports. */
@@ -7,8 +7,12 @@ export interface ValidationResponse {
   findings: ValidationItem[];
 }
 
-export async function fetchValidation(): Promise<ValidationResponse> {
-  return apiFetch<ValidationResponse>('/validation');
+export async function fetchValidation(
+  organisation: OrganisationFilter = 'ALL'
+): Promise<ValidationResponse> {
+  const query =
+    organisation === 'ALL' ? '' : `?organisation=${encodeURIComponent(organisation)}`;
+  return apiFetch<ValidationResponse>(`/validation${query}`);
 }
 
 /**

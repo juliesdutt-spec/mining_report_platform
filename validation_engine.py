@@ -156,6 +156,7 @@ def detect_discrepancies(reports: List[Any]) -> List[Dict[str, Any]]:
                         "title": f"{label} disagrees between two reports",
                         "fieldName": field,
                         "mineName": _field_of(a, "mine_name") or _field_of(a, "location"),
+                        "organisation": _field_of(a, "company_name"),
                         "sourceA": _source(a, field),
                         "sourceB": _source(b, field),
                         "detail": (
@@ -181,6 +182,7 @@ def detect_discrepancies(reports: List[Any]) -> List[Dict[str, Any]]:
                 "title": "Same document ingested more than once",
                 "fieldName": "filename",
                 "mineName": _field_of(first, "mine_name") or _field_of(first, "location"),
+                "organisation": _field_of(first, "company_name"),
                 "sourceA": _source(first, "filename"),
                 "sourceB": _source(other, "filename"),
                 "detail": "These entries share a filename, so the corpus may double-count them.",
@@ -197,6 +199,7 @@ def detect_discrepancies(reports: List[Any]) -> List[Dict[str, Any]]:
                     "title": f"{label} not extracted",
                     "fieldName": field,
                     "mineName": _field_of(report, "mine_name") or _field_of(report, "location"),
+                    "organisation": _field_of(report, "company_name"),
                     "sourceA": _source(report, field),
                     "sourceB": None,
                     "detail": f"The extractor returned no {label.lower()} for this document.",
@@ -212,6 +215,7 @@ def detect_discrepancies(reports: List[Any]) -> List[Dict[str, Any]]:
                 "title": "Extraction failed for this document",
                 "fieldName": "status",
                 "mineName": _field_of(report, "mine_name"),
+                "organisation": _field_of(report, "company_name"),
                 "sourceA": {
                     "documentId": report.id,
                     "documentName": report.filename,

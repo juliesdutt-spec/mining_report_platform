@@ -185,6 +185,10 @@ def list_reports(
                 "quantity_extracted": r.quantity_extracted,
                 "summary": r.summary,
                 "topics": r.topics,
+                # Included so the UI can group and filter by the organisation
+                # a report belongs to without fetching each report's detail.
+                "company_name": r.company_name,
+                "mine_name": r.mine_name,
             }
             for r in reports
         ]
@@ -328,21 +332,32 @@ def get_wordcloud(report_id: int, db: Session = Depends(get_db)):
 @app.post("/query")
 def query_mining_reports(
     question: str = Query(..., description="Natural language question about mining reports"),
+    organisation: str = Query(
+        None,
+        description="Restrict the answer to reports from this organisation.",
+    ),
     db: Session = Depends(get_db)
 ):
     """
     AI-powered query system. Ask natural language questions about mining reports.
+
+    When `organisation` is given, only that organisation's reports form the
+    context, so an answer never draws on documents the user has filtered out.
     """
     try:
-        # Get all reports as context
-        reports = db.query(MiningReport).filter(
-            MiningReport.status == "completed"
-        ).all()
-        
+        query = db.query(MiningReport).filter(MiningReport.status == "completed")
+        if organisation:
+            query = query.filter(MiningReport.company_name == organisation)
+        reports = query.all()
+
         if not reports:
+            scope = f" for {organisation}" if organisation else ""
             return {
                 "question": question,
-                "answer": "No mining reports found in the database. Please upload some reports first.",
+                "answer": (
+                    f"No mining reports found{scope}. "
+                    "Please upload some reports first."
+                ),
                 "reports_used": 0,
             }
         
@@ -398,24 +413,48 @@ def query_mining_reports(
 
 
 @app.get("/stats")
-def get_statistics(db: Session = Depends(get_db)):
-    """Get overall statistics about the reports database"""
-    total = db.query(MiningReport).count()
-    completed = db.query(MiningReport).filter(MiningReport.status == "completed").count()
-    errors = db.query(MiningReport).filter(MiningReport.status == "error").count()
-    queries = db.query(QueryHistory).count()
-    
-    # Mineral distribution
+def get_statistics(
+    organisation: str = Query(
+        None,
+        description="Restrict every figure to reports whose company_name matches exactly.",
+    ),
+    db: Session = Depends(get_db),
+):
+    """
+    Overall statistics about the reports database.
+
+    When `organisation` is given, every count and distribution is scoped to
+    that organisation, so a filtered view of the UI never mixes one
+    organisation's charts with another's totals.
+    """
     from sqlalchemy import func
-    minerals = db.query(
-        MiningReport.mineral_type, func.count(MiningReport.id)
-    ).filter(MiningReport.status == "completed").group_by(MiningReport.mineral_type).all()
-    
-    # Location distribution
-    locations = db.query(
-        MiningReport.location, func.count(MiningReport.id)
-    ).filter(MiningReport.status == "completed").group_by(MiningReport.location).all()
-    
+
+    def scoped(query):
+        if organisation:
+            return query.filter(MiningReport.company_name == organisation)
+        return query
+
+    total = scoped(db.query(MiningReport)).count()
+    completed = scoped(
+        db.query(MiningReport).filter(MiningReport.status == "completed")
+    ).count()
+    errors = scoped(
+        db.query(MiningReport).filter(MiningReport.status == "error")
+    ).count()
+
+    # Query history is not attributable to an organisation, so it stays global.
+    queries = db.query(QueryHistory).count()
+
+    minerals = scoped(
+        db.query(MiningReport.mineral_type, func.count(MiningReport.id))
+        .filter(MiningReport.status == "completed")
+    ).group_by(MiningReport.mineral_type).all()
+
+    locations = scoped(
+        db.query(MiningReport.location, func.count(MiningReport.id))
+        .filter(MiningReport.status == "completed")
+    ).group_by(MiningReport.location).all()
+
     return {
         "total_reports": total,
         "completed": completed,
@@ -427,7 +466,13 @@ def get_statistics(db: Session = Depends(get_db)):
 
 
 @app.get("/validation")
-def list_validation_findings(db: Session = Depends(get_db)):
+def list_validation_findings(
+    organisation: str = Query(
+        None,
+        description="Only compare reports from this organisation.",
+    ),
+    db: Session = Depends(get_db),
+):
     """
     Cross-document discrepancies computed from the stored reports.
 
@@ -435,8 +480,15 @@ def list_validation_findings(db: Session = Depends(get_db)):
     about the same mine, duplicate ingests, fields the extractor left empty, and
     failed extractions. Auditor decisions are merged in from
     validation_resolutions by the finding's deterministic id.
+
+    When `organisation` is given, only that organisation's reports are compared,
+    so a scoped view never raises a conflict between documents the user has
+    filtered out.
     """
-    reports = db.query(MiningReport).all()
+    query = db.query(MiningReport)
+    if organisation:
+        query = query.filter(MiningReport.company_name == organisation)
+    reports = query.all()
     findings = detect_discrepancies(reports)
 
     resolutions = {

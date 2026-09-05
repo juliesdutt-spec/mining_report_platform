@@ -38,9 +38,10 @@ function clean(value: string | null | undefined): string | undefined {
  * Map a backend report onto the UI document model.
  *
  * Only fields the backend actually returns are populated. Page count,
- * extraction confidence, CIL subsidiary, validation state and per-snippet
- * evidence are not modelled server-side, so they are deliberately left
- * undefined rather than invented — the UI shows an em dash for them.
+ * extraction confidence, validation state and per-snippet evidence are not
+ * modelled server-side, so they are deliberately left undefined rather than
+ * invented — the UI shows an em dash for them. The organisation comes from
+ * the report's extracted company name, and is absent when none was found.
  */
 export function mapReportToDocument(
   report: BackendReportListItem | BackendReportDetail
@@ -56,6 +57,7 @@ export function mapReportToDocument(
     uploadDate: report.upload_date ?? undefined,
 
     mineName: clean(detail.mine_name) ?? clean(extracted.mine_name),
+    organisation: clean(detail.company_name) ?? clean(extracted.company_name),
     location: clean(report.location) ?? clean(extracted.location),
     district: clean(extracted.district),
     state: clean(extracted.state),

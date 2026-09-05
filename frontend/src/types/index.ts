@@ -9,15 +9,15 @@
   | 'validation'
   | 'settings';
 
-export type Subsidiary = 
-  | 'ECL' 
-  | 'BCCL' 
-  | 'CCL' 
-  | 'WCL' 
-  | 'SECL' 
-  | 'MCL' 
-  | 'NCL' 
-  | 'CMPDI';
+/**
+ * The organisation a document belongs to, read from the report's extracted
+ * company name. Not a fixed enum: the corpus decides which organisations
+ * exist, so this is whatever value the documents actually carry.
+ */
+export type Organisation = string;
+
+/** The sidebar's organisation scope — a real organisation, or every one. */
+export type OrganisationFilter = Organisation | 'ALL';
 
 export type ValidationStatus = 'validated' | 'needs_review' | 'conflicting' | 'low_confidence';
 
@@ -73,27 +73,8 @@ export interface MiningDocument {
   fileSizeBytes?: number;
   pageCount?: number;
   confidenceScore?: number;
-  subsidiary?: Subsidiary;
+  organisation?: Organisation;
   validationStatus?: ValidationStatus;
-}
-
-export interface KpiMetrics {
-  documentsProcessed: number;
-  pagesProcessed: number;
-  recordsExtracted: number;
-  reportsGenerated: number;
-  queriesAnswered: number;
-  automationRate: number;
-  extractionAccuracy: number;
-  processingTimeSavedHours: number;
-}
-
-export interface ProductionDataPoint {
-  date: string;
-  actual: number;
-  target: number;
-  opencast: number;
-  underground: number;
 }
 
 export interface QueryResult {
@@ -145,8 +126,8 @@ export interface ValidationItem {
   status: 'pending' | 'resolved' | 'flagged';
   resolutionNote?: string | null;
   resolvedAt?: string | null;
-  /** Not modelled by the backend. */
-  subsidiary?: Subsidiary;
+  /** The organisation of the report the finding was raised against. */
+  organisation?: Organisation;
 }
 
 export interface ValidationSource {

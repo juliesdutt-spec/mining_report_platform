@@ -11,7 +11,8 @@ import {
   ShieldCheck,
   Sparkles,
 } from "lucide-react";
-import { NavigationTab, Subsidiary } from "@/types";
+import { NavigationTab, OrganisationFilter } from "@/types";
+import { organisationsIn, useCorpus } from "@/lib/corpus";
 import { cn } from "@/lib/utils";
 import { Separator } from "@/components/ui/separator";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -19,8 +20,8 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 interface SidebarProps {
   currentTab: NavigationTab;
   onSelectTab: (tab: NavigationTab) => void;
-  selectedSubsidiary: Subsidiary | "ALL";
-  onSelectSubsidiary: (sub: Subsidiary | "ALL") => void;
+  selectedOrganisation: OrganisationFilter;
+  onSelectOrganisation: (org: OrganisationFilter) => void;
   isCollapsed: boolean;
   onToggleCollapse: () => void;
 }
@@ -44,24 +45,18 @@ const NAV_ITEMS: NavItem[] = [
   { id: "settings", label: "Settings", icon: Settings },
 ];
 
-const SUBSIDIARIES: { id: Subsidiary | "ALL"; label: string; region?: string }[] = [
-  { id: "ALL", label: "All subsidiaries" },
-  { id: "SECL", label: "SECL", region: "Korba / Bilaspur" },
-  { id: "BCCL", label: "BCCL", region: "Jharia / Dhanbad" },
-  { id: "CMPDI", label: "CMPDI", region: "Exploration" },
-  { id: "NCL", label: "NCL", region: "Singrauli" },
-  { id: "MCL", label: "MCL", region: "Talcher / Ib" },
-  { id: "CCL", label: "CCL", region: "Ranchi" },
-  { id: "ECL", label: "ECL", region: "Raniganj" },
-];
-
 export function Sidebar({
   currentTab,
   onSelectTab,
-  selectedSubsidiary,
-  onSelectSubsidiary,
+  selectedOrganisation,
+  onSelectOrganisation,
   isCollapsed,
 }: SidebarProps) {
+  // Organisations come from the documents themselves, so the filter lists
+  // exactly what has been indexed — never a roster of bodies with no documents.
+  const { documents, isLoading } = useCorpus();
+  const organisations = organisationsIn(documents);
+
   return (
     <aside
       className={cn(
@@ -141,32 +136,42 @@ export function Sidebar({
           <>
             <Separator className="my-4" />
             <div className="px-2 pb-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-              Subsidiary filter
+              Organisation
             </div>
-            <ul className="space-y-0.5">
-              {SUBSIDIARIES.map((sub) => {
-                const isSelected = selectedSubsidiary === sub.id;
-                return (
-                  <li key={sub.id}>
-                    <button
-                      onClick={() => onSelectSubsidiary(sub.id)}
-                      aria-pressed={isSelected}
-                      className={cn(
-                        "flex w-full items-baseline gap-2 rounded-md px-2.5 py-1.5 text-left text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                        isSelected
-                          ? "bg-accent font-medium text-foreground"
-                          : "text-muted-foreground hover:bg-accent hover:text-foreground"
-                      )}
-                    >
-                      <span className="shrink-0">{sub.label}</span>
-                      {sub.region && (
-                        <span className="truncate text-[11px] text-muted-foreground">{sub.region}</span>
-                      )}
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
+            {isLoading ? (
+              <div className="px-2.5 py-1.5 text-xs text-muted-foreground">Loading…</div>
+            ) : organisations.length === 0 ? (
+              <p className="px-2.5 py-1.5 text-[11px] leading-relaxed text-muted-foreground">
+                No organisation was identified in the indexed documents.
+              </p>
+            ) : (
+              <ul className="space-y-0.5">
+                {[{ name: "ALL", count: documents.length }, ...organisations].map((org) => {
+                  const isSelected = selectedOrganisation === org.name;
+                  return (
+                    <li key={org.name}>
+                      <button
+                        onClick={() => onSelectOrganisation(org.name)}
+                        aria-pressed={isSelected}
+                        className={cn(
+                          "flex w-full items-baseline gap-2 rounded-md px-2.5 py-1.5 text-left text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                          isSelected
+                            ? "bg-accent font-medium text-foreground"
+                            : "text-muted-foreground hover:bg-accent hover:text-foreground"
+                        )}
+                      >
+                        <span className="flex-1 truncate">
+                          {org.name === "ALL" ? "All organisations" : org.name}
+                        </span>
+                        <span className="shrink-0 font-mono text-[11px] tabular-nums text-muted-foreground">
+                          {org.count}
+                        </span>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
           </>
         )}
       </nav>

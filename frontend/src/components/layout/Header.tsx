@@ -1,6 +1,6 @@
 import React from "react";
 import { Bell, ChevronRight, PanelLeft, Plus, Search } from "lucide-react";
-import { NavigationTab, Subsidiary } from "@/types";
+import { NavigationTab, OrganisationFilter } from "@/types";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { ThemeToggle } from "@/components/shared/ThemeToggle";
@@ -10,7 +10,7 @@ interface HeaderProps {
   isCollapsed: boolean;
   onToggleSidebar: () => void;
   onOpenCommandPalette: () => void;
-  selectedSubsidiary: Subsidiary | "ALL";
+  selectedOrganisation: OrganisationFilter;
   onQuickUpload: () => void;
   backendStatus: { isOnline: boolean; statusText: string };
 }
@@ -31,7 +31,7 @@ export function Header({
   currentTab,
   onToggleSidebar,
   onOpenCommandPalette,
-  selectedSubsidiary,
+  selectedOrganisation,
   onQuickUpload,
   backendStatus,
 }: HeaderProps) {
@@ -52,11 +52,11 @@ export function Header({
           <span className="text-muted-foreground">DataForge</span>
           <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground/60" />
           <span className="truncate font-medium text-foreground">{TAB_TITLES[currentTab]}</span>
-          {selectedSubsidiary !== "ALL" && (
+          {selectedOrganisation !== "ALL" && (
             <>
               <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground/60" />
-              <span className="shrink-0 font-mono text-xs font-medium text-primary">
-                {selectedSubsidiary}
+              <span className="max-w-[14rem] truncate font-mono text-xs font-medium text-primary">
+                {selectedOrganisation}
               </span>
             </>
           )}

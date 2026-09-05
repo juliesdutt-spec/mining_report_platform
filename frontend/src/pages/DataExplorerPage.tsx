@@ -24,16 +24,16 @@ import { StatusBadge } from "@/components/shared/StatusBadge";
 import { ConfidenceMeter } from "@/components/shared/ConfidenceMeter";
 import { SourceCitation } from "@/components/shared/SourceCitation";
 import { cn } from "@/lib/utils";
-import { EvidenceSnippet, MiningDocument, Subsidiary } from "@/types";
+import { EvidenceSnippet, MiningDocument, OrganisationFilter } from "@/types";
 import { fetchDocuments } from "@/services/documents";
 
 interface DataExplorerPageProps {
   onInspectEvidence: (evidence: EvidenceSnippet) => void;
-  selectedSubsidiary: Subsidiary | "ALL";
+  selectedOrganisation: OrganisationFilter;
 }
 
 
-type SortField = "mineName" | "subsidiary" | "productionNum" | "confidence";
+type SortField = "mineName" | "organisation" | "productionNum" | "confidence";
 
 /** Sortable column head — the arrow only appears on the active column. */
 function SortableHead({
@@ -67,7 +67,7 @@ function SortableHead({
   );
 }
 
-export function DataExplorerPage({ onInspectEvidence, selectedSubsidiary }: DataExplorerPageProps) {
+export function DataExplorerPage({ onInspectEvidence, selectedOrganisation }: DataExplorerPageProps) {
   const [search, setSearch] = useState("");
   const [sortField, setSortField] = useState<SortField>("mineName");
   const [sortAsc, setSortAsc] = useState(true);
@@ -86,7 +86,7 @@ export function DataExplorerPage({ onInspectEvidence, selectedSubsidiary }: Data
   const records = documents.map((doc) => ({
     id: String(doc.id),
     mineName: doc.mineName ?? doc.filename,
-    subsidiary: doc.subsidiary,
+    organisation: doc.organisation,
     production: doc.quantityExtracted,
     productionNum: parseFloat((doc.quantityExtracted ?? "").replace(/[^0-9.]/g, "")) || 0,
     method: doc.extractionMethod,
@@ -99,7 +99,7 @@ export function DataExplorerPage({ onInspectEvidence, selectedSubsidiary }: Data
   }));
 
   const filtered = records.filter((item) => {
-    const matchesSub = selectedSubsidiary === "ALL" || item.subsidiary === selectedSubsidiary;
+    const matchesSub = selectedOrganisation === "ALL" || item.organisation === selectedOrganisation;
     const matchesMethod =
       filterMethod === "all" || (item.method ?? "").toLowerCase() === filterMethod;
     const q = search.toLowerCase();
@@ -178,7 +178,7 @@ export function DataExplorerPage({ onInspectEvidence, selectedSubsidiary }: Data
           <TableHeader>
             <TableRow className="hover:bg-transparent">
               <SortableHead field="mineName" label="Mine project" sortField={sortField} sortAsc={sortAsc} onSort={handleSort} />
-              <SortableHead field="subsidiary" label="Subsidiary" sortField={sortField} sortAsc={sortAsc} onSort={handleSort} />
+              <SortableHead field="organisation" label="Organisation" sortField={sortField} sortAsc={sortAsc} onSort={handleSort} />
               <SortableHead field="productionNum" label="Production" sortField={sortField} sortAsc={sortAsc} onSort={handleSort} className="text-right" />
               <TableHead>Method</TableHead>
               <TableHead>Mineral</TableHead>
@@ -204,7 +204,7 @@ export function DataExplorerPage({ onInspectEvidence, selectedSubsidiary }: Data
             {!isLoading && sorted.map((row) => (
               <TableRow key={row.id}>
                 <TableCell className="font-medium text-foreground">{row.mineName}</TableCell>
-                <TableCell className="font-mono text-xs text-muted-foreground">{row.subsidiary ?? "\u2014"}</TableCell>
+                <TableCell className="font-mono text-xs text-muted-foreground">{row.organisation ?? "\u2014"}</TableCell>
                 <TableCell className={cn("text-right font-mono tabular-nums", row.productionNum > 0 ? "font-medium text-foreground" : "text-muted-foreground")}>
                   {row.production ?? "\u2014"}
                 </TableCell>

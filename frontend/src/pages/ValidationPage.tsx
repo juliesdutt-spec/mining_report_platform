@@ -8,14 +8,14 @@ import { Section, FieldLabel } from "@/components/shared/Section";
 import { Stat, StatGroup } from "@/components/shared/StatGroup";
 import { SourceComparator } from "@/components/shared/SourceComparator";
 import { cn } from "@/lib/utils";
-import { ValidationItem, EvidenceSnippet, Subsidiary } from "@/types";
+import { ValidationItem, EvidenceSnippet, OrganisationFilter } from "@/types";
 import { fetchValidation, resolveValidationFinding } from "@/services/validation";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ApiError } from "@/services/api";
 
 interface ValidationPageProps {
   onInspectEvidence: (evidence: EvidenceSnippet) => void;
-  selectedSubsidiary: Subsidiary | "ALL";
+  selectedOrganisation: OrganisationFilter;
 }
 
 /** Severity is carried by a left rule on the queue row, not a filled badge. */
@@ -33,7 +33,7 @@ const TYPE_LABEL: Record<ValidationItem["type"], string> = {
   duplicate: "Duplicate",
 };
 
-export function ValidationPage({ selectedSubsidiary }: ValidationPageProps) {
+export function ValidationPage({ selectedOrganisation }: ValidationPageProps) {
   const [items, setItems] = useState<ValidationItem[]>([]);
   const [activeItem, setActiveItem] = useState<ValidationItem | null>(null);
   const [statusFilter, setStatusFilter] = useState<"all" | "pending" | "resolved">("all");
@@ -46,7 +46,7 @@ export function ValidationPage({ selectedSubsidiary }: ValidationPageProps) {
   const load = async (keepId?: string) => {
     setIsLoading(true);
     try {
-      const res = await fetchValidation();
+      const res = await fetchValidation(selectedOrganisation);
       setItems(res.findings);
       setLoadError(null);
       setActiveItem((current) => {
@@ -64,7 +64,10 @@ export function ValidationPage({ selectedSubsidiary }: ValidationPageProps) {
 
   useEffect(() => {
     void load();
-  }, []);
+    // Findings are computed over the scoped corpus, so a change of
+    // organisation means a different set of comparisons.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedOrganisation]);
 
   const handleResolve = async (
     id: string,
@@ -180,10 +183,18 @@ export function ValidationPage({ selectedSubsidiary }: ValidationPageProps) {
                       </div>
                       <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
                         <span>{TYPE_LABEL[item.type]}</span>
-                        <span aria-hidden>·</span>
-                        <span className="font-mono">{item.subsidiary}</span>
-                        <span aria-hidden>·</span>
-                        <span className="truncate">{item.mineName}</span>
+                        {item.organisation && (
+                          <>
+                            <span aria-hidden>·</span>
+                            <span className="truncate font-mono">{item.organisation}</span>
+                          </>
+                        )}
+                        {item.mineName && (
+                          <>
+                            <span aria-hidden>·</span>
+                            <span className="truncate">{item.mineName}</span>
+                          </>
+                        )}
                       </div>
                     </button>
                   </li>

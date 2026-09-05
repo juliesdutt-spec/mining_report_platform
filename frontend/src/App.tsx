@@ -29,13 +29,13 @@ const ValidationPage = lazy(() =>
 const SettingsPage = lazy(() =>
   import("@/pages/SettingsPage").then((m) => ({ default: m.SettingsPage }))
 );
-import { NavigationTab, Subsidiary, EvidenceSnippet } from "@/types";
+import { NavigationTab, OrganisationFilter, EvidenceSnippet } from "@/types";
 import { useHashRoute } from "@/lib/useHashRoute";
 
 export function App() {
   // Tab lives in the URL hash so Back/Forward, deep links and refresh all work.
-  const [currentTab, setCurrentTab] = useHashRoute();
-  const [selectedSubsidiary, setSelectedSubsidiary] = useState<Subsidiary | "ALL">("ALL");
+  const [currentTab, setCurrentTab, routeParam] = useHashRoute();
+  const [selectedOrganisation, setSelectedOrganisation] = useState<OrganisationFilter>("ALL");
   const [activeEvidence, setActiveEvidence] = useState<EvidenceSnippet | null>(null);
 
   const handleInspectEvidence = (evidence: EvidenceSnippet) => {
@@ -54,8 +54,8 @@ export function App() {
     <AppShell
       currentTab={currentTab}
       onSelectTab={setCurrentTab}
-      selectedSubsidiary={selectedSubsidiary}
-      onSelectSubsidiary={setSelectedSubsidiary}
+      selectedOrganisation={selectedOrganisation}
+      onSelectOrganisation={setSelectedOrganisation}
       activeEvidence={activeEvidence}
       onCloseEvidence={handleCloseEvidence}
       onQuickUpload={handleQuickUpload}
@@ -76,32 +76,34 @@ export function App() {
         <DashboardPage
           onNavigate={setCurrentTab}
           onInspectEvidence={handleInspectEvidence}
-          selectedSubsidiary={selectedSubsidiary}
+          selectedOrganisation={selectedOrganisation}
         />
       )}
 
       {currentTab === "documents" && (
         <DocumentsPage
           onInspectEvidence={handleInspectEvidence}
-          selectedSubsidiary={selectedSubsidiary}
+          selectedOrganisation={selectedOrganisation}
+          /* #/documents/12 — set by the command palette, or a shared link. */
+          focusDocumentId={routeParam ? Number(routeParam) : undefined}
         />
       )}
 
       {currentTab === "ask" && (
         <AskPage
           onInspectEvidence={handleInspectEvidence}
-          selectedSubsidiary={selectedSubsidiary}
+          selectedOrganisation={selectedOrganisation}
         />
       )}
 
       {currentTab === "analytics" && (
-        <AnalyticsPage selectedSubsidiary={selectedSubsidiary} />
+        <AnalyticsPage selectedOrganisation={selectedOrganisation} />
       )}
 
       {currentTab === "topics" && (
         <TopicsPage
           onInspectEvidence={handleInspectEvidence}
-          selectedSubsidiary={selectedSubsidiary}
+          selectedOrganisation={selectedOrganisation}
         />
       )}
 
@@ -110,14 +112,14 @@ export function App() {
       {currentTab === "explorer" && (
         <DataExplorerPage
           onInspectEvidence={handleInspectEvidence}
-          selectedSubsidiary={selectedSubsidiary}
+          selectedOrganisation={selectedOrganisation}
         />
       )}
 
       {currentTab === "validation" && (
         <ValidationPage
           onInspectEvidence={handleInspectEvidence}
-          selectedSubsidiary={selectedSubsidiary}
+          selectedOrganisation={selectedOrganisation}
         />
       )}
 

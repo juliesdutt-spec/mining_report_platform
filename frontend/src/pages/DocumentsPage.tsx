@@ -20,7 +20,8 @@ import { StatusBadge } from "@/components/shared/StatusBadge";
 import { WordCloud } from "@/components/shared/WordCloud";
 import { ConfidenceMeter } from "@/components/shared/ConfidenceMeter";
 import { cn } from "@/lib/utils";
-import { MiningDocument, EvidenceSnippet, Subsidiary } from "@/types";
+import { MiningDocument, EvidenceSnippet, OrganisationFilter } from "@/types";
+import { refreshCorpus } from "@/lib/corpus";
 import {
   deleteDocument,
   fetchDocuments,
@@ -31,7 +32,9 @@ import { ApiError, reportDownloadUrl } from "@/services/api";
 
 interface DocumentsPageProps {
   onInspectEvidence: (evidence: EvidenceSnippet) => void;
-  selectedSubsidiary: Subsidiary | "ALL";
+  selectedOrganisation: OrganisationFilter;
+  /** From #/documents/{id} — opens that document instead of the first one. */
+  focusDocumentId?: number;
 }
 
 /** Renders a value, or an em dash when the backend reported nothing for it. */
@@ -51,7 +54,11 @@ function Attribute({ label, value }: { label: string; value: React.ReactNode }) 
   );
 }
 
-export function DocumentsPage({ onInspectEvidence, selectedSubsidiary }: DocumentsPageProps) {
+export function DocumentsPage({
+  onInspectEvidence,
+  selectedOrganisation,
+  focusDocumentId,
+}: DocumentsPageProps) {
   const [documents, setDocuments] = useState<MiningDocument[]>([]);
   const [selectedDoc, setSelectedDoc] = useState<MiningDocument | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
@@ -87,8 +94,21 @@ export function DocumentsPage({ onInspectEvidence, selectedSubsidiary }: Documen
   };
 
   useEffect(() => {
-    void loadDocuments();
+    void loadDocuments(focusDocumentId);
   }, []);
+
+  // A later navigation to #/documents/{id} — from the command palette, say —
+  // selects that document without refetching the whole index. Applied once per
+  // id, so a manual selection afterwards is not undone by the next reload.
+  const appliedFocus = useRef<number | undefined>(focusDocumentId);
+  useEffect(() => {
+    if (focusDocumentId === undefined || appliedFocus.current === focusDocumentId) return;
+    const target = documents.find((d) => d.id === focusDocumentId);
+    if (target) {
+      appliedFocus.current = focusDocumentId;
+      setSelectedDoc(target);
+    }
+  }, [focusDocumentId, documents]);
 
   /**
    * GET /reports omits `extracted_data`, so the selected document is re-fetched
@@ -126,6 +146,9 @@ export function DocumentsPage({ onInspectEvidence, selectedSubsidiary }: Documen
       });
       setUploadNotice(`Deleted "${target.filename}".`);
       setUploadError(null);
+      // The sidebar's organisation counts and the palette's recents read from
+      // the shared corpus, so it has to know the document is gone.
+      refreshCorpus();
     } catch (err) {
       setDeleteError(
         err instanceof ApiError ? err.message : `Could not delete "${target.filename}".`
@@ -176,6 +199,7 @@ export function DocumentsPage({ onInspectEvidence, selectedSubsidiary }: Documen
       );
       // Re-read the index from the backend so the list reflects real stored state.
       await loadDocuments(lastId);
+      refreshCorpus();
     }
     if (failed.length > 0) {
       setUploadError(failed.join(" · "));
@@ -187,7 +211,7 @@ export function DocumentsPage({ onInspectEvidence, selectedSubsidiary }: Documen
   };
 
   const filtered = documents.filter((doc) => {
-    const matchesSub = selectedSubsidiary === "ALL" || doc.subsidiary === selectedSubsidiary;
+    const matchesSub = selectedOrganisation === "ALL" || doc.organisation === selectedOrganisation;
     const q = searchQuery.toLowerCase();
     const matchesQuery =
       doc.filename.toLowerCase().includes(q) ||
@@ -284,8 +308,12 @@ export function DocumentsPage({ onInspectEvidence, selectedSubsidiary }: Documen
                         {doc.filename}
                       </div>
                       <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
-                        <span className="font-mono">{doc.subsidiary}</span>
-                        <span aria-hidden>·</span>
+                        {doc.organisation && (
+                          <>
+                            <span className="truncate font-mono">{doc.organisation}</span>
+                            <span aria-hidden>·</span>
+                          </>
+                        )}
                         <span className="truncate">{doc.mineName ?? doc.filename}</span>
                       </div>
                       <div className="mt-1.5">
@@ -370,7 +398,7 @@ export function DocumentsPage({ onInspectEvidence, selectedSubsidiary }: Documen
                 <article className="rounded-lg border border-border bg-card p-6 shadow-xs">
                   <header className="border-b border-border pb-4">
                     <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                      Ministry of Coal{selectedDoc.subsidiary ? ` \u00b7 ${selectedDoc.subsidiary}` : ""}
+                      Ministry of Coal{selectedDoc.organisation ? ` \u00b7 ${selectedDoc.organisation}` : ""}
                     </div>
                     <h3 className="mt-1.5 font-serif text-lg font-semibold leading-snug text-foreground">
                       {selectedDoc.mineName ?? selectedDoc.filename}

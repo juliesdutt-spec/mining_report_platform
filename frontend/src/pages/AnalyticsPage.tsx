@@ -19,15 +19,16 @@ import { Section } from "@/components/shared/Section";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Stat, StatGroup } from "@/components/shared/StatGroup";
 import { useChartColors, tooltipStyle } from "@/lib/chart";
-import { Subsidiary } from "@/types";
+import { OrganisationFilter } from "@/types";
+
 import { fetchPlatformStats } from "@/services/analytics";
 import { BackendStats } from "@/services/api";
 
 interface AnalyticsPageProps {
-  selectedSubsidiary: Subsidiary | "ALL";
+  selectedOrganisation: OrganisationFilter;
 }
 
-export function AnalyticsPage({ selectedSubsidiary }: AnalyticsPageProps) {
+export function AnalyticsPage({ selectedOrganisation }: AnalyticsPageProps) {
   const colors = useChartColors();
   const [stats, setStats] = useState<BackendStats | null>(null);
 
@@ -35,10 +36,10 @@ export function AnalyticsPage({ selectedSubsidiary }: AnalyticsPageProps) {
   // indexed reports. The backend has no production time series or per-
   // subsidiary targets, so no such chart is shown.
   useEffect(() => {
-    fetchPlatformStats()
+    fetchPlatformStats(selectedOrganisation)
       .then(setStats)
       .catch(() => setStats(null));
-  }, []);
+  }, [selectedOrganisation]);
 
   const palette = [colors.primary, colors.teal, colors["muted-foreground"]];
 

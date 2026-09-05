@@ -9,6 +9,10 @@ import { NavigationTab } from "@/types";
  * Reflecting the tab in `location.hash` gives working Back/Forward buttons,
  * deep links (#/documents) and refresh-safe navigation with no new dependency
  * and no change to how pages are rendered.
+ *
+ * A second segment is carried through as an opaque parameter (#/documents/12),
+ * which is what lets the command palette open a specific document rather than
+ * dropping the user on the list.
  */
 const TABS: NavigationTab[] = [
   "dashboard",
@@ -24,17 +28,25 @@ const TABS: NavigationTab[] = [
 
 const DEFAULT_TAB: NavigationTab = "dashboard";
 
-function tabFromHash(): NavigationTab {
+function parseHash(): { tab: NavigationTab; param: string | null } {
   const raw = window.location.hash.replace(/^#\/?/, "").trim();
-  return (TABS as string[]).includes(raw) ? (raw as NavigationTab) : DEFAULT_TAB;
+  const [head, param] = raw.split("/");
+  return {
+    tab: (TABS as string[]).includes(head) ? (head as NavigationTab) : DEFAULT_TAB,
+    param: param ? decodeURIComponent(param) : null,
+  };
 }
 
-export function useHashRoute(): [NavigationTab, (tab: NavigationTab) => void] {
-  const [tab, setTab] = useState<NavigationTab>(tabFromHash);
+export function useHashRoute(): [
+  NavigationTab,
+  (tab: NavigationTab, param?: string) => void,
+  string | null
+] {
+  const [route, setRoute] = useState(parseHash);
 
   // Back/Forward and manually edited URLs.
   useEffect(() => {
-    const onHashChange = () => setTab(tabFromHash());
+    const onHashChange = () => setRoute(parseHash());
     window.addEventListener("hashchange", onHashChange);
     return () => window.removeEventListener("hashchange", onHashChange);
   }, []);
@@ -46,13 +58,14 @@ export function useHashRoute(): [NavigationTab, (tab: NavigationTab) => void] {
     }
   }, []);
 
-  const navigate = useCallback((next: NavigationTab) => {
+  const navigate = useCallback((next: NavigationTab, param?: string) => {
+    const target = param ? `#/${next}/${encodeURIComponent(param)}` : `#/${next}`;
     // Setting the hash pushes a history entry, which is what makes Back work.
-    if (tabFromHash() !== next) {
-      window.location.hash = `#/${next}`;
+    if (window.location.hash !== target) {
+      window.location.hash = target;
     }
-    setTab(next);
+    setRoute({ tab: next, param: param ?? null });
   }, []);
 
-  return [tab, navigate];
+  return [route.tab, navigate, route.param];
 }
