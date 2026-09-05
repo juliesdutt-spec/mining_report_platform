@@ -7,6 +7,8 @@ import { PageHeader } from "@/components/shared/PageHeader";
 import { Section, FieldLabel } from "@/components/shared/Section";
 import { cn } from "@/lib/utils";
 import { TopicEntity, MiningDocument, EvidenceSnippet, OrganisationFilter } from "@/types";
+import { ApiError } from "@/services/api";
+import { Skeleton } from "@/components/ui/skeleton";
 import { fetchTopics } from "@/services/topics";
 import { fetchDocuments } from "@/services/documents";
 import { filterByOrganisation } from "@/lib/corpus";
@@ -16,7 +18,17 @@ interface TopicsPageProps {
   selectedOrganisation: OrganisationFilter;
 }
 
-const CATEGORIES = ["all", "operation", "mineral", "environment", "safety"] as const;
+// Every value TopicEntity["category"] can hold needs a tab here. The
+// categoriser in services/topics.ts also returns "location", and without a
+// tab those terms were reachable only under "all".
+const CATEGORIES = [
+  "all",
+  "operation",
+  "mineral",
+  "location",
+  "environment",
+  "safety",
+] as const;
 
 /**
  * Term weight is expressed through type size and weight rather than colour, so
@@ -41,19 +53,59 @@ export function TopicsPage({ onInspectEvidence, selectedOrganisation }: TopicsPa
   const [selectedTopic, setSelectedTopic] = useState<TopicEntity | null>(null);
   const [documents, setDocuments] = useState<MiningDocument[]>([]);
   const [filterCategory, setFilterCategory] = useState<string>("all");
+  const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchTopics().then((data) => {
-      setTopics(data);
-      if (data.length > 0) setSelectedTopic(data[0]);
-    });
-    fetchDocuments()
-      .then(setDocuments)
-      .catch(() => setDocuments([]));
+    let active = true;
+
+    // Topics are derived from GET /reports, so a backend that is down leaves
+    // this page with nothing to show. Without a catch the rejection was
+    // unhandled and the page sat empty, indistinguishable from a corpus that
+    // genuinely has no terms.
+    Promise.all([fetchTopics(), fetchDocuments()])
+      .then(([topicData, documentData]) => {
+        if (!active) return;
+        setTopics(topicData);
+        setDocuments(documentData);
+        if (topicData.length > 0) setSelectedTopic(topicData[0]);
+        setLoadError(null);
+      })
+      .catch((err) => {
+        if (!active) return;
+        setTopics([]);
+        setDocuments([]);
+        setLoadError(
+          err instanceof ApiError
+            ? err.message
+            : "Could not load topics from the backend."
+        );
+      })
+      .finally(() => {
+        if (active) setIsLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
   }, []);
 
   const filteredTopics =
     filterCategory === "all" ? topics : topics.filter((t) => t.category === filterCategory);
+
+  // Switching category could leave the detail panel describing a term the
+  // cloud no longer shows. Follow the filter instead.
+  useEffect(() => {
+    if (filteredTopics.length === 0) {
+      setSelectedTopic(null);
+      return;
+    }
+    setSelectedTopic((current) =>
+      current && filteredTopics.some((t) => t.id === current.id)
+        ? current
+        : filteredTopics[0]
+    );
+  }, [filterCategory, topics]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const scopedDocs = filterByOrganisation(documents, selectedOrganisation);
 
@@ -67,11 +119,19 @@ export function TopicsPage({ onInspectEvidence, selectedOrganisation }: TopicsPa
       )
     : [];
 
+  // Both figures are counted over the documents currently in scope. The
+  // aggregate on TopicEntity is corpus-wide, so showing it beside an
+  // organisation-filtered list made the panel state two different numbers for
+  // the same term.
+  const matchedCount = matchedDocs.length;
+  const corpusShare =
+    scopedDocs.length > 0 ? Math.round((matchedCount / scopedDocs.length) * 100) : null;
+
   return (
     <div className="space-y-8">
       <PageHeader
         title="Topic intelligence"
-        description="Terms surfaced across the archive by frequency and distinctiveness. Select one to see where it appears."
+        description="Terms extracted from the indexed reports, ranked by how many documents mention them. Select one to see where it appears."
         actions={
           <Tabs value={filterCategory} onValueChange={setFilterCategory}>
             <TabsList>
@@ -87,6 +147,30 @@ export function TopicsPage({ onInspectEvidence, selectedOrganisation }: TopicsPa
 
       {/* Term cloud on one calm surface */}
       <Card className="px-6 py-8">
+        {isLoading && (
+          <div className="flex flex-wrap items-baseline justify-center gap-x-6 gap-y-4">
+            {[64, 96, 80, 120, 72, 104].map((width, i) => (
+              <Skeleton key={i} className="h-6" style={{ width }} />
+            ))}
+          </div>
+        )}
+
+        {!isLoading && loadError && (
+          <p role="alert" className="py-8 text-center text-sm text-destructive">
+            {loadError}
+          </p>
+        )}
+
+        {/* An empty cloud otherwise reads as "loading forever". Say which of
+            the two empty cases this is. */}
+        {!isLoading && !loadError && filteredTopics.length === 0 && (
+          <p className="py-8 text-center text-sm text-muted-foreground">
+            {topics.length === 0
+              ? "No topics yet — upload and process a document to build the term index."
+              : `No terms in the ${filterCategory} category.`}
+          </p>
+        )}
+
         <div className="flex flex-wrap items-baseline justify-center gap-x-6 gap-y-4">
           {filteredTopics.map((topic) => {
             const isSelected = selectedTopic?.id === topic.id;
@@ -107,9 +191,11 @@ export function TopicsPage({ onInspectEvidence, selectedOrganisation }: TopicsPa
             );
           })}
         </div>
-        <p className="mt-8 border-t border-border pt-3 text-center text-xs text-muted-foreground">
-          Size reflects term frequency weighted by inverse document frequency.
-        </p>
+        {filteredTopics.length > 0 && (
+          <p className="mt-8 border-t border-border pt-3 text-center text-xs text-muted-foreground">
+            Size reflects how many indexed documents mention the term.
+          </p>
+        )}
       </Card>
 
       {selectedTopic && (
@@ -126,15 +212,13 @@ export function TopicsPage({ onInspectEvidence, selectedOrganisation }: TopicsPa
                 <div className="flex items-baseline justify-between gap-3 py-2.5">
                   <dt className="text-xs text-muted-foreground">Documents</dt>
                   <dd className="font-mono text-sm tabular-nums font-medium text-foreground">
-                    {selectedTopic.documentCount}
+                    {matchedCount}
                   </dd>
                 </div>
                 <div className="flex items-baseline justify-between gap-3 py-2.5">
                   <dt className="text-xs text-muted-foreground">Share of corpus</dt>
                   <dd className="font-mono text-sm tabular-nums font-medium text-foreground">
-                    {documents.length > 0
-                      ? `${Math.round((selectedTopic.documentCount / documents.length) * 100)}%`
-                      : "\u2014"}
+                    {corpusShare !== null ? `${corpusShare}%` : "\u2014"}
                   </dd>
                 </div>
               </dl>
