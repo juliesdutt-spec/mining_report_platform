@@ -71,9 +71,14 @@ class TestProviderSelection(unittest.TestCase):
         """Google's own tooling exports GOOGLE_API_KEY; honour it too."""
         self.assertEqual(run_with_env("GOOGLE_API_KEY=placeholder\n", MODE), "gemini")
 
-    def test_gemini_model_defaults_to_a_free_tier_model(self):
+    def test_gemini_model_defaults_to_one_a_new_key_can_use(self):
+        """
+        Google retires models for new keys first. gemini-2.5-flash 404s with
+        "no longer available to new users" on a freshly created key while
+        still serving older ones, so the default has to be current.
+        """
         self.assertEqual(
-            run_with_env("GEMINI_API_KEY=placeholder\n", MODEL), "gemini-2.5-flash",
+            run_with_env("GEMINI_API_KEY=placeholder\n", MODEL), "gemini-3.6-flash",
         )
 
     def test_gemini_model_is_overridable(self):

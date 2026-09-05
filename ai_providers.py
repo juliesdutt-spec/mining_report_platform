@@ -46,7 +46,12 @@ CLAUDE_API_KEY = _env("CLAUDE_API_KEY")
 CLAUDE_MODEL = _env("CLAUDE_MODEL", "claude-opus-5")
 
 GEMINI_API_KEY = _env("GEMINI_API_KEY") or _env("GOOGLE_API_KEY")
-GEMINI_MODEL = _env("GEMINI_MODEL", "gemini-2.5-flash")
+# Google retires models for *new* keys before removing them for existing ones,
+# so a model that works on one account 404s on another created a week later.
+# gemini-2.5-flash is one of those: still served for older keys, "no longer
+# available to new users" for fresh ones. The 404 names the replacement, and
+# doctor.py surfaces it, so a future retirement is a one-line change here.
+GEMINI_MODEL = _env("GEMINI_MODEL", "gemini-3.6-flash")
 # Overridable for regional endpoints and corporate proxies.
 GEMINI_BASE_URL = _env(
     "GEMINI_BASE_URL", "https://generativelanguage.googleapis.com/v1beta"

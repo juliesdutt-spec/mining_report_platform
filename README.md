@@ -163,7 +163,7 @@ OpenAI-compatible server — LM Studio, vLLM, LiteLLM, Groq.
 echo 'GEMINI_API_KEY=your_key_here' >> .env
 # 3. Confirm the backend picked it up
 curl -s localhost:8000/health
-# {"status":"healthy", ..., "ai_mode":"gemini", "ai_model":"gemini-2.5-flash", "ai_mode_reason":null}
+# {"status":"healthy", ..., "ai_mode":"gemini", "ai_model":"gemini-3.6-flash", "ai_mode_reason":null}
 ```
 
 ### Fully local setup (Ollama)

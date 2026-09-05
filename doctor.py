@@ -11,6 +11,7 @@ not what answers. Prints a verdict and the one thing to change.
 
 Never prints a key, or any part of one.
 """
+import re
 import sys
 from pathlib import Path
 
@@ -85,9 +86,14 @@ def _advice(error: str) -> str:
     if "api key not valid" in lowered or "api_key_invalid" in lowered:
         return ("Fix: the key is wrong. Re-copy it from "
                 "https://aistudio.google.com/apikey - no quotes, no spaces.")
-    if "not found" in lowered or "was not found" in lowered:
-        return ("Fix: your key cannot use that model. Add "
-                "GEMINI_MODEL=gemini-2.5-flash-lite to .env and restart.")
+    if "no longer available" in lowered or "not found" in lowered:
+        # Google's 404 names the model to move to; quoting it beats guessing.
+        match = re.search(r"use models/([\w.-]+)", error)
+        if match:
+            return (f"Fix: that model is retired for your key. Set "
+                    f"GEMINI_MODEL={match.group(1)} and restart.")
+        return ("Fix: your key cannot use that model. Try another from "
+                "https://ai.google.dev/gemini-api/docs/models")
     if "resource_exhausted" in lowered or "quota" in lowered or "429" in lowered:
         return "Fix: free-tier rate limit. Wait 60 seconds and run this again."
     if "permission" in lowered or "403" in lowered:
