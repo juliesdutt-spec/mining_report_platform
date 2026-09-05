@@ -110,7 +110,7 @@ The frontend targets `http://localhost:8000` by default; override with
 ### Tests
 
 ```bash
-python -m unittest discover -s tests    # validation + evidence engines
+python -m unittest discover -s tests    # validation, evidence, env bootstrap
 cd frontend && npx tsc --noEmit         # frontend type check
 ```
 
@@ -124,8 +124,21 @@ cd frontend && npx tsc --noEmit         # frontend type check
 | set | `true` | Forced mock (useful for offline demos) |
 | unset | either | Mock — the key is required for real AI |
 
-The key is read server-side only. It is never exposed to the browser and must
-never be committed; `.env` is untracked for that reason.
+`.env` is read at startup by `utils/env.py`, which every module that reads
+configuration imports before its first `os.getenv`. A variable already exported
+in the shell takes precedence over the file.
+
+To confirm a key took effect without reading it back, ask the backend:
+
+```bash
+curl -s localhost:8000/health
+# {"status":"healthy", ..., "ai_mode":"claude", "ai_model":"claude-opus-5", "ai_mode_reason":null}
+```
+
+`ai_mode` is `mock` until a key is configured, and `ai_mode_reason` says which
+of the three causes applies. The key itself is read server-side only: it is
+never returned by an endpoint, never logged, never exposed to the browser and
+must never be committed — `.env` is untracked for that reason.
 
 Independent of the AI mode, PDF text extraction, OCR, storage, word clouds,
 PDF generation, discrepancy detection and evidence location are all real.

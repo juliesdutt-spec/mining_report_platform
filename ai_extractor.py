@@ -13,6 +13,9 @@ import json
 import re
 from typing import Optional
 
+# Populates os.environ from .env before any getenv below runs.
+import utils.env  # noqa: F401
+
 # Try importing anthropic
 try:
     import anthropic

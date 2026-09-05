@@ -79,7 +79,33 @@ def root():
 
 @app.get("/health")
 def health_check():
-    return {"status": "healthy", "timestamp": datetime.utcnow().isoformat()}
+    """
+    Liveness, plus which AI mode the backend is actually in.
+
+    `ai_mode` is how an operator confirms a configured key took effect without
+    the key ever being read back: "claude" means answers and extraction come
+    from the API, "mock" means they are deterministic stand-ins. The key itself
+    is never returned, logged or echoed anywhere.
+    """
+    from ai_extractor import ANTHROPIC_AVAILABLE, CLAUDE_MODEL, USE_MOCK
+
+    if USE_MOCK:
+        if not ANTHROPIC_AVAILABLE:
+            reason = "The anthropic package is not installed."
+        elif os.getenv("USE_MOCK_AI", "false").lower() == "true":
+            reason = "USE_MOCK_AI is set to true, which forces mock mode."
+        else:
+            reason = "No CLAUDE_API_KEY is configured."
+    else:
+        reason = None
+
+    return {
+        "status": "healthy",
+        "timestamp": datetime.utcnow().isoformat(),
+        "ai_mode": "mock" if USE_MOCK else "claude",
+        "ai_model": None if USE_MOCK else CLAUDE_MODEL,
+        "ai_mode_reason": reason,
+    }
 
 
 @app.post("/upload")

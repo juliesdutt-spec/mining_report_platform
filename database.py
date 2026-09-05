@@ -4,6 +4,9 @@ SIH26023 - AI-Powered Geological & Mining Reporting Solution
 """
 import os
 from datetime import datetime
+
+# Populates os.environ from .env before any getenv below runs.
+import utils.env  # noqa: F401
 from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, Float, JSON
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
