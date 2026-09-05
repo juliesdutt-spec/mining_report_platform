@@ -20,6 +20,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Stat, StatGroup } from "@/components/shared/StatGroup";
 import { useChartColors, tooltipStyle } from "@/lib/chart";
 import { OrganisationFilter } from "@/types";
+import { downloadCsv, toCsv } from "@/lib/csv";
 
 import { fetchPlatformStats } from "@/services/analytics";
 import { BackendStats } from "@/services/api";
@@ -53,13 +54,52 @@ export function AnalyticsPage({ selectedOrganisation }: AnalyticsPageProps) {
     .sort((a, b) => b[1] - a[1])
     .map(([location, documents]) => ({ location, documents }));
 
+  /**
+   * Export exactly what this page is showing.
+   *
+   * Built from the `stats` already in state rather than refetching, so the
+   * file matches the figures on screen and a second export cannot issue a
+   * second request. One long table with a Section column keeps the totals and
+   * both distributions in a single sheet.
+   */
+  const handleExportCsv = () => {
+    if (!stats) return;
+
+    const scope =
+      selectedOrganisation === "ALL" ? "All organisations" : selectedOrganisation;
+    const rows: unknown[][] = [
+      ["Section", "Label", "Value"],
+      ["Scope", "Organisation", scope],
+      ["Scope", "Exported", new Date().toISOString()],
+      ["Totals", "Documents indexed", stats.total_reports],
+      ["Totals", "Completed", stats.completed],
+      ["Totals", "Errors", stats.errors],
+      ["Totals", "Queries run", stats.total_queries],
+      ...mineralShare.map((m) => ["Mineral distribution", m.name, m.value]),
+      ...locationCounts.map((l) => ["Location distribution", l.location, l.documents]),
+    ];
+
+    const suffix =
+      selectedOrganisation === "ALL"
+        ? "all-organisations"
+        : selectedOrganisation.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+    downloadCsv(`dataforge-analytics-${suffix}.csv`, toCsv(rows));
+  };
+
   return (
     <div className="space-y-8">
       <PageHeader
         title="Analytics"
         description="Aggregates over the indexed report corpus, computed by the backend."
         actions={
-          <Button variant="outline" size="sm">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleExportCsv}
+            // Nothing to export until the aggregates have loaded.
+            disabled={!stats}
+            title={stats ? "Download these aggregates as CSV" : "Analytics are still loading"}
+          >
             <Download className="h-3.5 w-3.5" />
             Export CSV
           </Button>
