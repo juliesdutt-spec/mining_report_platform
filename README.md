@@ -167,6 +167,17 @@ printf 'AI_PROVIDER=ollama\nOLLAMA_MODEL=llama3.2\n' >> .env
 
 Ollama on CPU is slow; raise `AI_TIMEOUT_SECONDS` if calls time out.
 
+### When answers are stand-ins and you cannot see why
+
+```bash
+python doctor.py
+```
+
+Resolves the provider the way the backend does, then actually calls it -
+the step `/health` cannot do, because it reports what is configured, not
+what answers. Prints the failure and the one thing to change. It never
+prints a key.
+
 ### Confirming which provider is live
 
 `GET /health` reports the active provider without ever reading a key back, and
