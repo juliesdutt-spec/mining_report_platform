@@ -25,7 +25,11 @@ sqlalchemy==2.0.35
 # Only needed when DATABASE_URL points at Postgres. SQLite, the default, is
 # built into Python - so local development needs nothing here, but a hosted
 # deploy with a managed database will not start without it.
-psycopg2-binary==2.9.9
+#
+# Keep this at 2.9.10 or newer: earlier releases ship no wheel past CPython
+# 3.12, so a host on 3.13 falls back to compiling from source and the build
+# fails on the missing libpq headers. 2.9.12 carries wheels through 3.14.
+psycopg2-binary==2.9.12
 
 # Word Cloud & Visualization
 wordcloud==1.9.5
