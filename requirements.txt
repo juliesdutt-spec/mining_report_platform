@@ -1,16 +1,22 @@
 # AI-Powered Geological & Mining Reporting Solution
 # Problem ID: SIH26023 - Ministry of Coal - CMPDI/CIL
+#
+# What the FastAPI backend needs, and nothing else. The legacy Streamlit UI
+# (app.py) has its own file - see requirements-streamlit.txt.
 
 # Backend
 fastapi==0.115.0
 uvicorn==0.30.0
+# Required by FastAPI to parse multipart uploads (POST /upload). No module
+# imports it directly, so it looks unused - removing it breaks every upload
+# with "Form data requires python-multipart".
 python-multipart==0.0.9
-
-# Frontend
-streamlit==1.39.0
 
 # Document Processing
 pypdf==5.0.1
+# OCR for scanned PDFs. Both are optional at runtime: document_processor
+# catches ImportError and falls back to text extraction, so a host without
+# the tesseract binary still serves every other feature.
 pytesseract>=0.3.10
 Pillow==10.4.0
 
@@ -40,4 +46,3 @@ fpdf2==2.7.9
 
 # Utilities
 python-dotenv==1.0.1
-aiofiles==24.1.0

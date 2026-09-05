@@ -1,0 +1,15 @@
+# Legacy Streamlit prototype UI (app.py), superseded by the React frontend.
+#
+# Not installed by the backend deploy: nothing the FastAPI service serves
+# imports any of these, and together they add roughly a hundred megabytes and
+# several minutes to every build.
+#
+# Only needed to run the old UI:
+#   pip install -r requirements.txt -r requirements-streamlit.txt
+#   python start.py
+
+-r requirements.txt
+
+streamlit==1.39.0
+pandas>=2.0.0
+requests>=2.31.0

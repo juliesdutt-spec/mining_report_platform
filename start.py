@@ -13,20 +13,23 @@ import signal
 # Add to path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+#: Import names, which are not always the distribution names on PyPI -
+#: fpdf2 installs a module called "fpdf", and checking for "fpdf2" reported
+#: it missing on every run and triggered a needless reinstall.
+REQUIRED_MODULES = [
+    "fastapi", "uvicorn", "pypdf", "sqlalchemy", "wordcloud", "fpdf",
+]
+
+
 def check_dependencies():
-    """Check if all required packages are installed"""
-    required = [
-        "fastapi", "uvicorn", "streamlit", "pypdf", 
-        "anthropic", "sqlalchemy", "wordcloud", "fpdf2"
-    ]
-    
+    """Install the backend requirements if anything is missing."""
     missing = []
-    for package in required:
+    for module in REQUIRED_MODULES:
         try:
-            __import__(package)
+            __import__(module)
         except ImportError:
-            missing.append(package)
-    
+            missing.append(module)
+
     if missing:
         print(f"⚠️  Missing packages: {', '.join(missing)}")
         print("Installing required packages...")
@@ -36,6 +39,22 @@ def check_dependencies():
         ])
     
     return True
+
+
+def streamlit_available() -> bool:
+    """
+    Whether the legacy Streamlit UI can run.
+
+    It is not part of the backend's requirements any more - the React frontend
+    replaced it, and it added about a hundred megabytes to every deploy. This
+    script still launches it when it happens to be installed rather than
+    failing over a UI most runs do not want.
+    """
+    try:
+        __import__("streamlit")
+        return True
+    except ImportError:
+        return False
 
 
 def start_backend():
@@ -88,7 +107,10 @@ def main():
     # Create sample PDF
     print("📄 Creating sample mining report...")
     try:
-        from create_sample_pdf import *
+        # create_sample_pdf does its work at import time. A star-import is
+        # illegal inside a function, which made this file a SyntaxError - it
+        # could never run at all. A plain import has the same effect.
+        import create_sample_pdf  # noqa: F401
     except Exception as e:
         print(f"Note: {e}")
     print()
@@ -101,14 +123,20 @@ def main():
         backend_proc = start_backend()
         time.sleep(3)  # Wait for backend to start
         
-        frontend_proc = start_frontend()
-        time.sleep(2)
+        if streamlit_available():
+            frontend_proc = start_frontend()
+            time.sleep(2)
         
         print()
         print("=" * 60)
         print("✅ SYSTEM STARTED SUCCESSFULLY!")
         print()
-        print("🌐 Frontend: http://localhost:8501")
+        if frontend_proc:
+            print("🌐 Streamlit UI:  http://localhost:8501")
+        else:
+            print("🌐 React frontend: cd frontend && npm run dev  ->  :5173")
+            print("   (the legacy Streamlit UI is not installed; to use it:")
+            print("    pip install -r requirements-streamlit.txt)")
         print("📡 Backend API: http://localhost:8000")
         print("📚 API Docs: http://localhost:8000/docs")
         print("=" * 60)

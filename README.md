@@ -80,6 +80,16 @@ pip install -r requirements.txt
 cd frontend && npm install && cd ..
 ```
 
+`requirements.txt` is what the FastAPI backend needs and nothing more. The
+original Streamlit prototype UI (`app.py`) is superseded by the React frontend
+and its dependencies live separately, so they are not installed here or built
+into a deploy. To run that old UI anyway:
+
+```bash
+pip install -r requirements-streamlit.txt
+python start.py
+```
+
 ### 2. Configure
 
 ```bash
