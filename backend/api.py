@@ -33,7 +33,7 @@ from document_processor import (
 )
 from ai_extractor import (
     extract_structured_data, summarize_report, identify_topics,
-    query_reports, generate_report_content
+    query_reports, query_reports_detailed, generate_report_content
 )
 from report_generator import generate_pdf_report, generate_dossier
 from validation_engine import detect_discrepancies
@@ -398,8 +398,10 @@ def query_mining_reports(
         
         reports_context = "\n---\n".join(context_parts)
         
-        # Query AI
-        answer = query_reports(question, reports_context)
+        # Query AI. The detailed form also reports which provider answered, so
+        # a silent fall back to mock output cannot pass for a real answer.
+        result = query_reports_detailed(question, reports_context)
+        answer = result["answer"]
         
         # Store query history
         query_record = QueryHistory(
@@ -420,6 +422,11 @@ def query_mining_reports(
         return {
             "question": question,
             "answer": answer,
+            # Which model produced the answer, and - when a configured provider
+            # failed - why this is a stand-in instead. The note carries no key:
+            # provider errors are scrubbed before they reach here.
+            "answer_source": result["source"],
+            "answer_note": result["note"],
             "reports_used": len(reports),
             "report_ids": [r.id for r in reports],
             "evidence": evidence,

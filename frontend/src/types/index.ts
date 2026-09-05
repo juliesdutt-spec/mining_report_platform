@@ -81,6 +81,10 @@ export interface QueryResult {
   id: string;
   question: string;
   answer: string;
+  /** Provider that answered, or "mock" for a deterministic stand-in. */
+  answerSource?: string;
+  /** Set when a configured provider was tried and failed — says why. */
+  answerNote?: string | null;
   keyFindings: string[];
   evidence: EvidenceSnippet[];
   sourceDocuments: {

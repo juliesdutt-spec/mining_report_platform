@@ -137,12 +137,26 @@ Return ONLY a JSON array like ["topic1", "topic2", ...]"""
 
 
 def query_reports(question: str, reports_context: str) -> str:
+    """Answer text only. See query_reports_detailed for where it came from."""
+    return query_reports_detailed(question, reports_context)["answer"]
+
+
+def query_reports_detailed(question: str, reports_context: str) -> dict:
     """
-    Answer a natural language question about mining reports.
-    Uses the extracted data as context.
+    Answer a natural language question about mining reports, and say where the
+    answer came from.
+
+    Returns {"answer", "source", "note"}. `source` is the provider that
+    answered, or "mock". `note` is set only when a configured provider was
+    tried and failed: without it a provider outage looks identical to a
+    working demo, which is how a broken key gets mistaken for a working one.
     """
     if USE_MOCK:
-        return _mock_query(question, reports_context)
+        return {
+            "answer": _mock_query(question, reports_context),
+            "source": "mock",
+            "note": None,
+        }
     
     prompt = f"""You are an AI assistant for CMPDI/CIL mining data analysis.
 A user has asked a question about mining reports stored in the database.
@@ -156,11 +170,20 @@ Provide a clear, helpful answer based on the available data. If the data doesn't
 contain enough information to fully answer, say so and mention what data is available.
 Be specific with numbers, dates, and locations where possible."""
 
+    provider = ai_providers.describe()["mode"]
     try:
-        return ai_providers.complete(prompt, max_tokens=1000)
+        return {
+            "answer": ai_providers.complete(prompt, max_tokens=1000),
+            "source": provider,
+            "note": None,
+        }
     except ProviderError as exc:
         print(f"AI query failed, using mock answer: {exc}")
-        return _mock_query(question, reports_context)
+        return {
+            "answer": _mock_query(question, reports_context),
+            "source": "mock",
+            "note": f"{provider} was configured but the call failed: {exc}",
+        }
 
 
 def generate_report_content(extracted_data: dict) -> str:

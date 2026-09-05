@@ -40,6 +40,8 @@ export async function askDataForgeQuery(
     id: `q-${Date.now()}`,
     question: res.question ?? question,
     answer: res.answer,
+    answerSource: res.answer_source,
+    answerNote: res.answer_note ?? null,
     keyFindings: [],
     // Real passages located in the source documents; empty when none verify.
     evidence: (res.evidence ?? []).map((e) => ({

@@ -17,10 +17,33 @@ export interface DataForgeSettings {
 
 const STORAGE_KEY = "dataforge-settings";
 
+/** Where the backend lives when the viewer has not chosen otherwise. */
+export const BUILT_IN_API_URL: string =
+  import.meta.env.VITE_API_URL || "http://localhost:8000";
+
 export const DEFAULT_SETTINGS: DataForgeSettings = {
-  apiUrl: "http://localhost:8000",
+  apiUrl: BUILT_IN_API_URL,
   ocrConfidence: 85,
 };
+
+/**
+ * The viewer's own API base URL, or null when they have not set one.
+ *
+ * `loadSettings` fills in the default, which cannot distinguish "unset" from
+ * "deliberately set to the default" — the API client needs that difference so
+ * an unset value still falls through to VITE_API_URL.
+ */
+export function savedApiUrl(): string | null {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<DataForgeSettings>;
+    const url = typeof parsed.apiUrl === "string" ? parsed.apiUrl.trim() : "";
+    return url ? url.replace(/\/+$/, "") : null;
+  } catch {
+    return null;
+  }
+}
 
 /** Read saved settings, falling back to defaults for anything missing or invalid. */
 export function loadSettings(): DataForgeSettings {

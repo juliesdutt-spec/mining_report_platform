@@ -155,6 +155,66 @@ class TestNoKeyLeaks(unittest.TestCase):
         self.assertIn("***", out)
 
 
+class TestDegradedAnswersAreDisclosed(unittest.TestCase):
+    """
+    A configured provider whose call fails must not pass for a working one.
+
+    /health reports the provider as configured, so without a note on the answer
+    itself a rejected key looks exactly like a healthy demo - which is how a
+    broken setup gets mistaken for a working one.
+    """
+
+    UNREACHABLE = (
+        "AI_PROVIDER=ollama\nOLLAMA_HOST=http://127.0.0.1:1\n"
+        "AI_TIMEOUT_SECONDS=5\n"
+    )
+
+    def test_working_mock_mode_carries_no_note(self):
+        out = run_with_env(
+            "USE_MOCK_AI=true\n",
+            "import ai_extractor as a;"
+            "r=a.query_reports_detailed('q','ctx');"
+            "print(r['source'], r['note'])",
+        )
+        self.assertEqual(out, "mock None", "Plain mock mode is not a failure")
+
+    def test_failed_provider_call_is_labelled_mock(self):
+        out = run_with_env(
+            self.UNREACHABLE,
+            "import ai_extractor as a;"
+            "print(a.query_reports_detailed('q','ctx')['source'])",
+        )
+        self.assertEqual(out, "mock")
+
+    def test_failed_provider_call_names_the_provider_and_reason(self):
+        out = run_with_env(
+            self.UNREACHABLE,
+            "import ai_extractor as a;"
+            "print(a.query_reports_detailed('q','ctx')['note'])",
+        )
+        self.assertIn("ollama", out, "The note must name which provider failed")
+        self.assertIn("127.0.0.1:1", out, "and why it failed")
+
+    def test_note_never_carries_the_key(self):
+        out = run_with_env(
+            "AI_PROVIDER=gemini\nGEMINI_API_KEY=super-secret-value\n"
+            "GEMINI_BASE_URL=http://127.0.0.1:1/v1beta\nAI_TIMEOUT_SECONDS=5\n",
+            "import ai_extractor as a;"
+            "print(a.query_reports_detailed('q','ctx')['note'])",
+        )
+        self.assertNotIn("super-secret-value", out)
+        self.assertIn("gemini", out)
+
+    def test_plain_query_reports_still_returns_a_string(self):
+        """The old signature stays usable for callers that only want text."""
+        out = run_with_env(
+            "USE_MOCK_AI=true\n",
+            "import ai_extractor as a;"
+            "print(type(a.query_reports('q','ctx')).__name__)",
+        )
+        self.assertEqual(out, "str")
+
+
 class TestExtractorFallsBackCleanly(unittest.TestCase):
     def test_mock_mode_answers_without_touching_the_network(self):
         out = run_with_env(

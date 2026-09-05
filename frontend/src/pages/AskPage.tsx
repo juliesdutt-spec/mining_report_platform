@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { AlertCircle, ArrowRight, ExternalLink, Search } from "lucide-react";
+import { AlertCircle, ArrowRight, ExternalLink, History, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { PageHeader } from "@/components/shared/PageHeader";
@@ -19,6 +19,10 @@ interface AskPageProps {
 export function AskPage({ onInspectEvidence, selectedOrganisation }: AskPageProps) {
   const [queryInput, setQueryInput] = useState("");
   const [activeResult, setActiveResult] = useState<QueryResult | null>(null);
+  // A restored answer was produced by whatever provider was configured when it
+  // was asked, which may not be the one running now. Saying so stops a stored
+  // mock answer from reading as a fresh one.
+  const [isFromHistory, setIsFromHistory] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [queryError, setQueryError] = useState<string | null>(null);
   // Both the indexed count and the suggested questions describe the corpus in
@@ -32,7 +36,10 @@ export function AskPage({ onInspectEvidence, selectedOrganisation }: AskPageProp
   useEffect(() => {
     fetchRecentQueries()
       .then((queries) => {
-        if (queries.length > 0) setActiveResult(queries[0]);
+        if (queries.length > 0) {
+          setActiveResult(queries[0]);
+          setIsFromHistory(true);
+        }
       })
       .catch(() => {
         /* History is a convenience; a cold or offline backend is not an error here. */
@@ -46,6 +53,7 @@ export function AskPage({ onInspectEvidence, selectedOrganisation }: AskPageProp
     try {
       const res = await askDataForgeQuery(queryText, selectedOrganisation);
       setActiveResult(res);
+      setIsFromHistory(false);
     } catch (err) {
       setQueryError(
         err instanceof ApiError ? err.message : "The query failed. Please try again."
@@ -134,6 +142,27 @@ export function AskPage({ onInspectEvidence, selectedOrganisation }: AskPageProp
         <div className="space-y-8">
           {/* The answer — a quiet rule, not a glowing panel */}
           <section className="border-l-2 border-primary pl-5">
+            {activeResult.answerNote && (
+              <div
+                role="alert"
+                className="mb-3 flex items-start gap-2 rounded-lg border border-warning/40 bg-warning-muted px-4 py-3 text-sm text-warning"
+              >
+                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                <div>
+                  <p className="font-medium">
+                    This is a stand-in answer, not model output.
+                  </p>
+                  <p className="mt-1 text-xs opacity-90">{activeResult.answerNote}</p>
+                </div>
+              </div>
+            )}
+            {isFromHistory && (
+              <p className="mb-2 flex items-center gap-1.5 text-xs text-muted-foreground">
+                <History className="h-3.5 w-3.5 shrink-0" />
+                Your last saved answer — ask again to run it against the model
+                configured now.
+              </p>
+            )}
             <h2 className="text-lg font-semibold leading-snug tracking-tight text-foreground">
               {activeResult.question}
             </h2>

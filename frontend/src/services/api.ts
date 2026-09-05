@@ -2,7 +2,20 @@
 //
 // Every response shape below is derived from backend/api.py — do not change one
 // without checking the corresponding endpoint.
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+import { BUILT_IN_API_URL, savedApiUrl } from '@/lib/settings';
+
+/**
+ * Where to send requests, resolved per call.
+ *
+ * The Settings page offers an API base URL, so that value has to be the one
+ * actually used — otherwise the field would report a backend the app never
+ * talks to. An unset override falls through to the build-time VITE_API_URL.
+ * Read per request rather than once, so saving in Settings takes effect
+ * without a reload.
+ */
+function apiBaseUrl(): string {
+  return savedApiUrl() ?? BUILT_IN_API_URL;
+}
 
 /** Raised for any non-2xx response or transport failure. */
 export class ApiError extends Error {
@@ -28,13 +41,13 @@ export async function apiFetch<T>(
 
   let res: Response;
   try {
-    res = await fetch(`${API_BASE_URL}${path}`, { ...init, signal: controller.signal });
+    res = await fetch(`${apiBaseUrl()}${path}`, { ...init, signal: controller.signal });
   } catch (err) {
     if (err instanceof DOMException && err.name === 'AbortError') {
       throw new ApiError('The backend took too long to respond. Is it still processing?');
     }
     throw new ApiError(
-      `Cannot reach the DataForge backend at ${API_BASE_URL}. Start it with: uvicorn backend.api:app --reload`
+      `Cannot reach the DataForge backend at ${apiBaseUrl()}. Start it with: uvicorn backend.api:app --reload`
     );
   } finally {
     clearTimeout(timer);
@@ -171,6 +184,10 @@ export interface BackendUploadResponse {
 
 /** POST /query — note: `question` is a QUERY PARAMETER, not a JSON body. */
 export interface BackendQueryResponse {
+  /** Which model answered: a provider name, or "mock". */
+  answer_source?: string;
+  /** Why the answer is a stand-in, when a provider failed. Never carries a key. */
+  answer_note?: string | null;
   question: string;
   answer: string;
   reports_used: number;
@@ -206,7 +223,7 @@ export interface BackendStats {
  * can download it directly rather than buffering it through JS.
  */
 export function reportDownloadUrl(reportId: number): string {
-  return `${API_BASE_URL}/reports/${reportId}/download`;
+  return `${apiBaseUrl()}/reports/${reportId}/download`;
 }
 
 /**
@@ -218,7 +235,7 @@ export function reportDownloadUrl(reportId: number): string {
  * 404 when the report is gone — callers should treat both as "unavailable".
  */
 export function reportWordCloudUrl(reportId: number): string {
-  return `${API_BASE_URL}/reports/${reportId}/wordcloud`;
+  return `${apiBaseUrl()}/reports/${reportId}/wordcloud`;
 }
 
 /**
@@ -241,7 +258,7 @@ export function dossierUrl(options: {
     key_findings: String(options.keyFindings),
     source_references: String(options.sourceReferences),
   });
-  return `${API_BASE_URL}/reports/generate?${params.toString()}`;
+  return `${apiBaseUrl()}/reports/generate?${params.toString()}`;
 }
 
-export { API_BASE_URL };
+export { apiBaseUrl };
