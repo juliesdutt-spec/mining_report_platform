@@ -258,6 +258,8 @@ export function dossierUrl(options: {
   productionOverview: boolean;
   keyFindings: boolean;
   sourceReferences: boolean;
+  /** Container for the same dossier. Defaults to PDF. */
+  format?: 'pdf' | 'docx';
 }): string {
   const params = new URLSearchParams({
     title: options.title,
@@ -266,6 +268,7 @@ export function dossierUrl(options: {
     production_overview: String(options.productionOverview),
     key_findings: String(options.keyFindings),
     source_references: String(options.sourceReferences),
+    format: options.format ?? 'pdf',
   });
   return `${apiBaseUrl()}/reports/generate?${params.toString()}`;
 }

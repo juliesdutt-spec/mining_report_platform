@@ -274,3 +274,113 @@ def generate_dossier(reports: list, sections: dict, title: str, period: str) -> 
             pdf.multi_cell(0, 5, f"  [{r.id}] {r.filename}{suffix}", new_x="LMARGIN", new_y="NEXT")
 
     return bytes(pdf.output())
+
+# ==================== DOCX DOSSIER ====================
+
+try:
+    from docx import Document
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from docx.shared import Pt
+    DOCX_AVAILABLE = True
+except ImportError:
+    DOCX_AVAILABLE = False
+
+
+class DocxUnavailable(RuntimeError):
+    """python-docx is not installed, so no .docx can be produced."""
+
+
+def generate_dossier_docx(reports: list, sections: dict, title: str, period: str) -> bytes:
+    """
+    The same dossier as generate_dossier, as a Word document.
+
+    Section-for-section identical to the PDF - same figures, same wording, same
+    "no supporting data" statements - so the two exports cannot disagree about
+    what the corpus contains. Only the container differs.
+
+    Raises DocxUnavailable rather than returning a placeholder file: a .docx
+    that will not open in Word is worse than an error the caller can report.
+    """
+    if not DOCX_AVAILABLE:
+        raise DocxUnavailable("python-docx is not installed")
+
+    document = Document()
+
+    heading = document.add_paragraph()
+    heading.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    run = heading.add_run(title)
+    run.bold = True
+    run.font.size = Pt(18)
+
+    for line in (f"Reporting period: {period}", f"Documents included: {len(reports)}"):
+        paragraph = document.add_paragraph()
+        paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        paragraph.add_run(line).font.size = Pt(10)
+
+    if not reports:
+        document.add_heading("NO DATA", level=1)
+        document.add_paragraph(
+            "No completed reports are present in the database, so this dossier "
+            "contains no figures. Upload and process documents first."
+        )
+        return _docx_bytes(document)
+
+    if sections.get("execSummary", True):
+        document.add_heading("1. EXECUTIVE SUMMARY", level=1)
+        minerals = sorted({r.mineral_type for r in reports if r.mineral_type})
+        locations = sorted({r.location for r in reports if r.location})
+        document.add_paragraph(
+            f"This dossier consolidates {len(reports)} indexed report(s). "
+            f"Minerals recorded: {', '.join(minerals) if minerals else 'none recorded'}. "
+            f"Locations referenced: {', '.join(locations) if locations else 'none recorded'}."
+        )
+
+    if sections.get("productionOverview", True):
+        document.add_heading("2. PRODUCTION OVERVIEW", level=1)
+        table = document.add_table(rows=1, cols=4)
+        table.style = "Table Grid"
+        for cell, label in zip(
+            table.rows[0].cells, ("Document", "Mineral", "Quantity", "Method")
+        ):
+            cell.text = label
+            for paragraph in cell.paragraphs:
+                for run in paragraph.runs:
+                    run.bold = True
+        for report in reports:
+            cells = table.add_row().cells
+            cells[0].text = report.filename or ""
+            cells[1].text = report.mineral_type or "-"
+            cells[2].text = report.quantity_extracted or "-"
+            cells[3].text = report.extraction_method or "-"
+
+    if sections.get("keyFindings", True):
+        document.add_heading("3. KEY FINDINGS", level=1)
+        found = False
+        for report in reports:
+            findings = (report.extracted_data or {}).get("key_findings") or []
+            if not findings:
+                continue
+            found = True
+            document.add_paragraph(report.filename).runs[0].bold = True
+            for finding in findings:
+                document.add_paragraph(str(finding), style="List Bullet")
+        if not found:
+            document.add_paragraph(
+                "No key findings were extracted from the indexed documents."
+            )
+
+    if sections.get("sourceReferences", True):
+        document.add_heading("4. SOURCE REFERENCES", level=1)
+        for report in reports:
+            pages = len(report.page_texts or []) if getattr(report, "page_texts", None) else None
+            suffix = f" ({pages} pages)" if pages else ""
+            document.add_paragraph(f"[{report.id}] {report.filename}{suffix}")
+
+    return _docx_bytes(document)
+
+
+def _docx_bytes(document) -> bytes:
+    """Serialise a python-docx Document to bytes without touching disk."""
+    buffer = io.BytesIO()
+    document.save(buffer)
+    return buffer.getvalue()

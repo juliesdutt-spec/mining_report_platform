@@ -98,6 +98,82 @@ class ExportEndpointTests(unittest.TestCase):
     def test_missing_report_is_404_not_an_empty_file(self):
         self.assertEqual(self.client.get("/reports/99999/download").status_code, 404)
 
+    # ------------------------------------------------ dossier: DOCX ------
+    def test_dossier_docx_is_a_real_word_file(self):
+        """
+        Not "the endpoint returned 200" - the bytes have to be a package Word
+        can open, which a placeholder or an error page would fail.
+        """
+        import io
+        import zipfile
+
+        response = self.client.get("/reports/generate", params={"format": "docx"})
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertIn(
+            "wordprocessingml.document", response.headers["content-type"]
+        )
+        self.assertIn(".docx", response.headers["content-disposition"])
+
+        payload = response.content
+        self.assertGreater(len(payload), 5000, "suspiciously small for a dossier")
+
+        with zipfile.ZipFile(io.BytesIO(payload)) as archive:
+            self.assertIsNone(archive.testzip(), "corrupt OOXML package")
+            names = archive.namelist()
+        for part in ("[Content_Types].xml", "word/document.xml"):
+            self.assertIn(part, names, f"missing OOXML part {part}")
+
+    def test_dossier_docx_carries_the_extracted_data(self):
+        from docx import Document
+
+        import io
+
+        payload = self.client.get(
+            "/reports/generate", params={"format": "docx"}
+        ).content
+        document = Document(io.BytesIO(payload))
+        text = "\n".join(p.text for p in document.paragraphs)
+
+        self.assertIn("EXECUTIVE SUMMARY", text)
+        self.assertIn("SOURCE REFERENCES", text)
+        self.assertGreaterEqual(len(document.tables), 1, "no production table")
+
+        header = [c.text for c in document.tables[0].rows[0].cells]
+        self.assertEqual(header, ["Document", "Mineral", "Quantity", "Method"])
+        body = "\n".join(
+            c.text for row in document.tables[0].rows for c in row.cells
+        )
+        self.assertIn("sample_mining_report.pdf", body, "real filename missing")
+
+    def test_dossier_sections_can_be_switched_off(self):
+        from docx import Document
+
+        import io
+
+        payload = self.client.get(
+            "/reports/generate",
+            params={"format": "docx", "key_findings": "false"},
+        ).content
+        text = "\n".join(
+            p.text for p in Document(io.BytesIO(payload)).paragraphs
+        )
+        self.assertNotIn("KEY FINDINGS", text)
+        self.assertIn("EXECUTIVE SUMMARY", text)
+
+    # ------------------------------------------------- dossier: PDF ------
+    def test_dossier_pdf_still_works(self):
+        """The DOCX addition must not disturb the existing PDF export."""
+        response = self.client.get("/reports/generate")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers["content-type"], "application/pdf")
+        self.assertTrue(response.content.startswith(b"%PDF"))
+
+    def test_dossier_rejects_an_unknown_format(self):
+        self.assertEqual(
+            self.client.get("/reports/generate", params={"format": "xlsx"}).status_code,
+            422,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -70,14 +70,18 @@ export function ReportStudioPage() {
         ? "FY 2024-25 Q1"
         : "FY 2024-25 Q2";
 
-  const downloadHref = dossierUrl({
+  // Both exports compose the same dossier from the same sections; only the
+  // container differs, so the two files cannot disagree about the corpus.
+  const dossierOptions = {
     title: "Consolidated Mining Report Dossier",
     period: periodLabel,
     execSummary: selectedSections.execSummary,
     productionOverview: selectedSections.productionOverview,
     keyFindings: selectedSections.keyFindings,
     sourceReferences: selectedSections.sourceReferences,
-  });
+  };
+  const downloadHref = dossierUrl({ ...dossierOptions, format: "pdf" });
+  const docxHref = dossierUrl({ ...dossierOptions, format: "docx" });
 
   return (
     <div className="space-y-6">
@@ -91,14 +95,12 @@ export function ReportStudioPage() {
               <Printer className="h-3.5 w-3.5" />
               Print
             </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled
-              title="DOCX export is not implemented — the backend has no document generator."
-            >
-              <Download className="h-3.5 w-3.5" />
-              DOCX
+            {/* GET /reports/generate?format=docx composes the same dossier. */}
+            <Button variant="outline" size="sm" asChild>
+              <a href={docxHref} download aria-label="Download the composed dossier as DOCX">
+                <Download className="h-3.5 w-3.5" />
+                DOCX
+              </a>
             </Button>
             {/* POST /reports/generate composes the dossier from indexed reports. */}
             <Button size="sm" asChild>

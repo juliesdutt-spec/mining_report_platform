@@ -35,7 +35,9 @@ from ai_extractor import (
     extract_structured_data, summarize_report, identify_topics,
     query_reports, query_reports_detailed, generate_report_content
 )
-from report_generator import generate_pdf_report, generate_dossier
+from report_generator import (
+    generate_pdf_report, generate_dossier, generate_dossier_docx, DocxUnavailable
+)
 from validation_engine import detect_discrepancies
 from evidence_locator import locate_evidence
 from wordcloud_generator import generate_word_cloud_bytes, extract_topics, get_topic_distribution
@@ -234,6 +236,11 @@ def generate_dossier_pdf(
     production_overview: bool = Query(True),
     key_findings: bool = Query(True),
     source_references: bool = Query(True),
+    format: str = Query(
+        "pdf",
+        pattern="^(pdf|docx)$",
+        description="Container for the same dossier: 'pdf' or 'docx'.",
+    ),
     db: Session = Depends(get_db),
 ):
     """
@@ -249,22 +256,37 @@ def generate_dossier_pdf(
         MiningReport.status == "completed"
     ).order_by(MiningReport.id).all()
 
-    pdf_bytes = generate_dossier(
-        reports,
-        {
-            "execSummary": exec_summary,
-            "productionOverview": production_overview,
-            "keyFindings": key_findings,
-            "sourceReferences": source_references,
-        },
-        title,
-        period,
-    )
+    chosen_sections = {
+        "execSummary": exec_summary,
+        "productionOverview": production_overview,
+        "keyFindings": key_findings,
+        "sourceReferences": source_references,
+    }
+
+    if format == "docx":
+        try:
+            content = generate_dossier_docx(reports, chosen_sections, title, period)
+        except DocxUnavailable:
+            # A .docx that will not open in Word is worse than a clear failure,
+            # so this reports the missing dependency instead of shipping one.
+            raise HTTPException(
+                status_code=503,
+                detail="DOCX export is unavailable: python-docx is not installed "
+                       "on the server.",
+            )
+        media_type = (
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        )
+        filename = "dataforge_dossier.docx"
+    else:
+        content = generate_dossier(reports, chosen_sections, title, period)
+        media_type = "application/pdf"
+        filename = "dataforge_dossier.pdf"
 
     return StreamingResponse(
-        io.BytesIO(pdf_bytes),
-        media_type="application/pdf",
-        headers={"Content-Disposition": 'attachment; filename=dataforge_dossier.pdf'},
+        io.BytesIO(content),
+        media_type=media_type,
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
     )
 
 
