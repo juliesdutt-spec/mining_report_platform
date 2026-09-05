@@ -316,8 +316,24 @@ def delete_report(report_id: int, db: Session = Depends(get_db)):
 
 
 @app.get("/reports/{report_id}/download")
-def download_report(report_id: int, db: Session = Depends(get_db)):
-    """Download generated PDF report"""
+def download_report(
+    report_id: int,
+    inline: bool = Query(
+        False,
+        description="Render in the browser instead of downloading. Used by the "
+                    "Documents preview, which embeds this URL.",
+    ),
+    db: Session = Depends(get_db),
+):
+    """
+    The report as a PDF.
+
+    Serves one document under two dispositions. A browser honours
+    `Content-Disposition: attachment` even inside an <object> or <iframe>, so
+    an embedded preview pointed at the attachment form downloads a file every
+    time it mounts. `inline=true` is what the preview asks for; the download
+    buttons keep the default and still save a file.
+    """
     report = db.query(MiningReport).filter(MiningReport.id == report_id).first()
     if not report:
         raise HTTPException(status_code=404, detail="Report not found")
@@ -330,12 +346,15 @@ def download_report(report_id: int, db: Session = Depends(get_db)):
     data["filename"] = report.filename
     
     pdf_bytes = generate_pdf_report(data)
+    disposition = "inline" if inline else "attachment"
     
     return StreamingResponse(
         io.BytesIO(pdf_bytes),
         media_type="application/pdf",
         headers={
-            "Content-Disposition": f"attachment; filename=report_{report.id}_{report.filename}"
+            "Content-Disposition": (
+                f"{disposition}; filename=report_{report.id}_{report.filename}"
+            )
         }
     )
 

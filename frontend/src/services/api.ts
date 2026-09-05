@@ -221,9 +221,18 @@ export interface BackendStats {
  * GET /reports/{id}/download — the backend streams a generated PDF
  * (report_generator.generate_pdf_report). Returned as a URL so the browser
  * can download it directly rather than buffering it through JS.
+ *
+ * Pass `inline` for an embedded preview. A browser honours
+ * `Content-Disposition: attachment` inside an <object> too, so embedding the
+ * download URL saves a file every time the element mounts instead of
+ * rendering the document.
  */
-export function reportDownloadUrl(reportId: number): string {
-  return `${apiBaseUrl()}/reports/${reportId}/download`;
+export function reportDownloadUrl(
+  reportId: number,
+  options: { inline?: boolean } = {}
+): string {
+  const suffix = options.inline ? '?inline=true' : '';
+  return `${apiBaseUrl()}/reports/${reportId}/download${suffix}`;
 }
 
 /**

@@ -373,7 +373,9 @@ export function DocumentsPage({
               <TabsContent value="document">
                 <object
                   key={selectedDoc.id}
-                  data={reportDownloadUrl(selectedDoc.id)}
+                  // inline: embedding the attachment URL makes the browser
+                  // save a file on every mount instead of rendering the PDF.
+                  data={reportDownloadUrl(selectedDoc.id, { inline: true })}
                   type="application/pdf"
                   className="h-[560px] w-full rounded-lg border border-border bg-card"
                   aria-label={`PDF report for ${selectedDoc.filename}`}
