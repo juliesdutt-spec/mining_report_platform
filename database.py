@@ -13,7 +13,26 @@ from sqlalchemy.orm import sessionmaker
 
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///mining_reports.db")
 
-engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+# Managed Postgres add-ons hand out "postgres://", a scheme SQLAlchemy dropped.
+# Rewriting it here means a deploy works with the URL the platform gives you
+# rather than one you had to know to edit.
+if DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+
+IS_SQLITE = DATABASE_URL.startswith("sqlite")
+
+# check_same_thread is a SQLite driver flag. Passing it to any other driver is
+# a TypeError at connect time - the first thing a deploy onto Postgres hits.
+CONNECT_ARGS = {"check_same_thread": False} if IS_SQLITE else {}
+
+# Hosted databases drop idle connections; without pre-ping the first request
+# after a quiet spell fails on a stale one. SQLite has no such connection to
+# lose, so it does not pay for the check.
+engine = create_engine(
+    DATABASE_URL,
+    connect_args=CONNECT_ARGS,
+    pool_pre_ping=not IS_SQLITE,
+)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 

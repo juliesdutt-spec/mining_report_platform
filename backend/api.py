@@ -47,11 +47,22 @@ app = FastAPI(
     version="1.0.0",
 )
 
-# CORS middleware
+# CORS. Open by default so local development needs no setup, but a deployed
+# backend exposes upload and delete to whoever calls it, so ALLOWED_ORIGINS
+# narrows that to the sites you actually serve:
+#   ALLOWED_ORIGINS=https://your-app.vercel.app,http://localhost:5173
+ALLOWED_ORIGINS = [
+    origin.strip()
+    for origin in os.getenv("ALLOWED_ORIGINS", "*").split(",")
+    if origin.strip()
+] or ["*"]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=ALLOWED_ORIGINS,
+    # No endpoint reads a cookie or an auth header, so credentialed requests
+    # are not something to allow - and "*" only means "*" without them.
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )

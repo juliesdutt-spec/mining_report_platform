@@ -202,6 +202,45 @@ PDF generation, discrepancy detection and evidence location are all real.
 
 ---
 
+## 🚀 Deploying the backend
+
+The frontend is static and deploys anywhere. The backend needs a host that
+runs Python - Railway, Render and Fly all read the `Procfile` in this repo.
+
+**What this backend does not need:** uploaded PDFs are parsed in memory and
+only their text is stored, and word clouds are re-rendered from that text on
+request. So there is nothing on disk to preserve - no volume, no object
+store. OCR is optional too: `pytesseract` degrades gracefully when the
+tesseract binary is absent.
+
+**What it does need:**
+
+| Variable | Why |
+|---|---|
+| `DATABASE_URL` | SQLite lives on a disk that most hosts wipe on redeploy. Attach a managed Postgres and paste its URL, or your uploads vanish on the next deploy. |
+| `GEMINI_API_KEY` *(or another provider key)* | Set it in the host's environment panel, never in the repo. |
+| `ALLOWED_ORIGINS` | Defaults to `*`. Set it to your frontend's URL so upload and delete are not open to every site. |
+
+`postgres://` URLs are rewritten to `postgresql://` automatically, so the URL
+your host hands you works unedited.
+
+### Steps
+
+1. Push this branch, then point the host at the repo. It reads `Procfile`
+   and `requirements.txt`; no build config needed.
+2. Add a Postgres database and let the host inject `DATABASE_URL`.
+3. Set `GEMINI_API_KEY` and `ALLOWED_ORIGINS` in the environment panel.
+4. Check the deploy: `curl https://your-backend/health` should report your
+   provider, not `mock`.
+5. In Vercel, set `VITE_API_URL` to your backend URL and redeploy the
+   frontend - otherwise it still calls `http://localhost:8000`, which does
+   not exist for anyone but you.
+
+Tables are created on startup, so the first boot against an empty Postgres
+needs no migration step. The database starts empty: re-upload your PDFs.
+
+---
+
 ## 📖 API Endpoints
 
 | Method | Endpoint | Description |
