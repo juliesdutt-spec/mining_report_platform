@@ -103,8 +103,78 @@ export function ValidationPage({ selectedOrganisation }: ValidationPageProps) {
     <div className="space-y-8">
       <PageHeader
         title="Validation & traceability"
-        description="Reconcile conflicting figures across subsidiary ledgers and verify low-confidence extractions against their source pages."
+        description="Every figure this platform reports comes from a document. Validation is the check that those documents agree with each other."
       />
+
+      {/* First-time readers arrive here without knowing what a "finding" is or
+          what they are expected to do about one. The four types below are
+          exactly what validation_engine.detect_discrepancies produces. */}
+      <section
+        aria-labelledby="validation-explainer"
+        className="rounded-lg border border-border bg-card px-5 py-4"
+      >
+        <h2
+          id="validation-explainer"
+          className="text-sm font-semibold tracking-tight text-foreground"
+        >
+          What this page checks
+        </h2>
+        <p className="mt-1.5 max-w-3xl text-sm leading-relaxed text-muted-foreground">
+          A consolidated report is only trustworthy if the documents behind it
+          say the same thing. Every time a document is indexed, DataForge
+          re-compares the whole corpus and lists what does not line up — so a
+          disagreement is caught here rather than inside a published figure.
+        </p>
+
+        <dl className="mt-4 grid grid-cols-1 gap-x-8 gap-y-3 sm:grid-cols-2">
+          {[
+            {
+              term: "Value conflict",
+              rule: "bg-destructive",
+              detail:
+                "Two reports state different figures for the same mine and field — for example one records 3,50,000 MT and another 2,90,000 MT. Both sources are shown side by side so you can decide which document governs.",
+            },
+            {
+              term: "Extraction failed",
+              rule: "bg-destructive",
+              detail:
+                "The document was ingested but no data could be read from it. Nothing from it is contributing to any total, so a report built now would silently omit it.",
+            },
+            {
+              term: "Missing data",
+              rule: "bg-warning",
+              detail:
+                "Mineral type, quantity or location could not be found in the document. Aggregates that rely on that field exclude this report.",
+            },
+            {
+              term: "Duplicate",
+              rule: "bg-muted-foreground",
+              detail:
+                "The same document was ingested more than once, which would double-count its figures in any total.",
+            },
+          ].map((entry) => (
+            <div key={entry.term} className="relative pl-4">
+              <span
+                aria-hidden
+                className={cn("absolute inset-y-1 left-0 w-0.5 rounded", entry.rule)}
+              />
+              <dt className="text-sm font-medium text-foreground">{entry.term}</dt>
+              <dd className="mt-0.5 text-sm leading-relaxed text-muted-foreground">
+                {entry.detail}
+              </dd>
+            </div>
+          ))}
+        </dl>
+
+        <p className="mt-4 border-t border-border pt-3 text-sm leading-relaxed text-muted-foreground">
+          <span className="font-medium text-foreground">What to do with a finding:</span>{" "}
+          open it, read the passage each figure came from — every finding links
+          back to the page of the source document — and decide which reading is
+          correct. Marking it resolved records that an auditor has seen it; it
+          does not edit the underlying document, so the audit trail from figure
+          to source page stays intact.
+        </p>
+      </section>
 
       {loadError && (
         <div
