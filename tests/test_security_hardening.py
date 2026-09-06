@@ -4,10 +4,11 @@ Guards the hardening applied after the VAPT pass.
 Each case corresponds to a finding that was reproduced against a running
 instance before it was fixed, so these fail if the fix is undone.
 
-Note what these tests do NOT claim: DataForge has no authentication, so
-organisation scoping is a view filter rather than an access-control boundary.
-Nothing here asserts isolation between organisations, because the
-implementation does not provide it.
+Note what these tests do NOT claim. Signing in is now required - see
+test_authentication.py - but every signed-in account sees the whole corpus, so
+organisation scoping remains a view filter rather than an access-control
+boundary. Nothing here asserts isolation between organisations, because the
+implementation still does not provide it.
 """
 import io
 import os
@@ -20,7 +21,8 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 
 class SecurityHardeningTests(unittest.TestCase):
-    OVERRIDES = ("DATABASE_URL", "USE_MOCK_AI", "MAX_UPLOAD_MB")
+    OVERRIDES = ("DATABASE_URL", "USE_MOCK_AI", "MAX_UPLOAD_MB",
+                 "AUTH_USERS", "AUTH_SECRET", "DEMO_ACCOUNT")
 
     @classmethod
     def setUpClass(cls):
@@ -28,10 +30,15 @@ class SecurityHardeningTests(unittest.TestCase):
         cls._tmp = tempfile.TemporaryDirectory()
         os.environ["DATABASE_URL"] = f"sqlite:///{cls._tmp.name}/sec.db"
         os.environ["USE_MOCK_AI"] = "true"
+        # These endpoints now require a signed-in account. The suite signs in
+        # as a full (non-demo) user so it exercises the same paths as before.
+        os.environ["AUTH_SECRET"] = "test-secret-not-a-real-one"
+        os.environ["AUTH_USERS"] = "tester:test-password:Test User"
+        os.environ["DEMO_ACCOUNT"] = "off"
 
         import sys
         sys.path.insert(0, str(PROJECT_ROOT))
-        cls._poisoned = ("database", "ai_providers", "ai_extractor", "backend.api")
+        cls._poisoned = ("database", "auth", "auth_seed", "ai_providers", "ai_extractor", "backend.api")
         for name in cls._poisoned:
             sys.modules.pop(name, None)
 
@@ -40,7 +47,15 @@ class SecurityHardeningTests(unittest.TestCase):
         from database import init_db
 
         init_db()
+        from auth_seed import seed_users
+        seed_users()
+
         cls.client = TestClient(app)
+        login = cls.client.post("/auth/login", json={"username": "tester", "password": "test-password"})
+        assert login.status_code == 200, f"test account could not sign in: {login.text}"
+        # Set once on the client rather than per call, so the assertions below
+        # are unchanged from before authentication existed.
+        cls.client.headers["Authorization"] = f"Bearer {login.json()['access_token']}"
         cls.pdf = (PROJECT_ROOT / "sample_mining_report.pdf").read_bytes()
 
     @classmethod

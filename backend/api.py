@@ -20,7 +20,8 @@ import uuid
 from datetime import datetime
 from typing import Optional
 
-from fastapi import FastAPI, UploadFile, File, Depends, HTTPException, Query
+from fastapi import FastAPI, UploadFile, File, Depends, HTTPException, Query, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, JSONResponse
 from sqlalchemy.orm import Session
@@ -28,7 +29,9 @@ from sqlalchemy.orm import Session
 # Add parent directory to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from database import init_db, get_db, MiningReport, QueryHistory, ValidationResolution
+from database import init_db, get_db, MiningReport, QueryHistory, ValidationResolution, User
+from auth import create_access_token, decode_access_token, verify_password
+from auth_seed import DEMO_ENABLED, DEMO_PASSWORD, DEMO_USERNAME, seed_users
 from document_processor import (
     extract_text_from_pdf, extract_pages_from_pdf, chunk_text, get_pdf_metadata
 )
@@ -103,6 +106,108 @@ app.add_middleware(
 @app.on_event("startup")
 def startup_event():
     init_db()
+    seed_users()
+
+
+# auto_error=False so a missing header reaches our own handler and returns the
+# same 401 as a bad one. FastAPI's default raises 403 for "no credentials",
+# which tells a caller the difference between "not signed in" and "rejected".
+_bearer = HTTPBearer(auto_error=False)
+
+UNAUTHORIZED = HTTPException(
+    status_code=status.HTTP_401_UNAUTHORIZED,
+    detail="Sign in to use DataForge.",
+    headers={"WWW-Authenticate": "Bearer"},
+)
+
+
+def current_user(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(_bearer),
+    db: Session = Depends(get_db),
+) -> User:
+    """
+    The signed-in account, or 401.
+
+    The user is re-read on every request rather than trusted from the token, so
+    deleting an account takes effect immediately instead of when its last token
+    happens to expire.
+    """
+    if credentials is None:
+        raise UNAUTHORIZED
+    claims = decode_access_token(credentials.credentials)
+    if not claims:
+        raise UNAUTHORIZED
+
+    user = db.query(User).filter(User.username == claims.get("sub")).first()
+    if user is None:
+        raise UNAUTHORIZED
+    return user
+
+
+def writing_user(user: User = Depends(current_user)) -> User:
+    """
+    The signed-in account, refused if it may only read.
+
+    The demo account is published, so anyone can sign in as it. Upload, delete
+    and resolve are the operations that would let a passer-by change what an
+    auditor sees, so those are the ones this guards.
+    """
+    if user.is_readonly:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="The demo account can read everything but cannot change documents or findings.",
+        )
+    return user
+
+
+def _user_payload(user: User) -> dict:
+    return {
+        "username": user.username,
+        "display_name": user.display_name or user.username,
+        "readonly": bool(user.is_readonly),
+    }
+
+
+@app.post("/auth/login")
+def login(payload: dict, db: Session = Depends(get_db)):
+    """
+    Exchange a username and password for a session token.
+
+    One message for both "no such user" and "wrong password": telling them apart
+    lets someone enumerate which accounts exist.
+    """
+    username = str(payload.get("username", "")).strip().lower()
+    password = str(payload.get("password", ""))
+
+    user = db.query(User).filter(User.username == username).first() if username else None
+    if user is None or not verify_password(password, user.password_hash):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect username or password.")
+
+    return {
+        "access_token": create_access_token(user.username, readonly=bool(user.is_readonly)),
+        "token_type": "bearer",
+        "user": _user_payload(user),
+    }
+
+
+@app.get("/auth/me")
+def whoami(user: User = Depends(current_user)):
+    """Who the caller is. The frontend uses this to restore a session on load."""
+    return _user_payload(user)
+
+
+@app.get("/auth/demo")
+def demo_credentials():
+    """
+    The published demo login, so the sign-in page can show it.
+
+    Public on purpose: the whole point is that an evaluator does not need to be
+    given credentials. It reveals nothing that is not already printed on that
+    page, and the account it names cannot change anything.
+    """
+    if not DEMO_ENABLED:
+        return {"enabled": False}
+    return {"enabled": True, "username": DEMO_USERNAME, "password": DEMO_PASSWORD}
 
 
 @app.get("/")
@@ -184,7 +289,8 @@ async def _read_capped(file: UploadFile) -> bytes:
 @app.post("/upload")
 async def upload_report(
     file: UploadFile = File(...),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    user: User = Depends(writing_user),
 ):
     """
     Upload and process a PDF mining report.
@@ -272,7 +378,8 @@ async def upload_report(
 def list_reports(
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=100),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    user: User = Depends(current_user),
 ):
     """List all mining reports with pagination"""
     reports = db.query(MiningReport).order_by(
@@ -364,6 +471,7 @@ def generate_dossier_pdf(
         description="Container for the same dossier: 'pdf' or 'docx'.",
     ),
     db: Session = Depends(get_db),
+    user: User = Depends(current_user),
 ):
     """
     Compose a dossier PDF across every completed report.
@@ -413,7 +521,7 @@ def generate_dossier_pdf(
 
 
 @app.get("/reports/{report_id}")
-def get_report(report_id: int, db: Session = Depends(get_db)):
+def get_report(report_id: int, db: Session = Depends(get_db), user: User = Depends(current_user)):
     """Get detailed information about a specific report"""
     report = db.query(MiningReport).filter(MiningReport.id == report_id).first()
     if not report:
@@ -443,7 +551,7 @@ def get_report(report_id: int, db: Session = Depends(get_db)):
 
 
 @app.delete("/reports/{report_id}")
-def delete_report(report_id: int, db: Session = Depends(get_db)):
+def delete_report(report_id: int, db: Session = Depends(get_db), user: User = Depends(writing_user)):
     """Delete a mining report"""
     report = db.query(MiningReport).filter(MiningReport.id == report_id).first()
     if not report:
@@ -468,6 +576,7 @@ def download_report(
                     "Documents preview, which embeds this URL.",
     ),
     db: Session = Depends(get_db),
+    user: User = Depends(current_user),
 ):
     """
     The report as a PDF.
@@ -504,7 +613,7 @@ def download_report(
 
 
 @app.get("/reports/{report_id}/wordcloud")
-def get_wordcloud(report_id: int, db: Session = Depends(get_db)):
+def get_wordcloud(report_id: int, db: Session = Depends(get_db), user: User = Depends(current_user)):
     """Get word cloud image for a report"""
     report = db.query(MiningReport).filter(MiningReport.id == report_id).first()
     if not report:
@@ -530,7 +639,8 @@ def query_mining_reports(
         None,
         description="Restrict the answer to reports from this organisation.",
     ),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    user: User = Depends(current_user),
 ):
     """
     AI-powered query system. Ask natural language questions about mining reports.
@@ -619,6 +729,7 @@ def get_statistics(
         description="Restrict every figure to reports whose company_name matches exactly.",
     ),
     db: Session = Depends(get_db),
+    user: User = Depends(current_user),
 ):
     """
     Overall statistics about the reports database.
@@ -672,6 +783,7 @@ def list_validation_findings(
         description="Only compare reports from this organisation.",
     ),
     db: Session = Depends(get_db),
+    user: User = Depends(current_user),
 ):
     """
     Cross-document discrepancies computed from the stored reports.
@@ -718,6 +830,7 @@ def resolve_validation_finding(
     status: str = Query("resolved", description="resolved or flagged"),
     note: Optional[str] = Query(None, description="Auditor's resolution note"),
     db: Session = Depends(get_db),
+    user: User = Depends(writing_user),
 ):
     """Record an auditor's decision on a discrepancy."""
     if status not in ("resolved", "flagged", "pending"):
@@ -757,7 +870,8 @@ def resolve_validation_finding(
 @app.get("/query-history")
 def get_query_history(
     limit: int = Query(20, ge=1, le=100),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    user: User = Depends(current_user),
 ):
     """Get recent query history"""
     queries = db.query(QueryHistory).order_by(

@@ -21,7 +21,8 @@ class ExportEndpointTests(unittest.TestCase):
     #: Set for this class only. These are process-wide, and the provider tests
     #: reload ai_providers against their own environment - leaving USE_MOCK_AI
     #: behind would force every later provider case into mock mode.
-    OVERRIDES = ("DATABASE_URL", "USE_MOCK_AI")
+    OVERRIDES = ("DATABASE_URL", "USE_MOCK_AI",
+                 "AUTH_USERS", "AUTH_SECRET", "DEMO_ACCOUNT")
 
     @classmethod
     def setUpClass(cls):
@@ -32,10 +33,15 @@ class ExportEndpointTests(unittest.TestCase):
         cls._tmp = tempfile.TemporaryDirectory()
         os.environ["DATABASE_URL"] = f"sqlite:///{cls._tmp.name}/test.db"
         os.environ["USE_MOCK_AI"] = "true"
+        # These endpoints now require a signed-in account. The suite signs in
+        # as a full (non-demo) user so it exercises the same paths as before.
+        os.environ["AUTH_SECRET"] = "test-secret-not-a-real-one"
+        os.environ["AUTH_USERS"] = "tester:test-password:Test User"
+        os.environ["DEMO_ACCOUNT"] = "off"
 
         import sys
         sys.path.insert(0, str(PROJECT_ROOT))
-        cls._poisoned = ("database", "ai_providers", "ai_extractor", "backend.api")
+        cls._poisoned = ("database", "auth", "auth_seed", "ai_providers", "ai_extractor", "backend.api")
         for name in cls._poisoned:
             sys.modules.pop(name, None)
 
@@ -44,7 +50,15 @@ class ExportEndpointTests(unittest.TestCase):
         from database import init_db
 
         init_db()
+        from auth_seed import seed_users
+        seed_users()
+
         cls.client = TestClient(app)
+        login = cls.client.post("/auth/login", json={"username": "tester", "password": "test-password"})
+        assert login.status_code == 200, f"test account could not sign in: {login.text}"
+        # Set once on the client rather than per call, so the assertions below
+        # are unchanged from before authentication existed.
+        cls.client.headers["Authorization"] = f"Bearer {login.json()['access_token']}"
 
         # One real upload, so every export has genuine extracted data behind it.
         pdf = PROJECT_ROOT / "sample_mining_report.pdf"

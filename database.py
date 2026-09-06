@@ -7,7 +7,7 @@ from datetime import datetime
 
 # Populates os.environ from .env before any getenv below runs.
 import utils.env  # noqa: F401
-from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, Float, JSON
+from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, Float, JSON, Boolean
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 
@@ -70,6 +70,32 @@ class MiningReport(Base):
     # Word cloud data
     word_cloud_path = Column(String(500), nullable=True)
     topics = Column(JSON, nullable=True)
+
+
+class User(Base):
+    """
+    Someone who may sign in.
+
+    There is no signup endpoint, so rows here are created only by the seeding
+    step at startup, from AUTH_USERS. The password itself is never stored - only
+    the PBKDF2 hash produced by auth.hash_password.
+    """
+
+    __tablename__ = "users"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    username = Column(String(100), nullable=False, unique=True, index=True)
+    password_hash = Column(String(255), nullable=False)
+    display_name = Column(String(255), nullable=True)
+
+    # The demo account is published on the sign-in page so an evaluator can get
+    # in without being handed credentials. Anyone on the internet therefore has
+    # it, so it must not be able to change the corpus: read-only accounts are
+    # refused upload, delete and resolve. This is one flag rather than a role
+    # system - the only distinction the platform actually needs.
+    is_readonly = Column(Boolean, nullable=False, default=False)
+
+    created_at = Column(DateTime, default=datetime.utcnow)
 
 
 class QueryHistory(Base):
