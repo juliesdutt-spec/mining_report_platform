@@ -1,122 +1,105 @@
-﻿import React from "react";
-import {
-  PanelLeft,
-  Search,
-  Bell,
-  CheckCircle,
-  ExternalLink,
-  ChevronRight,
-  Plus,
-  Sparkles
-} from "lucide-react";
-import { NavigationTab, Subsidiary } from "@/types";
+import React from "react";
+import { ChevronRight, PanelLeft, Plus, Search } from "lucide-react";
+import { NavigationTab, OrganisationFilter } from "@/types";
 import { Button } from "@/components/ui/button";
+import { Separator } from "@/components/ui/separator";
+import { ThemeToggle } from "@/components/shared/ThemeToggle";
 
 interface HeaderProps {
   currentTab: NavigationTab;
   isCollapsed: boolean;
   onToggleSidebar: () => void;
   onOpenCommandPalette: () => void;
-  selectedSubsidiary: Subsidiary | "ALL";
+  selectedOrganisation: OrganisationFilter;
   onQuickUpload: () => void;
   backendStatus: { isOnline: boolean; statusText: string };
+  /** Drawer state, so the toggle can report what it will do on a phone. */
+  isMobileNavOpen: boolean;
 }
+
+const TAB_TITLES: Record<NavigationTab, string> = {
+  dashboard: "Dashboard",
+  documents: "Documents",
+  ask: "Ask DataForge",
+  analytics: "Analytics",
+  topics: "Topic Intelligence",
+  reports: "Report Studio",
+  explorer: "Data Explorer",
+  validation: "Validation",
+  settings: "Settings",
+};
 
 export function Header({
   currentTab,
-  isCollapsed,
   onToggleSidebar,
   onOpenCommandPalette,
-  selectedSubsidiary,
+  selectedOrganisation,
   onQuickUpload,
   backendStatus,
+  isMobileNavOpen,
 }: HeaderProps) {
-  const tabTitles: Record<NavigationTab, { title: string; subtitle: string }> = {
-    dashboard: { title: "Executive Dashboard", subtitle: "Operational mining overview & metrics" },
-    documents: { title: "Document Intelligence", subtitle: "Archival PDF ingestion & entity extraction" },
-    ask: { title: "Ask DataForge", subtitle: "Grounded research workspace backed by indexed records" },
-    analytics: { title: "Production Analytics", subtitle: "Subsidiary trends, stripping ratios & reserves" },
-    topics: { title: "Topic Intelligence", subtitle: "Word cloud, semantic tags & geological themes" },
-    reports: { title: "Report Studio", subtitle: "Automated report synthesis & statutory compliance" },
-    explorer: { title: "Data Explorer", subtitle: "Granular structured tabular records" },
-    validation: { title: "Validation & Traceability", subtitle: "Audit discrepancies, confidence & source verification" },
-    settings: { title: "System Settings", subtitle: "Backend configuration, models & OCR parameters" },
-  };
-
-  const currentInfo = tabTitles[currentTab] || { title: "DataForge", subtitle: "" };
-
   return (
-    <header className="sticky top-0 z-20 flex h-14 w-full items-center justify-between border-b border-zinc-800/80 bg-zinc-950/90 px-4 backdrop-blur-md">
-      {/* Left: Sidebar toggle + Breadcrumbs (Ref: Screenshot 3 & 4) */}
-      <div className="flex items-center gap-3">
+    <header className="sticky top-0 z-20 flex h-14 w-full shrink-0 items-center justify-between gap-2 border-b border-border bg-card px-3 sm:gap-4 sm:px-4">
+      <div className="flex min-w-0 items-center gap-3">
         <Button
           variant="ghost"
           size="icon"
           onClick={onToggleSidebar}
-          className="h-8 w-8 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-900"
-          title="Toggle Sidebar (⌘B)"
+          title="Toggle sidebar (⌘B)"
+          aria-label="Toggle sidebar"
+          aria-expanded={isMobileNavOpen}
+          aria-controls="app-sidebar"
         >
           <PanelLeft className="h-4 w-4" />
         </Button>
 
-        {/* Breadcrumb path */}
-        <div className="flex items-center gap-1.5 text-xs">
-          <span className="text-zinc-500 font-medium">DataForge</span>
-          <ChevronRight className="h-3.5 w-3.5 text-zinc-600" />
-          <span className="font-semibold text-zinc-200">{currentInfo.title}</span>
-          {selectedSubsidiary !== "ALL" && (
+        <nav aria-label="Breadcrumb" className="flex min-w-0 items-center gap-1.5 text-sm">
+          <span className="hidden text-muted-foreground sm:inline">DataForge</span>
+          <ChevronRight className="hidden h-3.5 w-3.5 shrink-0 text-muted-foreground/60 sm:block" />
+          <span className="truncate font-medium text-foreground">{TAB_TITLES[currentTab]}</span>
+          {selectedOrganisation !== "ALL" && (
             <>
-              <ChevronRight className="h-3.5 w-3.5 text-zinc-600" />
-              <span className="font-mono text-emerald-400 bg-emerald-950/60 px-1.5 py-0.5 rounded border border-emerald-800/40 text-[10px]">
-                {selectedSubsidiary}
+              <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground/60" />
+              <span className="max-w-[14rem] truncate font-mono text-xs font-medium text-primary">
+                {selectedOrganisation}
               </span>
             </>
           )}
-        </div>
+        </nav>
       </div>
 
-      {/* Right: Search / Command Palette trigger + Status + Action buttons */}
-      <div className="flex items-center gap-2.5">
-        {/* Command Palette Trigger (Ref: Screenshot 3 "Type to search... ⌘K") */}
+      <div className="flex shrink-0 items-center gap-2">
         <button
           type="button"
           onClick={onOpenCommandPalette}
-          className="flex h-8 w-56 sm:w-64 items-center justify-between rounded-md border border-zinc-800 bg-zinc-900/80 px-2.5 text-xs text-zinc-400 hover:border-zinc-700 hover:bg-zinc-900 transition-colors"
+          className="hidden h-8 w-56 items-center justify-between rounded-md border border-input bg-background px-2.5 text-sm text-muted-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring lg:flex"
         >
-          <span className="flex items-center gap-2 truncate">
-            <Search className="h-3.5 w-3.5 text-zinc-500" />
-            <span className="text-zinc-500 truncate">Search documents, mines, data...</span>
+          <span className="flex items-center gap-2">
+            <Search className="h-3.5 w-3.5" />
+            <span>Search…</span>
           </span>
-          <kbd className="hidden sm:inline-flex items-center gap-0.5 rounded border border-zinc-700 bg-zinc-800 px-1.5 text-[10px] font-mono text-zinc-400">
-            ⌘K
-          </kbd>
+          <kbd className="font-mono text-[10px] text-muted-foreground">⌘K</kbd>
         </button>
 
-        {/* Live Backend Connection Indicator */}
-        <div className="hidden md:flex items-center gap-1.5 rounded-full border border-zinc-800 bg-zinc-900/60 px-2.5 py-1 text-[11px] font-mono text-zinc-400">
+        <span
+          className="hidden items-center gap-1.5 text-xs text-muted-foreground md:flex"
+          title={backendStatus.statusText}
+        >
           <span
             className={`h-1.5 w-1.5 rounded-full ${
-              backendStatus.isOnline ? "bg-emerald-400" : "bg-amber-400"
+              backendStatus.isOnline ? "bg-success" : "bg-warning"
             }`}
           />
-          <span>{backendStatus.statusText}</span>
-        </div>
+          {backendStatus.statusText}
+        </span>
 
-        {/* Notifications */}
-        <Button variant="ghost" size="icon" className="h-8 w-8 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-900 relative">
-          <Bell className="h-3.5 w-3.5" />
-          <span className="absolute top-1.5 right-1.5 h-1.5 w-1.5 rounded-full bg-rose-500" />
-        </Button>
+        <Separator orientation="vertical" className="mx-1 hidden h-5 md:block" />
 
-        {/* Quick Create / Ingest Action (Ref: Screenshot 4) */}
-        <Button
-          variant="default"
-          size="sm"
-          onClick={onQuickUpload}
-          className="h-8 gap-1.5 font-medium shadow-sm"
-        >
+        <ThemeToggle />
+
+        <Button size="sm" onClick={onQuickUpload}>
           <Plus className="h-3.5 w-3.5" />
-          <span>Upload Document</span>
+          <span className="hidden sm:inline">Upload</span>
         </Button>
       </div>
     </header>

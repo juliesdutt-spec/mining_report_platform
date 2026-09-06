@@ -1,15 +1,33 @@
-﻿import { ValidationItem } from '../types';
-import { MOCK_VALIDATION_ITEMS } from './mockData';
+import { OrganisationFilter, ValidationItem } from '../types';
+import { apiFetch } from './api';
 
-let validationState: ValidationItem[] = [...MOCK_VALIDATION_ITEMS];
-
-export async function fetchValidationItems(): Promise<ValidationItem[]> {
-  return validationState;
+/** GET /validation — findings the backend computes from the stored reports. */
+export interface ValidationResponse {
+  counts: { total: number; pending: number; resolved: number; high: number };
+  findings: ValidationItem[];
 }
 
-export async function markItemValidated(id: string, resolutionNote?: string): Promise<ValidationItem[]> {
-  validationState = validationState.map(item => 
-    item.id === id ? { ...item, status: 'resolved' as const, resolutionNote: resolutionNote || 'Validated by user auditor' } : item
+export async function fetchValidation(
+  organisation: OrganisationFilter = 'ALL'
+): Promise<ValidationResponse> {
+  const query =
+    organisation === 'ALL' ? '' : `?organisation=${encodeURIComponent(organisation)}`;
+  return apiFetch<ValidationResponse>(`/validation${query}`);
+}
+
+/**
+ * POST /validation/{id}/resolve — record an auditor's decision.
+ * Pass status 'pending' to reopen a previously resolved finding.
+ */
+export async function resolveValidationFinding(
+  findingId: string,
+  status: 'resolved' | 'flagged' | 'pending',
+  note?: string
+): Promise<void> {
+  const params = new URLSearchParams({ status });
+  if (note) params.set('note', note);
+  await apiFetch(
+    `/validation/${encodeURIComponent(findingId)}/resolve?${params.toString()}`,
+    { method: 'POST' }
   );
-  return validationState;
 }

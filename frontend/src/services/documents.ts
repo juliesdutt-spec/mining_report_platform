@@ -1,72 +1,143 @@
-﻿import { MiningDocument } from '../types';
-import { MOCK_DOCUMENTS } from './mockData';
-import { API_BASE_URL } from './api';
+import { MiningDocument } from '../types';
+import {
+  apiFetch,
+  BackendExtractedData,
+  BackendReportDetail,
+  BackendReportListItem,
+  BackendReportListResponse,
+  BackendUploadResponse,
+} from './api';
 
-let documentsState: MiningDocument[] = [...MOCK_DOCUMENTS];
-
-export async function fetchDocuments(): Promise<MiningDocument[]> {
-  try {
-    const res = await fetch(`${API_BASE_URL}/reports`);
-    if (res.ok) {
-      const data = await res.json();
-      if (data.reports && data.reports.length > 0) {
-        // Map backend reports to frontend documents and merge with mock details
-        return documentsState;
-      }
-    }
-  } catch (e) {
-    // Graceful fallback to mock documents
+/** Backend statuses are a superset of the UI's; anything unknown reads as pending. */
+function mapStatus(status: string): MiningDocument['status'] {
+  switch (status) {
+    case 'processing':
+    case 'completed':
+    case 'error':
+      return status;
+    default:
+      return 'pending';
   }
-  return documentsState;
 }
 
-export async function getDocumentById(id: number): Promise<MiningDocument | undefined> {
-  return documentsState.find(d => d.id === id);
+function fileTypeOf(filename: string): MiningDocument['fileType'] {
+  const ext = filename.toLowerCase().split('.').pop();
+  if (ext === 'docx') return 'DOCX';
+  if (ext === 'xlsx') return 'XLSX';
+  if (ext === 'png' || ext === 'jpg' || ext === 'jpeg') return 'IMAGE';
+  return 'PDF';
 }
 
-export async function uploadMiningDocument(file: File, subsidiary: string): Promise<MiningDocument> {
-  // Simulate intelligent upload & extraction
-  const newDoc: MiningDocument = {
-    id: Date.now(),
-    filename: file.name,
-    fileType: file.name.endsWith('.docx') ? 'DOCX' : file.name.endsWith('.xlsx') ? 'XLSX' : 'PDF',
-    fileSizeBytes: file.size,
-    pageCount: Math.floor(Math.random() * 40) + 12,
-    uploadDate: new Date().toISOString(),
-    status: 'completed',
-    confidenceScore: 0.965,
-    subsidiary: (subsidiary as any) || 'SECL',
-    mineName: file.name.replace(/\.[^/.]+$/, "").replace(/_/g, " "),
-    location: "Bilaspur / Korba Region",
-    district: "Korba",
-    state: "Chhattisgarh",
-    mineralType: "Non-Coking Coal (Grade G10)",
-    quantityExtracted: "14.80 MT",
-    extractionMethod: "Opencast",
-    reserveEstimate: "145.00 MT",
-    topics: ["geological report", "production schedule", "overburden removal", "statutory audit"],
-    summary: `Extracted data from newly ingested document ${file.name}. Validated against subsidiary coal excavation register with high model confidence.`,
-    keyFindings: [
-      "Extracted production capacity targets aligned with quarterly DGMS requirements.",
-      "Identified 3 active mechanized seams with average thickness of 18.5 meters.",
-      "Automated OCR verified 100% table layout integrity."
-    ],
-    validationStatus: 'validated',
-    evidenceSnippets: [
-      {
-        id: `ev-${Date.now()}-1`,
-        documentId: Date.now(),
-        documentName: file.name,
-        pageNumber: 3,
-        sectionHeader: "Executive Production Tabulation",
-        field: "coal_extracted",
-        extractedValue: "14.80 MT",
-        originalContext: "Recorded net volumetric extraction for the specified quarter calculated at 14.80 MT.",
-        confidence: 0.98
-      }
-    ]
+/** Drop nulls/empty strings so the UI can distinguish "absent" from "".  */
+function clean(value: string | null | undefined): string | undefined {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : undefined;
+}
+
+/**
+ * Map a backend report onto the UI document model.
+ *
+ * Only fields the backend actually returns are populated. Page count,
+ * extraction confidence, validation state and per-snippet evidence are not
+ * modelled server-side, so they are deliberately left undefined rather than
+ * invented — the UI shows an em dash for them. The organisation comes from
+ * the report's extracted company name, and is absent when none was found.
+ */
+export function mapReportToDocument(
+  report: BackendReportListItem | BackendReportDetail
+): MiningDocument {
+  const detail = report as Partial<BackendReportDetail>;
+  const extracted: BackendExtractedData = detail.extracted_data ?? {};
+
+  return {
+    id: report.id,
+    filename: report.filename,
+    fileType: fileTypeOf(report.filename),
+    status: mapStatus(report.status),
+    uploadDate: report.upload_date ?? undefined,
+
+    mineName: clean(detail.mine_name) ?? clean(extracted.mine_name),
+    organisation: clean(detail.company_name) ?? clean(extracted.company_name),
+    location: clean(report.location) ?? clean(extracted.location),
+    district: clean(extracted.district),
+    state: clean(extracted.state),
+    mineralType: clean(report.mineral_type) ?? clean(extracted.mineral_type),
+    quantityExtracted: clean(report.quantity_extracted) ?? clean(extracted.quantity_extracted),
+    extractionMethod: clean(detail.extraction_method) ?? clean(extracted.extraction_method),
+    reserveEstimate: clean(extracted.reserve_estimate),
+
+    topics: report.topics ?? extracted.topics ?? [],
+    summary: clean(report.summary) ?? clean(extracted.summary) ?? '',
+    keyFindings: extracted.key_findings ?? undefined,
+
+    // Passages the backend located in this document's own text. Empty when no
+    // extracted value could be verified against the source — never filled in.
+    evidenceSnippets: (detail.evidence ?? []).map((e) => ({
+      id: e.id,
+      documentId: e.documentId,
+      documentName: e.documentName,
+      pageNumber: e.pageNumber,
+      sectionHeader: e.sectionHeader,
+      field: e.field,
+      extractedValue: e.extractedValue,
+      originalContext: e.originalContext,
+    })),
+    pageCount: detail.page_count ?? undefined,
   };
+}
 
-  documentsState = [newDoc, ...documentsState];
-  return newDoc;
+/** GET /reports — real documents only; throws so the UI can show the error. */
+export async function fetchDocuments(): Promise<MiningDocument[]> {
+  const data = await apiFetch<BackendReportListResponse>('/reports?limit=100');
+  return (data.reports ?? []).map(mapReportToDocument);
+}
+
+/** GET /reports/{id} — full detail, including AI-extracted fields. */
+export async function getDocumentById(id: number): Promise<MiningDocument | undefined> {
+  try {
+    const detail = await apiFetch<BackendReportDetail>(`/reports/${id}`);
+    return mapReportToDocument(detail);
+  } catch {
+    return undefined;
+  }
+}
+
+/** DELETE /reports/{id} — permanently removes a report and its word cloud. */
+export async function deleteDocument(id: number): Promise<void> {
+  await apiFetch<{ message: string }>(`/reports/${id}`, { method: 'DELETE' });
+}
+
+/**
+ * POST /upload — multipart form with a single `file` field. The backend only
+ * accepts PDFs and runs text extraction plus AI extraction synchronously, so
+ * this can take a while; hence the long timeout.
+ */
+export async function uploadMiningDocument(file: File): Promise<MiningDocument> {
+  const form = new FormData();
+  form.append('file', file);
+
+  const res = await apiFetch<BackendUploadResponse>(
+    '/upload',
+    { method: 'POST', body: form },
+    180000
+  );
+
+  return mapReportToDocument({
+    id: res.id,
+    filename: res.filename,
+    status: res.status,
+    upload_date: new Date().toISOString(),
+    extracted_data: res.extracted_data,
+    mineral_type: res.extracted_data?.mineral_type ?? null,
+    location: res.extracted_data?.location ?? null,
+    quantity_extracted: res.extracted_data?.quantity_extracted ?? null,
+    summary: res.extracted_data?.summary ?? null,
+    topics: res.extracted_data?.topics ?? null,
+    report_date: res.extracted_data?.report_date ?? null,
+    extraction_method: res.extracted_data?.extraction_method ?? null,
+    company_name: res.extracted_data?.company_name ?? null,
+    mine_name: res.extracted_data?.mine_name ?? null,
+    word_cloud_available: res.word_cloud_available,
+    error_message: null,
+  });
 }

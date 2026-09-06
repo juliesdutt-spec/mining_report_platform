@@ -12,6 +12,9 @@ Features:
 """
 import os
 import sys
+
+# Populates os.environ from .env before any getenv below runs.
+import utils.env  # noqa: F401
 import json
 import requests
 import streamlit as st

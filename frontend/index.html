@@ -1,5 +1,5 @@
-﻿<!doctype html>
-<html lang="en" class="dark">
+<!doctype html>
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
@@ -8,8 +8,19 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500;600&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <script>
+      // No-FOUC theme bootstrap. DataForge is light-first; only opt into dark
+      // when the viewer has explicitly saved that preference.
+      (function () {
+        try {
+          if (localStorage.getItem("dataforge-theme") === "dark") {
+            document.documentElement.classList.add("dark");
+          }
+        } catch (e) {}
+      })();
+    </script>
   </head>
-  <body class="bg-zinc-950 text-zinc-100 antialiased selection:bg-zinc-800 selection:text-white overflow-hidden">
+  <body class="overflow-hidden selection:bg-primary/20">
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

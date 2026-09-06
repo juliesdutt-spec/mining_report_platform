@@ -1,259 +1,280 @@
-﻿import React, { useState, useEffect } from "react";
-import {
-  Sparkles,
-  Search,
-  FileText,
-  ShieldCheck,
-  CheckCircle2,
-  ExternalLink,
-  BookOpen,
-  ArrowRight,
-  Filter,
-  Layers,
-  History,
-  Building2,
-  Calendar
-} from "lucide-react";
+import React, { useState, useEffect } from "react";
+import { AlertCircle, ArrowRight, ExternalLink, History, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { Separator } from "@/components/ui/separator";
+import { PageHeader } from "@/components/shared/PageHeader";
+import { Section, FieldLabel } from "@/components/shared/Section";
 import { SourceCitation } from "@/components/shared/SourceCitation";
-import { QueryResult, EvidenceSnippet, Subsidiary } from "@/types";
+import { ConfidenceMeter } from "@/components/shared/ConfidenceMeter";
+import { QueryResult, EvidenceSnippet, OrganisationFilter } from "@/types";
 import { askDataForgeQuery, fetchRecentQueries } from "@/services/queries";
+import { exampleQuestions, filterByOrganisation, useCorpus } from "@/lib/corpus";
+import { ApiError } from "@/services/api";
 
 interface AskPageProps {
   onInspectEvidence: (evidence: EvidenceSnippet) => void;
-  selectedSubsidiary: Subsidiary | "ALL";
+  selectedOrganisation: OrganisationFilter;
 }
 
-export function AskPage({ onInspectEvidence, selectedSubsidiary }: AskPageProps) {
+export function AskPage({ onInspectEvidence, selectedOrganisation }: AskPageProps) {
   const [queryInput, setQueryInput] = useState("");
   const [activeResult, setActiveResult] = useState<QueryResult | null>(null);
+  // A restored answer was produced by whatever provider was configured when it
+  // was asked, which may not be the one running now. Saying so stops a stored
+  // mock answer from reading as a fresh one.
+  const [isFromHistory, setIsFromHistory] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [recentQueries, setRecentQueries] = useState<QueryResult[]>([]);
-  const [yearFilter, setYearFilter] = useState("2023-2024");
+  const [queryError, setQueryError] = useState<string | null>(null);
+  // Both the indexed count and the suggested questions describe the corpus in
+  // scope, so neither can name a document that is not there.
+  const { documents, isLoading: isCorpusLoading } = useCorpus();
+  const scopedDocs = filterByOrganisation(documents, selectedOrganisation);
+  const indexedCount = isCorpusLoading ? null : scopedDocs.length;
+  const examples = exampleQuestions(scopedDocs);
 
-  const exampleQuestions = [
-    "Compare coal production and stripping ratios across SECL and NCL in FY 2023-24.",
-    "What are the proved geological reserves and seam thicknesses in Talcher Basin Block V?",
-    "Summarize prime coking coal extraction at Moonidih mine and methane pre-drainage levels.",
-    "Verify environmental compliance and bio-reclamation targets achieved at Lakhanpur OC.",
-  ];
-
+  // Show the most recent question from GET /query-history on first load.
   useEffect(() => {
-    fetchRecentQueries().then((queries) => {
-      setRecentQueries(queries);
-      if (queries.length > 0) {
-        setActiveResult(queries[0]);
-      }
-    });
+    fetchRecentQueries()
+      .then((queries) => {
+        if (queries.length > 0) {
+          setActiveResult(queries[0]);
+          setIsFromHistory(true);
+        }
+      })
+      .catch(() => {
+        /* History is a convenience; a cold or offline backend is not an error here. */
+      });
   }, []);
 
   const handleRunQuery = async (queryText: string) => {
     if (!queryText.trim()) return;
     setIsLoading(true);
+    setQueryError(null);
     try {
-      const res = await askDataForgeQuery(queryText);
+      const res = await askDataForgeQuery(queryText, selectedOrganisation);
       setActiveResult(res);
-      setRecentQueries(prev => [res, ...prev]);
-    } catch (e) {
-      console.error(e);
+      setIsFromHistory(false);
+    } catch (err) {
+      setQueryError(
+        err instanceof ApiError ? err.message : "The query failed. Please try again."
+      );
     } finally {
       setIsLoading(false);
     }
   };
 
   return (
-    <div className="space-y-6">
-      {/* Workspace Header */}
-      <div className="border-b border-zinc-800/80 pb-4">
-        <div className="flex items-center gap-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-sky-950/80 border border-sky-800/50 text-sky-400">
-            <Sparkles className="h-4 w-4" />
-          </div>
-          <div>
-            <h1 className="text-xl font-bold tracking-tight text-zinc-100">
-              Ask DataForge — Enterprise Research Workspace
-            </h1>
-            <p className="text-xs text-zinc-400 mt-0.5">
-              Deterministic answers grounded in indexed CMPDI & CIL subsidiary reports with full source traceability.
-            </p>
-          </div>
-        </div>
-      </div>
+    <div className="space-y-8">
+      <PageHeader
+        title="Ask DataForge"
+        description="Answers are synthesised only from indexed CMPDI and subsidiary reports, and every claim carries the page it came from."
+      />
 
-      {/* Hero Query Bar & Parameter Controls */}
-      <div className="rounded-xl border border-zinc-800 bg-zinc-900/60 p-4 space-y-3">
+      {/* Query bar — the primary action on the page */}
+      <div className="space-y-3">
         <form
           onSubmit={(e) => {
             e.preventDefault();
             handleRunQuery(queryInput);
           }}
-          className="flex flex-col sm:flex-row gap-2"
+          className="flex flex-col gap-2 sm:flex-row"
         >
           <div className="relative flex-1">
-            <Search className="absolute left-3 top-3 h-4 w-4 text-zinc-500" />
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <input
               type="text"
               value={queryInput}
               onChange={(e) => setQueryInput(e.target.value)}
-              placeholder="Ask a technical or production question (e.g., 'Compare coal production between 2022 and 2024')..."
-              className="h-10 w-full rounded-md border border-zinc-700 bg-zinc-950 pl-9 pr-4 text-xs text-zinc-100 placeholder:text-zinc-500 focus:border-zinc-500 focus:outline-none"
+              placeholder="Ask about production, reserves, compliance…"
+              aria-label="Ask a question"
+              className="h-11 w-full rounded-md border border-input bg-card pl-10 pr-4 text-sm text-foreground shadow-xs transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background"
             />
           </div>
-
-          <Button
-            type="submit"
-            disabled={isLoading || !queryInput.trim()}
-            className="h-10 px-5 gap-2 font-medium bg-zinc-100 text-zinc-900 hover:bg-zinc-200"
-          >
-            <Sparkles className="h-4 w-4 text-zinc-900" />
-            <span>{isLoading ? "Synthesizing Evidence..." : "Run Grounded Query"}</span>
+          <Button type="submit" size="lg" disabled={isLoading || !queryInput.trim()}>
+            {isLoading ? "Searching sources…" : "Ask"}
+            {!isLoading && <ArrowRight className="h-4 w-4" />}
           </Button>
         </form>
 
-        {/* Filters and Parameter Controls */}
-        <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-zinc-800/70 text-xs">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-[11px] font-mono uppercase text-zinc-500">Query Grounding Scope:</span>
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-zinc-950 border border-zinc-800 text-zinc-300 font-mono text-[11px]">
-              <Building2 className="h-3 w-3 text-zinc-500" />
-              Subsidiary: {selectedSubsidiary}
-            </span>
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-zinc-950 border border-zinc-800 text-zinc-300 font-mono text-[11px]">
-              <Calendar className="h-3 w-3 text-zinc-500" />
-              Reporting Cycle: {yearFilter}
-            </span>
+        {examples.length > 0 && (
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+            <FieldLabel>Try</FieldLabel>
+            {examples.map((q) => (
+              <button
+                key={q}
+                type="button"
+                onClick={() => {
+                  setQueryInput(q);
+                  handleRunQuery(q);
+                }}
+                className="max-w-sm truncate text-left text-xs text-primary underline-offset-4 transition-colors hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                {q}
+              </button>
+            ))}
           </div>
+        )}
 
-          <span className="text-[11px] text-zinc-500 font-mono">
-            Grounding Index: 1,428 Archival Reports
+        <p className="text-xs text-muted-foreground">
+          {indexedCount === null
+            ? "Grounded in the indexed report corpus"
+            : `Grounded in ${indexedCount.toLocaleString("en-IN")} indexed ${
+                indexedCount === 1 ? "report" : "reports"
+              }`}{" "}
+          · Scope:{" "}
+          <span className="font-medium text-foreground">
+            {selectedOrganisation === "ALL" ? "All organisations" : selectedOrganisation}
           </span>
-        </div>
-
-        {/* Example Queries */}
-        <div className="flex flex-wrap items-center gap-1.5 pt-1">
-          <span className="text-[10px] font-mono uppercase text-zinc-500 mr-1">Suggested:</span>
-          {exampleQuestions.map((q, idx) => (
-            <button
-              key={idx}
-              type="button"
-              onClick={() => {
-                setQueryInput(q);
-                handleRunQuery(q);
-              }}
-              className="rounded border border-zinc-800 bg-zinc-950/70 px-2 py-1 text-[11px] text-zinc-400 hover:border-zinc-700 hover:text-zinc-200 transition-colors truncate max-w-md"
-            >
-              {q}
-            </button>
-          ))}
-        </div>
+        </p>
       </div>
 
-      {/* Main Grounded Answer Workspace (Distinct 5-Section Layout) */}
+      {queryError && (
+        <div
+          role="alert"
+          className="flex items-start gap-2 rounded-lg border border-destructive/40 bg-destructive-muted px-4 py-3 text-sm text-destructive"
+        >
+          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>{queryError}</span>
+        </div>
+      )}
+
       {activeResult && (
-        <div className="space-y-4">
-          {/* SECTION 1: ANSWER (Clear, factual, distinguished) */}
-          <div className="rounded-lg border border-sky-900/60 bg-sky-950/20 p-5 space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-sky-950/80 px-2.5 py-0.5 text-[11px] font-mono font-semibold text-sky-400 border border-sky-800/60">
-                <Sparkles className="h-3 w-3" />
-                VERIFIED AI ANSWER
-              </span>
-              <span className="text-[11px] font-mono text-zinc-500">
-                Grounding Confidence: 98.4%
-              </span>
-            </div>
-            <h3 className="text-base font-semibold text-zinc-100 leading-snug">
+        <div className="space-y-8">
+          {/* The answer — a quiet rule, not a glowing panel */}
+          <section className="border-l-2 border-primary pl-5">
+            {activeResult.answerNote && (
+              <div
+                role="alert"
+                className="mb-3 flex items-start gap-2 rounded-lg border border-warning/40 bg-warning-muted px-4 py-3 text-sm text-warning"
+              >
+                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                <div>
+                  <p className="font-medium">
+                    This is a stand-in answer, not model output.
+                  </p>
+                  <p className="mt-1 text-xs opacity-90">{activeResult.answerNote}</p>
+                </div>
+              </div>
+            )}
+            {isFromHistory && (
+              <p className="mb-2 flex items-center gap-1.5 text-xs text-muted-foreground">
+                <History className="h-3.5 w-3.5 shrink-0" />
+                Your last saved answer — ask again to run it against the model
+                configured now.
+              </p>
+            )}
+            <h2 className="text-lg font-semibold leading-snug tracking-tight text-foreground">
               {activeResult.question}
-            </h3>
-            <p className="text-xs text-zinc-200 leading-relaxed pt-1">
+            </h2>
+            <p className="mt-3 max-w-3xl whitespace-pre-wrap text-sm leading-relaxed text-foreground">
               {activeResult.answer}
             </p>
-          </div>
-
-          {/* SECTION 2: KEY FINDINGS */}
-          <div className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-5 space-y-3">
-            <h4 className="text-xs font-bold text-zinc-300 uppercase tracking-wide flex items-center gap-2">
-              <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />
-              Key Findings & Quantified Observations
-            </h4>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
-              {activeResult.keyFindings.map((finding, idx) => (
-                <div
-                  key={idx}
-                  className="rounded border border-zinc-800/80 bg-zinc-950/70 p-3 text-xs text-zinc-300 flex items-start gap-2"
-                >
-                  <span className="font-mono text-emerald-400 font-bold text-xs">{idx + 1}.</span>
-                  <span className="leading-snug">{finding}</span>
-                </div>
+            <div className="mt-4 flex flex-wrap items-center gap-2">
+              {activeResult.evidence.map((ev) => (
+                <SourceCitation
+                  key={ev.id}
+                  evidence={ev}
+                  compact
+                  onClick={() => onInspectEvidence(ev)}
+                />
               ))}
             </div>
-          </div>
+          </section>
 
-          {/* SECTION 3: EVIDENCE (Distinct from Answer & Source) */}
-          <div className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-5 space-y-3">
-            <div className="flex items-center justify-between">
-              <h4 className="text-xs font-bold text-zinc-300 uppercase tracking-wide flex items-center gap-2">
-                <ShieldCheck className="h-3.5 w-3.5 text-sky-400" />
-                Deterministic Evidence Extracts
-              </h4>
-              <span className="text-[11px] text-zinc-500 font-mono">
-                Click snippet to inspect source PDF
-              </span>
-            </div>
+          {activeResult.keyFindings.length > 0 && (
+            <>
+              <Separator />
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {activeResult.evidence.map((ev) => (
-                <div
+              {/* Key findings — a list, not a grid of boxes */}
+              <Section title="Key findings">
+                <ol className="max-w-3xl space-y-3">
+                  {activeResult.keyFindings.map((finding, idx) => (
+                    <li key={idx} className="flex gap-3 text-sm leading-relaxed text-foreground">
+                      <span className="mt-0.5 shrink-0 font-mono text-xs tabular-nums text-muted-foreground">
+                        {String(idx + 1).padStart(2, "0")}
+                      </span>
+                      <span>{finding}</span>
+                    </li>
+                  ))}
+                </ol>
+              </Section>
+            </>
+          )}
+
+          {activeResult.evidence.length > 0 && (
+            <>
+              <Separator />
+
+              {/* Evidence — the one place cards genuinely earn their keep */}
+              <Section
+                title="Evidence"
+                description="The exact passages this answer was drawn from. Open one to inspect its source page."
+              >
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  {activeResult.evidence.map((ev) => (
+                <button
                   key={ev.id}
                   onClick={() => onInspectEvidence(ev)}
-                  className="group cursor-pointer rounded-lg border border-zinc-800 bg-zinc-950 p-3.5 hover:border-zinc-700 transition-all space-y-2"
+                  className="group flex flex-col gap-3 rounded-lg border border-border bg-card p-4 text-left shadow-xs transition-colors hover:border-teal/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
-                  <div className="flex items-center justify-between text-[11px] font-mono">
-                    <span className="text-zinc-400 truncate max-w-[220px]">{ev.documentName}</span>
-                    <span className="text-emerald-400 bg-emerald-950/60 px-1.5 py-0.5 rounded border border-emerald-800/40">
-                      Page {ev.pageNumber}
-                    </span>
+                  <div className="flex items-start justify-between gap-3">
+                    <span className="text-sm font-medium text-foreground">{ev.sectionHeader}</span>
+                    <ExternalLink className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground transition-colors group-hover:text-teal" />
                   </div>
-                  <div className="text-xs font-bold text-zinc-200">
-                    {ev.sectionHeader}
-                  </div>
-                  <div className="rounded bg-zinc-900/80 p-2 text-xs font-serif italic text-zinc-300 border-l-2 border-l-sky-500 line-clamp-3">
-                    "{ev.originalContext}"
-                  </div>
-                  <div className="flex items-center justify-between text-[11px] pt-1 text-zinc-500">
-                    <span>Field: <strong className="text-zinc-300 font-mono">{ev.field}</strong></span>
-                    <span className="text-sky-400 group-hover:underline flex items-center gap-0.5">
-                      Inspect <ExternalLink className="h-2.5 w-2.5" />
-                    </span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
 
-          {/* SECTION 4 & 5: SOURCES & RELATED DOCUMENTS */}
-          <div className="rounded-lg border border-zinc-800 bg-zinc-900/40 p-4 space-y-2">
-            <span className="text-xs font-semibold text-zinc-400 uppercase tracking-wide block">
-              Audited Primary Sources
-            </span>
-            <div className="flex flex-wrap gap-2">
-              {activeResult.sourceDocuments.map((src) => (
-                <div
-                  key={src.id}
-                  className="flex items-center gap-2 rounded-md border border-zinc-800 bg-zinc-950 px-3 py-2 text-xs text-zinc-300 font-mono"
-                >
-                  <FileText className="h-3.5 w-3.5 text-zinc-500" />
-                  <span>{src.filename}</span>
-                  <span className="text-zinc-500">|</span>
-                  <span className="text-zinc-400">Pages: {src.pageNumbers.join(", ")}</span>
-                  <span className="text-emerald-400 text-[10px] ml-1 bg-emerald-950/70 px-1 rounded border border-emerald-800/40">
-                    {Math.round(src.relevanceScore * 100)}% Match
-                  </span>
-                </div>
+                  <blockquote className="border-l-2 border-teal bg-teal-muted/50 py-2 pl-3 pr-2 font-serif text-sm leading-relaxed text-foreground">
+                    {ev.originalContext}
+                  </blockquote>
+
+                  <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
+                    <span className="min-w-0 truncate" title={ev.documentName}>
+                      {ev.documentName} · p.{ev.pageNumber}
+                    </span>
+                    <ConfidenceMeter value={ev.confidence} compact />
+                  </div>
+                </button>
               ))}
-            </div>
-          </div>
+                </div>
+              </Section>
+            </>
+          )}
+
+          <Separator />
+
+          {/* Sources */}
+          <Section
+            title="Sources"
+            description="The indexed reports this answer drew on."
+          >
+            {activeResult.sourceDocuments.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                The backend did not report which documents this answer drew on.
+              </p>
+            ) : (
+            <ul className="divide-y divide-border border-y border-border">
+              {activeResult.sourceDocuments.map((src) => (
+                <li
+                  key={src.id}
+                  className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 py-3"
+                >
+                  <span className="min-w-0 flex-1 truncate text-sm text-foreground">
+                    {src.filename}
+                  </span>
+                  {src.pageNumbers && src.pageNumbers.length > 0 && (
+                    <span className="font-mono text-xs tabular-nums text-muted-foreground">
+                      pp. {src.pageNumbers.join(", ")}
+                    </span>
+                  )}
+                  {src.relevanceScore !== undefined && (
+                    <span className="font-mono text-xs tabular-nums text-teal">
+                      {Math.round(src.relevanceScore * 100)}% match
+                    </span>
+                  )}
+                </li>
+              ))}
+            </ul>
+            )}
+          </Section>
         </div>
       )}
     </div>

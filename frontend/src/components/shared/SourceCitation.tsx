@@ -1,37 +1,49 @@
-﻿import React from "react";
-import { FileText, ExternalLink, ShieldCheck } from "lucide-react";
+import React from "react";
+import { FileText } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { EvidenceSnippet } from "@/types";
 
 interface SourceCitationProps {
   evidence: EvidenceSnippet;
   onClick?: () => void;
+  /** Drop the document name and show only page + confidence. */
+  compact?: boolean;
   className?: string;
 }
 
-export function SourceCitation({ evidence, onClick, className }: SourceCitationProps) {
-  const confPct = Math.round(evidence.confidence * 100);
+/**
+ * The recurring traceability "receipt": document · page · confidence.
+ * Teal is DataForge's grounded-in-a-source signal, used only here and in the
+ * evidence surfaces so the association stays legible across the product.
+ */
+export function SourceCitation({ evidence, onClick, compact = false, className }: SourceCitationProps) {
+  // Confidence is optional: real evidence from the backend carries none, so the
+  // chip simply omits the percentage rather than showing an invented figure.
+  const confPct =
+    evidence.confidence !== undefined ? Math.round(evidence.confidence * 100) : null;
+
   return (
     <button
       type="button"
       onClick={onClick}
+      title={`${evidence.documentName} — page ${evidence.pageNumber}`}
       className={cn(
-        "group inline-flex items-center gap-2 rounded border border-zinc-800 bg-zinc-900/80 px-2 py-1 text-left text-xs transition-all hover:border-zinc-700 hover:bg-zinc-850",
+        "group inline-flex max-w-full items-center gap-1.5 rounded-md border border-teal/20 bg-teal-muted px-2 py-1 text-left text-xs text-teal transition-colors hover:border-teal/40 hover:bg-teal/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background",
         className
       )}
     >
-      <FileText className="h-3.5 w-3.5 flex-shrink-0 text-zinc-400 group-hover:text-zinc-200" />
-      <div className="flex items-center gap-1.5 truncate">
-        <span className="font-mono text-zinc-300 truncate max-w-[190px]">{evidence.documentName}</span>
-        <span className="text-zinc-500">•</span>
-        <span className="text-zinc-400">p.{evidence.pageNumber}</span>
-        <span className="text-zinc-500">•</span>
-        <span className="inline-flex items-center gap-0.5 font-mono text-[10px] text-emerald-400 bg-emerald-950/60 px-1 py-0.2 rounded border border-emerald-800/40">
-          <ShieldCheck className="h-2.5 w-2.5" />
-          {confPct}%
-        </span>
-      </div>
-      <ExternalLink className="h-3 w-3 text-zinc-600 group-hover:text-zinc-300 ml-auto" />
+      <FileText className="h-3.5 w-3.5 shrink-0 opacity-70" />
+      {!compact && (
+        <span className="truncate font-medium">{evidence.documentName}</span>
+      )}
+      <span className="shrink-0 font-mono tabular-nums opacity-80">p.{evidence.pageNumber}</span>
+      {/* The separator belongs to the confidence figure, so both disappear together. */}
+      {confPct !== null && (
+        <>
+          <span className="shrink-0 opacity-40">·</span>
+          <span className="shrink-0 font-mono tabular-nums opacity-80">{confPct}%</span>
+        </>
+      )}
     </button>
   );
 }

@@ -1,10 +1,20 @@
-﻿import { KpiMetrics, ProductionDataPoint } from '../types';
-import { INITIAL_KPIS, MOCK_PRODUCTION_TRENDS } from './mockData';
+import { apiFetch, BackendStats } from './api';
+import { OrganisationFilter } from '../types';
 
-export async function fetchKpiMetrics(): Promise<KpiMetrics> {
-  return { ...INITIAL_KPIS };
-}
-
-export async function fetchProductionTrends(interval: '3m' | '30d' | '7d'): Promise<ProductionDataPoint[]> {
-  return MOCK_PRODUCTION_TRENDS[interval] || MOCK_PRODUCTION_TRENDS['3m'];
+/**
+ * GET /stats — real counts from the reports database.
+ *
+ * The backend models document counts and query counts only. It has no concept
+ * of automation rate, extraction accuracy, pages processed or time saved, so
+ * those former dashboard figures are gone rather than invented.
+ *
+ * Passing an organisation scopes every count and distribution to it, so a
+ * filtered view never shows one organisation's charts beside global totals.
+ */
+export async function fetchPlatformStats(
+  organisation: OrganisationFilter = 'ALL'
+): Promise<BackendStats> {
+  const query =
+    organisation === 'ALL' ? '' : `?organisation=${encodeURIComponent(organisation)}`;
+  return apiFetch<BackendStats>(`/stats${query}`);
 }

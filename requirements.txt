@@ -1,24 +1,41 @@
 # AI-Powered Geological & Mining Reporting Solution
 # Problem ID: SIH26023 - Ministry of Coal - CMPDI/CIL
+#
+# What the FastAPI backend needs, and nothing else. The legacy Streamlit UI
+# (app.py) has its own file - see requirements-streamlit.txt.
 
 # Backend
 fastapi==0.115.0
 uvicorn==0.30.0
+# Required by FastAPI to parse multipart uploads (POST /upload). No module
+# imports it directly, so it looks unused - removing it breaks every upload
+# with "Form data requires python-multipart".
 python-multipart==0.0.9
-
-# Frontend
-streamlit==1.39.0
 
 # Document Processing
 pypdf==5.0.1
+# OCR for scanned PDFs. Both are optional at runtime: document_processor
+# catches ImportError and falls back to text extraction, so a host without
+# the tesseract binary still serves every other feature.
 pytesseract>=0.3.10
 Pillow==10.4.0
 
 # AI / LLM
+# Gemini, OpenRouter and Ollama need no package - ai_providers reaches them
+# over stdlib urllib. The Anthropic SDK is used for Claude when present;
+# without it that provider falls back to the same REST path as the others.
 anthropic==0.40.0
 
 # Database
 sqlalchemy==2.0.35
+# Only needed when DATABASE_URL points at Postgres. SQLite, the default, is
+# built into Python - so local development needs nothing here, but a hosted
+# deploy with a managed database will not start without it.
+#
+# Keep this at 2.9.10 or newer: earlier releases ship no wheel past CPython
+# 3.12, so a host on 3.13 falls back to compiling from source and the build
+# fails on the missing libpq headers. 2.9.12 carries wheels through 3.14.
+psycopg2-binary==2.9.12
 
 # Word Cloud & Visualization
 wordcloud==1.9.5
@@ -26,7 +43,9 @@ matplotlib==3.9.2
 
 # Report Generation
 fpdf2==2.7.9
+# Report Studio's DOCX export. Without it that endpoint returns 503 rather
+# than a file Word cannot open - see generate_dossier_docx.
+python-docx==1.1.2
 
 # Utilities
 python-dotenv==1.0.1
-aiofiles==24.1.0
