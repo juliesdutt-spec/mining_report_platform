@@ -21,7 +21,7 @@ import {
 } from "@/components/ui/table";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { FieldLabel } from "@/components/shared/Section";
-import { dossierUrl } from "@/services/api";
+import { ApiError, dossierPath, saveFile } from "@/services/api";
 import { fetchDocuments } from "@/services/documents";
 import { MiningDocument } from "@/types";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -91,8 +91,24 @@ export function ReportStudioPage() {
     keyFindings: selectedSections.keyFindings,
     sourceReferences: selectedSections.sourceReferences,
   };
-  const downloadHref = dossierUrl({ ...dossierOptions, format: "pdf" });
-  const docxHref = dossierUrl({ ...dossierOptions, format: "docx" });
+  // Fetched with the session token rather than linked: /reports/generate now
+  // requires an account, and a download link cannot carry the header.
+  const [exportError, setExportError] = useState<string | null>(null);
+  const [exporting, setExporting] = useState<"pdf" | "docx" | null>(null);
+
+  async function exportDossier(format: "pdf" | "docx") {
+    setExporting(format);
+    setExportError(null);
+    try {
+      await saveFile(dossierPath({ ...dossierOptions, format }), `dataforge-dossier.${format}`);
+    } catch (err) {
+      setExportError(
+        err instanceof ApiError ? err.message : `Could not generate the ${format.toUpperCase()}.`
+      );
+    } finally {
+      setExporting(null);
+    }
+  }
 
   return (
     <div className="space-y-6">
@@ -107,22 +123,39 @@ export function ReportStudioPage() {
               Print
             </Button>
             {/* GET /reports/generate?format=docx composes the same dossier. */}
-            <Button variant="outline" size="sm" asChild>
-              <a href={docxHref} download aria-label="Download the composed dossier as DOCX">
-                <Download className="h-3.5 w-3.5" />
-                DOCX
-              </a>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => exportDossier("docx")}
+              disabled={exporting !== null}
+              aria-label="Download the composed dossier as DOCX"
+            >
+              <Download className="h-3.5 w-3.5" />
+              {exporting === "docx" ? "Preparing…" : "DOCX"}
             </Button>
             {/* POST /reports/generate composes the dossier from indexed reports. */}
-            <Button size="sm" asChild>
-              <a href={downloadHref} download aria-label="Download the composed dossier as PDF">
-                <Download className="h-3.5 w-3.5" />
-                PDF
-              </a>
+            <Button
+              size="sm"
+              onClick={() => exportDossier("pdf")}
+              disabled={exporting !== null}
+              aria-label="Download the composed dossier as PDF"
+            >
+              <Download className="h-3.5 w-3.5" />
+              {exporting === "pdf" ? "Preparing…" : "PDF"}
             </Button>
           </>
         }
       />
+
+      {exportError && (
+        <div
+          role="alert"
+          className="flex items-start gap-2 rounded-lg border border-destructive/40 bg-destructive-muted px-4 py-3 text-sm text-destructive"
+        >
+          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+          <span className="min-w-0">{exportError}</span>
+        </div>
+      )}
 
       <div
         role="note"

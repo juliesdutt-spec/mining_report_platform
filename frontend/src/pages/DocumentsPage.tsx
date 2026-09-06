@@ -28,7 +28,7 @@ import {
   getDocumentById,
   uploadMiningDocument,
 } from "@/services/documents";
-import { ApiError, reportDownloadUrl } from "@/services/api";
+import { ApiError, fetchFile, saveFile } from "@/services/api";
 
 interface DocumentsPageProps {
   onInspectEvidence: (evidence: EvidenceSnippet) => void;
@@ -67,6 +67,51 @@ export function DocumentsPage({
   const [loadError, setLoadError] = useState<string | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploadNotice, setUploadNotice] = useState<string | null>(null);
+
+  // The embedded PDF is fetched with the session token and shown through an
+  // object URL, so the preview survives authentication being required.
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!selectedDoc) {
+      setPreviewUrl(null);
+      return;
+    }
+
+    let cancelled = false;
+    let revoke: (() => void) | null = null;
+    setPreviewUrl(null);
+
+    fetchFile(`/reports/${selectedDoc.id}/download?inline=true`)
+      .then((file) => {
+        if (cancelled) {
+          file.revoke();
+          return;
+        }
+        revoke = file.revoke;
+        setPreviewUrl(file.url);
+      })
+      .catch(() => {
+        // The <object> falls back to its own message when it has no data.
+        if (!cancelled) setPreviewUrl(null);
+      });
+
+    return () => {
+      cancelled = true;
+      revoke?.();
+    };
+  }, [selectedDoc?.id]);
+
+  /** Fetch the PDF with the token, then hand it to the browser to save. */
+  async function downloadPdf(id: number, filename: string) {
+    try {
+      await saveFile(`/reports/${id}/download`, filename || `report-${id}.pdf`);
+    } catch (err) {
+      setUploadError(
+        err instanceof ApiError ? err.message : "Could not download that document."
+      );
+    }
+  }
   const [uploadProgress, setUploadProgress] = useState<{ done: number; total: number } | null>(null);
   const [pendingDelete, setPendingDelete] = useState<MiningDocument | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -337,15 +382,14 @@ export function DocumentsPage({
                   {selectedDoc.pageCount !== undefined ? `${selectedDoc.pageCount} pp.` : "\u2014"}
                 </span>
                 {/* GET /reports/{id}/download — the backend generates the PDF. */}
-                <Button variant="outline" size="sm" asChild>
-                  <a
-                    href={reportDownloadUrl(selectedDoc.id)}
-                    download
-                    aria-label={`Download extracted report PDF for ${selectedDoc.filename}`}
-                  >
-                    <Download className="h-3.5 w-3.5" />
-                    PDF
-                  </a>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => downloadPdf(selectedDoc.id, selectedDoc.filename)}
+                  aria-label={`Download extracted report PDF for ${selectedDoc.filename}`}
+                >
+                  <Download className="h-3.5 w-3.5" />
+                  PDF
                 </Button>
                 <Button
                   variant="ghost"
@@ -373,9 +417,11 @@ export function DocumentsPage({
               <TabsContent value="document">
                 <object
                   key={selectedDoc.id}
-                  // inline: embedding the attachment URL makes the browser
+                  // The bytes are fetched with the session token, because an
+                  // <object data> URL cannot carry an Authorization header.
+                  // inline: the attachment disposition would make the browser
                   // save a file on every mount instead of rendering the PDF.
-                  data={reportDownloadUrl(selectedDoc.id, { inline: true })}
+                  data={previewUrl ?? undefined}
                   type="application/pdf"
                   className="h-[560px] w-full rounded-lg border border-border bg-card"
                   aria-label={`PDF report for ${selectedDoc.filename}`}
@@ -385,11 +431,13 @@ export function DocumentsPage({
                     <p className="text-sm text-muted-foreground">
                       Your browser cannot display this PDF inline.
                     </p>
-                    <Button variant="outline" size="sm" asChild>
-                      <a href={reportDownloadUrl(selectedDoc.id)} download>
-                        <Download className="h-3.5 w-3.5" />
-                        Download the PDF
-                      </a>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => downloadPdf(selectedDoc.id, selectedDoc.filename)}
+                    >
+                      <Download className="h-3.5 w-3.5" />
+                      Download the PDF
                     </Button>
                   </div>
                 </object>

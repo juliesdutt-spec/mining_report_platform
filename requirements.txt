@@ -49,3 +49,8 @@ python-docx==1.1.2
 
 # Utilities
 python-dotenv==1.0.1
+
+# Session tokens. Pure-Python wheel (py3-none-any), so it adds no build step -
+# unlike a native password-hashing library, which is why hashing below uses the
+# standard library instead.
+PyJWT==2.9.0

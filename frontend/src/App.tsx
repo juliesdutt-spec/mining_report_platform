@@ -1,4 +1,4 @@
-﻿import React, { Suspense, lazy, useState } from "react";
+﻿import React, { Suspense, lazy, useEffect, useState } from "react";
 import { AppShell } from "@/components/layout/AppShell";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ErrorBoundary } from "@/components/shared/ErrorBoundary";
@@ -50,10 +50,48 @@ const SettingsPage = lazy(
 );
 import { NavigationTab, OrganisationFilter, EvidenceSnippet } from "@/types";
 import { useHashRoute } from "@/lib/useHashRoute";
+import { LoginPage } from "@/pages/LoginPage";
+import { fetchCurrentUser } from "@/services/api";
+import { clearToken, getToken, onSessionChange, SessionUser } from "@/lib/session";
+import { Skeleton as AuthSkeleton } from "@/components/ui/skeleton";
 
 export function App() {
   // Tab lives in the URL hash so Back/Forward, deep links and refresh all work.
   const [currentTab, setCurrentTab, routeParam] = useHashRoute();
+  const [user, setUser] = useState<SessionUser | null>(null);
+  // Distinct from "signed out": a stored token has to be checked against the
+  // server before the shell can be shown, and rendering the sign-in form during
+  // that check would flash it at someone who is already signed in.
+  const [isRestoringSession, setIsRestoringSession] = useState(Boolean(getToken()));
+
+  useEffect(() => {
+    if (!getToken()) {
+      setIsRestoringSession(false);
+      return;
+    }
+    let cancelled = false;
+    fetchCurrentUser()
+      .then((restored) => {
+        if (!cancelled) setUser(restored);
+      })
+      .finally(() => {
+        if (!cancelled) setIsRestoringSession(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // The API layer clears the token on any 401, which can happen long after
+  // sign-in. Without this the shell would keep rendering over an API that
+  // refuses every call.
+  useEffect(
+    () =>
+      onSessionChange(() => {
+        if (!getToken()) setUser(null);
+      }),
+    []
+  );
   const [selectedOrganisation, setSelectedOrganisation] = useState<OrganisationFilter>("ALL");
   const [activeEvidence, setActiveEvidence] = useState<EvidenceSnippet | null>(null);
 
@@ -69,8 +107,26 @@ export function App() {
     setCurrentTab("documents");
   };
 
+
+  if (isRestoringSession) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background p-6">
+        <AuthSkeleton className="h-24 w-full max-w-sm" />
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <LoginPage onSignedIn={setUser} />;
+  }
+
   return (
     <AppShell
+      user={user}
+      onSignOut={() => {
+        clearToken();
+        setUser(null);
+      }}
       currentTab={currentTab}
       onSelectTab={setCurrentTab}
       selectedOrganisation={selectedOrganisation}
