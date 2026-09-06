@@ -1,5 +1,5 @@
 import React from "react";
-import { Bell, ChevronRight, PanelLeft, Plus, Search } from "lucide-react";
+import { ChevronRight, PanelLeft, Plus, Search } from "lucide-react";
 import { NavigationTab, OrganisationFilter } from "@/types";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -91,11 +91,6 @@ export function Header({
         <Separator orientation="vertical" className="mx-1 hidden h-5 md:block" />
 
         <ThemeToggle />
-
-        <Button variant="ghost" size="icon" className="relative" aria-label="Notifications">
-          <Bell className="h-4 w-4" />
-          <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-destructive" />
-        </Button>
 
         <Button size="sm" onClick={onQuickUpload}>
           <Plus className="h-3.5 w-3.5" />
