@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, Download, Search } from "lucide-react";
+import { ArrowDown, ArrowUp, Download, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -25,6 +25,7 @@ import { ConfidenceMeter } from "@/components/shared/ConfidenceMeter";
 import { SourceCitation } from "@/components/shared/SourceCitation";
 import { cn } from "@/lib/utils";
 import { EvidenceSnippet, MiningDocument, OrganisationFilter } from "@/types";
+import { downloadCsv, toCsv } from "@/lib/csv";
 import { fetchDocuments } from "@/services/documents";
 
 interface DataExplorerPageProps {
@@ -119,6 +120,42 @@ export function DataExplorerPage({ onInspectEvidence, selectedOrganisation }: Da
       : Number(valB) - Number(valA);
   });
 
+  /**
+   * Export the rows as shown - same filter, same search, same sort order.
+   *
+   * Built from `sorted` rather than the unfiltered records so the file
+   * matches the table the user is looking at; exporting everything would
+   * silently ignore the controls they just used.
+   */
+  const handleExportCsv = () => {
+    if (sorted.length === 0) return;
+    const rows: unknown[][] = [
+      [
+        "Mine project",
+        "Organisation",
+        "Production",
+        "Method",
+        "Mineral",
+        "Reserves",
+        "Confidence",
+        "Validation",
+        "Source document",
+      ],
+      ...sorted.map((r) => [
+        r.mineName,
+        r.organisation ?? "",
+        r.production ?? "",
+        r.method ?? "",
+        r.mineral ?? "",
+        r.reserves ?? "",
+        r.confidence ?? "",
+        r.status ?? "",
+        r.filename,
+      ]),
+    ];
+    downloadCsv("dataforge-records.csv", toCsv(rows));
+  };
+
   const handleSort = (field: SortField) => {
     if (sortField === field) {
       setSortAsc((prev) => !prev);
@@ -134,7 +171,17 @@ export function DataExplorerPage({ onInspectEvidence, selectedOrganisation }: Da
         title="Data Explorer"
         description="Extracted tabular records with line-level provenance. Every row resolves to a page in its source document."
         actions={
-          <Button variant="outline" size="sm">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleExportCsv}
+            disabled={sorted.length === 0}
+            title={
+              sorted.length === 0
+                ? "No rows to export"
+                : "Download the rows as currently filtered and sorted"
+            }
+          >
             <Download className="h-3.5 w-3.5" />
             Export CSV
           </Button>
@@ -248,15 +295,9 @@ export function DataExplorerPage({ onInspectEvidence, selectedOrganisation }: Da
             Showing <span className="font-mono tabular-nums text-foreground">{sorted.length}</span> of{" "}
             <span className="font-mono tabular-nums text-foreground">{records.length}</span> records
           </span>
-          <div className="flex items-center gap-1">
-            <Button variant="outline" size="icon" className="h-7 w-7" disabled aria-label="Previous page">
-              <ChevronLeft className="h-3.5 w-3.5" />
-            </Button>
-            <span className="px-2 font-mono tabular-nums text-foreground">1</span>
-            <Button variant="outline" size="icon" className="h-7 w-7" disabled aria-label="Next page">
-              <ChevronRight className="h-3.5 w-3.5" />
-            </Button>
-          </div>
+          {/* No pager: the table renders every matching row, so a page
+              control could only ever say "1" with both arrows dead, which
+              read as pages that exist but cannot be reached. */}
         </div>
       </Card>
     </div>
