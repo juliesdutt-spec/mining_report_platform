@@ -12,7 +12,6 @@
  */
 export interface DataForgeSettings {
   apiUrl: string;
-  ocrConfidence: number;
 }
 
 const STORAGE_KEY = "dataforge-settings";
@@ -23,7 +22,6 @@ export const BUILT_IN_API_URL: string =
 
 export const DEFAULT_SETTINGS: DataForgeSettings = {
   apiUrl: BUILT_IN_API_URL,
-  ocrConfidence: 85,
 };
 
 /**
@@ -54,10 +52,6 @@ export function loadSettings(): DataForgeSettings {
     const parsed = JSON.parse(raw) as Partial<DataForgeSettings>;
     return {
       apiUrl: typeof parsed.apiUrl === "string" ? parsed.apiUrl : DEFAULT_SETTINGS.apiUrl,
-      ocrConfidence:
-        typeof parsed.ocrConfidence === "number" && Number.isFinite(parsed.ocrConfidence)
-          ? parsed.ocrConfidence
-          : DEFAULT_SETTINGS.ocrConfidence,
     };
   } catch {
     // Private browsing, blocked storage or corrupt JSON — defaults are fine.

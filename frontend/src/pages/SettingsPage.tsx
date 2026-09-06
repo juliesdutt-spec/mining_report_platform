@@ -5,7 +5,6 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Slider } from "@/components/ui/slider";
 import { Badge } from "@/components/ui/badge";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { Section } from "@/components/shared/Section";
@@ -35,7 +34,6 @@ import { DEFAULT_SETTINGS, loadSettings, saveSettings } from "@/lib/settings";
 
 export function SettingsPage() {
   const [apiUrl, setApiUrl] = useState(DEFAULT_SETTINGS.apiUrl);
-  const [ocrConfidence, setOcrConfidence] = useState(DEFAULT_SETTINGS.ocrConfidence);
   const [ai, setAi] = useState<AiStatus | null>(null);
   const [aiLoading, setAiLoading] = useState(true);
   const [isSaved, setIsSaved] = useState(false);
@@ -45,7 +43,6 @@ export function SettingsPage() {
   useEffect(() => {
     const saved = loadSettings();
     setApiUrl(saved.apiUrl);
-    setOcrConfidence(saved.ocrConfidence);
   }, []);
 
   // The provider is the backend's to decide; this page only reports it.
@@ -60,7 +57,7 @@ export function SettingsPage() {
   }, []);
 
   const handleSave = () => {
-    const ok = saveSettings({ apiUrl, ocrConfidence });
+    const ok = saveSettings({ apiUrl });
     if (ok) {
       setSaveError(null);
       setIsSaved(true);
@@ -109,7 +106,7 @@ export function SettingsPage() {
           title="Extraction engine"
           description="Which model answers, as reported by the backend. Configured server-side so a key never reaches the browser."
         >
-          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-6">
             <div className="space-y-1.5">
               <Label htmlFor="model">Active provider</Label>
               <div
@@ -138,26 +135,6 @@ export function SettingsPage() {
               </p>
             </div>
 
-            <div className="space-y-1.5">
-              <div className="flex items-baseline justify-between">
-                <Label htmlFor="ocr-threshold">OCR confidence threshold</Label>
-                <span className="font-mono text-sm tabular-nums font-medium text-foreground">
-                  {ocrConfidence}%
-                </span>
-              </div>
-              <Slider
-                id="ocr-threshold"
-                min={60}
-                max={98}
-                step={1}
-                value={[ocrConfidence]}
-                onValueChange={([v]) => setOcrConfidence(v)}
-                className="pt-2"
-              />
-              <p className="text-xs text-muted-foreground">
-                Extractions below this score are routed to Validation.
-              </p>
-            </div>
           </div>
         </SettingsGroup>
 
