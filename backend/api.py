@@ -54,15 +54,44 @@ app = FastAPI(
 # backend exposes upload and delete to whoever calls it, so ALLOWED_ORIGINS
 # narrows that to the sites you actually serve:
 #   ALLOWED_ORIGINS=https://your-app.vercel.app,http://localhost:5173
-ALLOWED_ORIGINS = [
-    origin.strip()
-    for origin in os.getenv("ALLOWED_ORIGINS", "*").split(",")
-    if origin.strip()
-] or ["*"]
+#
+# A fixed list cannot name a preview deployment: Vercel gives each one its own
+# hostname, generated per build. Listing only production would refuse every
+# preview, so ALLOWED_ORIGIN_REGEX matches that family without opening the API
+# to everyone:
+#   ALLOWED_ORIGIN_REGEX=https://mining-report-platform-[a-z0-9-]+\.vercel\.app
+_ORIGINS_ENV = os.getenv("ALLOWED_ORIGINS")
+_ORIGIN_REGEX_ENV = os.getenv("ALLOWED_ORIGIN_REGEX") or None
+
+# Whether a regex was asked for, which is not the same as whether it survived
+# validation. Reading the surviving value below would let a typo fall through
+# to the "*" default - a bad pattern would then allow every origin, which is
+# the opposite of what setting one asks for.
+_ORIGIN_REGEX_REQUESTED = _ORIGIN_REGEX_ENV is not None
+
+if _ORIGIN_REGEX_ENV:
+    # An invalid pattern must not take the service down on boot, and must not
+    # quietly widen access either: it is dropped, leaving whatever the list
+    # allows, which is nothing unless one was given.
+    try:
+        re.compile(_ORIGIN_REGEX_ENV)
+    except re.error as exc:
+        print(f"ALLOWED_ORIGIN_REGEX is not a valid regex and was ignored: {exc}")
+        _ORIGIN_REGEX_ENV = None
+
+if _ORIGINS_ENV:
+    ALLOWED_ORIGINS = [origin.strip() for origin in _ORIGINS_ENV.split(",") if origin.strip()]
+elif _ORIGIN_REGEX_REQUESTED:
+    # A regex on its own is a deliberate restriction. Defaulting the list to
+    # "*" here would allow every origin and leave the regex decorative.
+    ALLOWED_ORIGINS = []
+else:
+    ALLOWED_ORIGINS = ["*"]
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
+    allow_origin_regex=_ORIGIN_REGEX_ENV,
     # No endpoint reads a cookie or an auth header, so credentialed requests
     # are not something to allow - and "*" only means "*" without them.
     allow_credentials=False,
