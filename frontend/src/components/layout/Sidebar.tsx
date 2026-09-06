@@ -10,6 +10,7 @@ import {
   Settings,
   ShieldCheck,
   Sparkles,
+  X,
 } from "lucide-react";
 import { NavigationTab, OrganisationFilter } from "@/types";
 import { organisationsIn, useCorpus } from "@/lib/corpus";
@@ -24,6 +25,9 @@ interface SidebarProps {
   onSelectOrganisation: (org: OrganisationFilter) => void;
   isCollapsed: boolean;
   onToggleCollapse: () => void;
+  /** Below `md` the sidebar slides over the content instead of docking. */
+  isMobileOpen: boolean;
+  onCloseMobile: () => void;
 }
 
 interface NavItem {
@@ -51,6 +55,8 @@ export function Sidebar({
   selectedOrganisation,
   onSelectOrganisation,
   isCollapsed,
+  isMobileOpen,
+  onCloseMobile,
 }: SidebarProps) {
   // Organisations come from the documents themselves, so the filter lists
   // exactly what has been indexed — never a roster of bodies with no documents.
@@ -59,9 +65,20 @@ export function Sidebar({
 
   return (
     <aside
+      id="app-sidebar"
+      aria-label="Primary"
       className={cn(
-        "z-30 flex flex-col border-r border-border bg-card transition-[width] duration-200",
-        isCollapsed ? "w-16" : "w-64"
+        // Docked in the layout from `md` up. Below that it is a drawer over the
+        // content: 256px of a 390px phone left roughly 130px for the page,
+        // which is why every screen looked crushed rather than narrow.
+        "flex w-64 flex-col border-r border-border bg-card",
+        "fixed inset-y-0 left-0 z-50 transition-transform duration-200",
+        "md:static md:z-30 md:translate-x-0 md:transition-[width]",
+        // `invisible` keeps the closed drawer out of the focus order, so Tab
+        // does not walk through nine off-screen links.
+        isMobileOpen ? "translate-x-0" : "invisible -translate-x-full",
+        "md:visible",
+        isCollapsed ? "md:w-16" : "md:w-64"
       )}
     >
       {/* Organisation identity */}
@@ -70,13 +87,24 @@ export function Sidebar({
           DF
         </div>
         {!isCollapsed && (
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <div className="truncate text-sm font-semibold tracking-tight text-foreground">
               DataForge
             </div>
             <div className="truncate text-[11px] text-muted-foreground">CMPDI · Coal India</div>
           </div>
         )}
+
+        {/* The backdrop and Escape also close the drawer, but neither is
+            discoverable by looking at it. */}
+        <button
+          type="button"
+          onClick={onCloseMobile}
+          aria-label="Close navigation"
+          className="-mr-1 ml-auto rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring md:hidden"
+        >
+          <X className="h-4 w-4" />
+        </button>
       </div>
 
       <nav className="flex-1 overflow-y-auto px-2 py-4">

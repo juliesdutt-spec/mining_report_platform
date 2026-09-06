@@ -13,6 +13,8 @@ interface HeaderProps {
   selectedOrganisation: OrganisationFilter;
   onQuickUpload: () => void;
   backendStatus: { isOnline: boolean; statusText: string };
+  /** Drawer state, so the toggle can report what it will do on a phone. */
+  isMobileNavOpen: boolean;
 }
 
 const TAB_TITLES: Record<NavigationTab, string> = {
@@ -34,9 +36,10 @@ export function Header({
   selectedOrganisation,
   onQuickUpload,
   backendStatus,
+  isMobileNavOpen,
 }: HeaderProps) {
   return (
-    <header className="sticky top-0 z-20 flex h-14 w-full shrink-0 items-center justify-between gap-4 border-b border-border bg-card px-4">
+    <header className="sticky top-0 z-20 flex h-14 w-full shrink-0 items-center justify-between gap-2 border-b border-border bg-card px-3 sm:gap-4 sm:px-4">
       <div className="flex min-w-0 items-center gap-3">
         <Button
           variant="ghost"
@@ -44,13 +47,15 @@ export function Header({
           onClick={onToggleSidebar}
           title="Toggle sidebar (⌘B)"
           aria-label="Toggle sidebar"
+          aria-expanded={isMobileNavOpen}
+          aria-controls="app-sidebar"
         >
           <PanelLeft className="h-4 w-4" />
         </Button>
 
         <nav aria-label="Breadcrumb" className="flex min-w-0 items-center gap-1.5 text-sm">
-          <span className="text-muted-foreground">DataForge</span>
-          <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground/60" />
+          <span className="hidden text-muted-foreground sm:inline">DataForge</span>
+          <ChevronRight className="hidden h-3.5 w-3.5 shrink-0 text-muted-foreground/60 sm:block" />
           <span className="truncate font-medium text-foreground">{TAB_TITLES[currentTab]}</span>
           {selectedOrganisation !== "ALL" && (
             <>
