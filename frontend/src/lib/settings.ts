@@ -16,9 +16,47 @@ export interface DataForgeSettings {
 
 const STORAGE_KEY = "dataforge-settings";
 
-/** Where the backend lives when the viewer has not chosen otherwise. */
+/**
+ * The deployed backend, used when a build carries no VITE_API_URL.
+ *
+ * Not a secret - it is a public URL every visitor's browser requests anyway.
+ * VITE_API_URL still wins wherever it is set; this only decides what a build
+ * without one does.
+ */
+const DEPLOYED_API_URL = "https://miningreportplatform-production.up.railway.app";
+
+/** True when the page is being served from the developer's own machine. */
+function servedLocally(): boolean {
+  if (typeof window === "undefined") return true;
+  const host = window.location.hostname;
+  return (
+    host === "localhost" ||
+    host === "127.0.0.1" ||
+    host === "[::1]" ||
+    host === "::1" ||
+    host.endsWith(".local")
+  );
+}
+
+/**
+ * Where the backend lives when the viewer has not chosen otherwise.
+ *
+ * Vite inlines VITE_API_URL at build time, so a build that ran without it can
+ * never learn the value later. Vercel scopes environment variables per
+ * environment, so a variable added only to Production leaves every Preview
+ * build without one - and the old fallback then shipped "http://localhost:8000"
+ * inside the bundle. On a phone that address is the phone, which runs no
+ * backend, so the app reported the backend unreachable on a deployment that was
+ * running perfectly.
+ *
+ * A page served from a real host therefore cannot mean localhost: nothing is
+ * listening there. It falls back to the deployed backend instead. localhost
+ * stays the default only when the page is itself served locally, which is the
+ * one case where `uvicorn backend.api:app --reload` is the right answer.
+ */
 export const BUILT_IN_API_URL: string =
-  import.meta.env.VITE_API_URL || "http://localhost:8000";
+  import.meta.env.VITE_API_URL ||
+  (servedLocally() ? "http://localhost:8000" : DEPLOYED_API_URL);
 
 export const DEFAULT_SETTINGS: DataForgeSettings = {
   apiUrl: BUILT_IN_API_URL,

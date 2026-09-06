@@ -17,6 +17,21 @@ function apiBaseUrl(): string {
   return savedApiUrl() ?? BUILT_IN_API_URL;
 }
 
+/**
+ * What to say when the backend cannot be reached.
+ *
+ * The uvicorn hint only helps someone running the stack on their own machine.
+ * Told to a visitor on a deployed site - or on a phone - it names a command
+ * they cannot run on a host they do not have, so the advice is withheld unless
+ * the address really is their own machine.
+ */
+function unreachableMessage(base: string): string {
+  const isLocal = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:|\/|$)/.test(base);
+  return isLocal
+    ? `Cannot reach the DataForge backend at ${base}. Start it with: uvicorn backend.api:app --reload`
+    : `Cannot reach the DataForge backend at ${base}. It may be starting up, or offline - retry in a moment. You can point the app elsewhere in Settings.`;
+}
+
 /** Raised for any non-2xx response or transport failure. */
 export class ApiError extends Error {
   readonly status?: number;
@@ -46,9 +61,7 @@ export async function apiFetch<T>(
     if (err instanceof DOMException && err.name === 'AbortError') {
       throw new ApiError('The backend took too long to respond. Is it still processing?');
     }
-    throw new ApiError(
-      `Cannot reach the DataForge backend at ${apiBaseUrl()}. Start it with: uvicorn backend.api:app --reload`
-    );
+    throw new ApiError(unreachableMessage(apiBaseUrl()));
   } finally {
     clearTimeout(timer);
   }
