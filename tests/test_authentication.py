@@ -209,3 +209,81 @@ class AuthenticationTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class AccountRemovalTests(unittest.TestCase):
+    """
+    Removing an account.
+
+    Seeding only ever adds, so a name dropped from AUTH_USERS keeps working -
+    which is how a typo'd username survives being corrected. Without this there
+    is no way to close an account short of direct database access.
+    """
+
+    OVERRIDES = ("DATABASE_URL", "USE_MOCK_AI", "AUTH_USERS", "AUTH_SECRET",
+                 "AUTH_REMOVE_USERS", "DEMO_ACCOUNT")
+
+    def setUp(self):
+        self._saved = {k: os.environ.get(k) for k in self.OVERRIDES}
+        self._tmp = tempfile.TemporaryDirectory()
+        os.environ["DATABASE_URL"] = f"sqlite:///{self._tmp.name}/remove.db"
+        os.environ["USE_MOCK_AI"] = "true"
+        os.environ["AUTH_SECRET"] = "test-secret-not-a-real-one"
+        os.environ["DEMO_ACCOUNT"] = "off"
+        os.environ.pop("AUTH_REMOVE_USERS", None)
+        sys.path.insert(0, str(PROJECT_ROOT))
+
+    def tearDown(self):
+        for key, value in self._saved.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+        self._tmp.cleanup()
+
+    def _run(self):
+        """Re-import the modules so they read the environment as it stands."""
+        for name in ("database", "auth", "auth_seed"):
+            sys.modules.pop(name, None)
+        import importlib
+        database = importlib.import_module("database")
+        database.init_db()
+        return importlib.import_module("auth_seed").seed_users(), database
+
+    def test_a_named_account_is_removed(self):
+        os.environ["AUTH_USERS"] = "keeper:pw,typo:pw"
+        result, _ = self._run()
+        self.assertEqual(sorted(result["created"]), ["keeper", "typo"])
+
+        # The typo is corrected in AUTH_USERS and named for removal.
+        os.environ["AUTH_USERS"] = "keeper:pw"
+        os.environ["AUTH_REMOVE_USERS"] = "typo"
+        result, database = self._run()
+        self.assertEqual(result["removed"], ["typo"])
+
+        db = database.SessionLocal()
+        try:
+            self.assertIsNone(db.query(database.User).filter(database.User.username == "typo").first())
+            self.assertIsNotNone(db.query(database.User).filter(database.User.username == "keeper").first())
+        finally:
+            db.close()
+
+    def test_removing_an_absent_account_is_not_an_error(self):
+        os.environ["AUTH_USERS"] = "keeper:pw"
+        os.environ["AUTH_REMOVE_USERS"] = "never-existed"
+        result, _ = self._run()
+        self.assertEqual(result["removed"], [])
+        self.assertEqual(result["total"], 1)
+
+    def test_a_name_in_both_lists_keeps_the_account(self):
+        # Contradictory configuration. Keeping is the recoverable reading:
+        # deleting an account cannot be undone from here.
+        os.environ["AUTH_USERS"] = "keeper:pw"
+        os.environ["AUTH_REMOVE_USERS"] = "keeper"
+        result, database = self._run()
+        self.assertEqual(result["removed"], [])
+        db = database.SessionLocal()
+        try:
+            self.assertIsNotNone(db.query(database.User).filter(database.User.username == "keeper").first())
+        finally:
+            db.close()
