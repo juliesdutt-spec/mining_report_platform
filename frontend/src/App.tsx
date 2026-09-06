@@ -2,32 +2,51 @@
 import { AppShell } from "@/components/layout/AppShell";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ErrorBoundary } from "@/components/shared/ErrorBoundary";
-const DashboardPage = lazy(() =>
-  import("@/pages/DashboardPage").then((m) => ({ default: m.DashboardPage }))
+import { retryOnStaleChunk } from "@/lib/staleChunk";
+const DashboardPage = lazy(
+  retryOnStaleChunk(() =>
+    import("@/pages/DashboardPage").then((m) => ({ default: m.DashboardPage }))
+  )
 );
-const DocumentsPage = lazy(() =>
-  import("@/pages/DocumentsPage").then((m) => ({ default: m.DocumentsPage }))
+const DocumentsPage = lazy(
+  retryOnStaleChunk(() =>
+    import("@/pages/DocumentsPage").then((m) => ({ default: m.DocumentsPage }))
+  )
 );
-const AskPage = lazy(() =>
-  import("@/pages/AskPage").then((m) => ({ default: m.AskPage }))
+const AskPage = lazy(
+  retryOnStaleChunk(() =>
+    import("@/pages/AskPage").then((m) => ({ default: m.AskPage }))
+  )
 );
-const AnalyticsPage = lazy(() =>
-  import("@/pages/AnalyticsPage").then((m) => ({ default: m.AnalyticsPage }))
+const AnalyticsPage = lazy(
+  retryOnStaleChunk(() =>
+    import("@/pages/AnalyticsPage").then((m) => ({ default: m.AnalyticsPage }))
+  )
 );
-const TopicsPage = lazy(() =>
-  import("@/pages/TopicsPage").then((m) => ({ default: m.TopicsPage }))
+const TopicsPage = lazy(
+  retryOnStaleChunk(() =>
+    import("@/pages/TopicsPage").then((m) => ({ default: m.TopicsPage }))
+  )
 );
-const ReportStudioPage = lazy(() =>
-  import("@/pages/ReportStudioPage").then((m) => ({ default: m.ReportStudioPage }))
+const ReportStudioPage = lazy(
+  retryOnStaleChunk(() =>
+    import("@/pages/ReportStudioPage").then((m) => ({ default: m.ReportStudioPage }))
+  )
 );
-const DataExplorerPage = lazy(() =>
-  import("@/pages/DataExplorerPage").then((m) => ({ default: m.DataExplorerPage }))
+const DataExplorerPage = lazy(
+  retryOnStaleChunk(() =>
+    import("@/pages/DataExplorerPage").then((m) => ({ default: m.DataExplorerPage }))
+  )
 );
-const ValidationPage = lazy(() =>
-  import("@/pages/ValidationPage").then((m) => ({ default: m.ValidationPage }))
+const ValidationPage = lazy(
+  retryOnStaleChunk(() =>
+    import("@/pages/ValidationPage").then((m) => ({ default: m.ValidationPage }))
+  )
 );
-const SettingsPage = lazy(() =>
-  import("@/pages/SettingsPage").then((m) => ({ default: m.SettingsPage }))
+const SettingsPage = lazy(
+  retryOnStaleChunk(() =>
+    import("@/pages/SettingsPage").then((m) => ({ default: m.SettingsPage }))
+  )
 );
 import { NavigationTab, OrganisationFilter, EvidenceSnippet } from "@/types";
 import { useHashRoute } from "@/lib/useHashRoute";

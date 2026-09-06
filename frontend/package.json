@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "test": "node --test scripts/test-csv.mjs scripts/test-api-base.mjs"
+    "test": "node --test scripts/test-csv.mjs scripts/test-api-base.mjs scripts/test-stale-chunk.mjs"
   },
   "dependencies": {
     "@radix-ui/react-checkbox": "^1.3.11",

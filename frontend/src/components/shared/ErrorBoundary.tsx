@@ -1,6 +1,7 @@
 import React from "react";
 import { AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { isChunkLoadError } from "@/lib/staleChunk";
 
 interface Props {
   children: React.ReactNode;
@@ -41,6 +42,12 @@ export class ErrorBoundary extends React.Component<Props, State> {
   render() {
     if (!this.state.error) return this.props.children;
 
+    // A chunk that will not load is not a fault in this page's code: the build
+    // it belongs to has been replaced, so the filename this tab is asking for
+    // no longer exists. Resetting the boundary would request the same missing
+    // file again, so the recovery offered has to be a reload.
+    const staleBuild = isChunkLoadError(this.state.error);
+
     return (
       <div
         role="alert"
@@ -50,22 +57,27 @@ export class ErrorBoundary extends React.Component<Props, State> {
           <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-destructive" />
           <div className="min-w-0">
             <h2 className="text-base font-semibold text-destructive">
-              This page failed to render
+              {staleBuild ? "This page is from an older version" : "This page failed to render"}
             </h2>
             <p className="mt-2 break-words font-mono text-xs text-destructive/90">
               {this.state.error.message}
             </p>
             <p className="mt-3 text-sm text-muted-foreground">
-              The rest of the application is unaffected — switch pages using the
-              sidebar, or try again.
+              {staleBuild
+                ? "This tab was opened before the current version was deployed, so it is asking for files that have since been replaced. Reloading fetches the current ones."
+                : "The rest of the application is unaffected — switch pages using the sidebar, or try again."}
             </p>
             <Button
               variant="outline"
               size="sm"
               className="mt-4"
-              onClick={() => this.setState({ error: null })}
+              onClick={() =>
+                staleBuild
+                  ? window.location.reload()
+                  : this.setState({ error: null })
+              }
             >
-              Try again
+              {staleBuild ? "Reload" : "Try again"}
             </Button>
           </div>
         </div>
