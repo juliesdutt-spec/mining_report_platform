@@ -14,6 +14,7 @@ Endpoints:
 import os
 import io
 import json
+import re
 import sys
 import uuid
 from datetime import datetime
@@ -115,6 +116,42 @@ def health_check():
     }
 
 
+#: Largest upload accepted, in bytes. The body is read into memory to be
+#: parsed, so without a ceiling a single large request can exhaust the
+#: container: uncapped, a 60 MB file was accepted in testing and nothing
+#: stopped a much larger one. Generous for a mining report; override with
+#: MAX_UPLOAD_MB where genuinely bigger documents are expected.
+MAX_UPLOAD_BYTES = int(os.getenv("MAX_UPLOAD_MB", "25")) * 1024 * 1024
+
+#: Read granularity while enforcing that ceiling.
+_UPLOAD_CHUNK = 1024 * 1024
+
+
+async def _read_capped(file: UploadFile) -> bytes:
+    """
+    Read an upload, refusing anything past MAX_UPLOAD_BYTES.
+
+    Reads in chunks and stops at the limit rather than calling .read(), so an
+    oversized body is rejected without ever being held in full.
+    """
+    chunks: list[bytes] = []
+    total = 0
+    while True:
+        chunk = await file.read(_UPLOAD_CHUNK)
+        if not chunk:
+            break
+        total += len(chunk)
+        if total > MAX_UPLOAD_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail=(
+                    f"File is larger than the {MAX_UPLOAD_BYTES // (1024 * 1024)} MB limit."
+                ),
+            )
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
 @app.post("/upload")
 async def upload_report(
     file: UploadFile = File(...),
@@ -128,8 +165,7 @@ async def upload_report(
         raise HTTPException(status_code=400, detail="Only PDF files are supported.")
     
     try:
-        # Read file
-        pdf_bytes = await file.read()
+        pdf_bytes = await _read_capped(file)
         
         # Create report record
         report = MiningReport(
@@ -184,12 +220,23 @@ async def upload_report(
             "message": "Report processed successfully!"
         }
         
+    except HTTPException:
+        # Already a deliberate client-facing error (unsupported type, too
+        # large); pass it through rather than relabelling it a 500.
+        raise
     except Exception as e:
+        # The detail is stored for an operator but not returned: the raw
+        # exception can carry file paths, driver internals and query
+        # fragments, none of which an uploader needs.
         if 'report' in dir():
             report.status = "error"
             report.error_message = str(e)
             db.commit()
-        raise HTTPException(status_code=500, detail=f"Processing error: {str(e)}")
+        print(f"[upload] processing failed for {file.filename!r}: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Could not process this document. It may be corrupt or unreadable.",
+        )
 
 
 @app.get("/reports")
@@ -226,6 +273,52 @@ def list_reports(
             for r in reports
         ]
     }
+
+
+
+def _content_disposition(disposition: str, filename: str) -> str:
+    """
+    Build a Content-Disposition header that a hostile filename cannot bend.
+
+    Filenames come from uploads and are stored verbatim, so they can contain
+    the characters that structure this header. Unquoted, `a;b.pdf` ends the
+    filename parameter early and the browser saves something the uploader
+    chose. RFC 6266's filename* form carries the real name percent-encoded,
+    and the plain `filename` fallback is reduced to safe characters.
+    """
+    from urllib.parse import quote
+
+    ascii_name = re.sub(r'[^A-Za-z0-9._-]', "_", filename)[:120] or "download"
+    encoded = quote(filename, safe="")
+    return f"{disposition}; filename=\"{ascii_name}\"; filename*=UTF-8''{encoded}"
+
+
+
+#: Caps on values copied into an AI prompt. A field is a label or a sentence;
+#: anything longer is not description but payload.
+_PROMPT_FIELD_MAX = 300
+
+
+def _for_prompt(value) -> str:
+    """
+    Flatten a stored value for inclusion in an AI prompt.
+
+    Filenames and extracted fields originate in uploaded documents, so they
+    are attacker-controlled: a file named "IGNORE ALL PREVIOUS INSTRUCTIONS"
+    landed verbatim in the prompt. Collapsing newlines keeps a value on the
+    single line its label implies, so injected text cannot forge the
+    Field: value structure the model reads, and the length cap stops a field
+    from crowding out the real context.
+
+    This narrows the channel; it is not a guarantee. The prompt also states
+    that report data is data, and the model has no tools or secrets to give
+    up if it is talked round.
+    """
+    text = "" if value is None else str(value)
+    text = re.sub(r"[\r\n\t]+", " ", text).strip()
+    if len(text) > _PROMPT_FIELD_MAX:
+        text = text[:_PROMPT_FIELD_MAX] + "…"
+    return text
 
 
 @app.get("/reports/generate")
@@ -286,7 +379,7 @@ def generate_dossier_pdf(
     return StreamingResponse(
         io.BytesIO(content),
         media_type=media_type,
-        headers={"Content-Disposition": f"attachment; filename={filename}"},
+        headers={"Content-Disposition": _content_disposition("attachment", filename)},
     )
 
 
@@ -374,8 +467,8 @@ def download_report(
         io.BytesIO(pdf_bytes),
         media_type="application/pdf",
         headers={
-            "Content-Disposition": (
-                f"{disposition}; filename=report_{report.id}_{report.filename}"
+            "Content-Disposition": _content_disposition(
+                disposition, f"report_{report.id}_{report.filename}"
             )
         }
     )
@@ -436,16 +529,15 @@ def query_mining_reports(
         # Build context from reports
         context_parts = []
         for r in reports:
-            data = r.extracted_data or {}
             context_parts.append(
-                f"Report: {r.filename}\n"
-                f"Date: {r.report_date}\n"
-                f"Location: {r.location}\n"
-                f"Mineral: {r.mineral_type}\n"
-                f"Quantity: {r.quantity_extracted}\n"
-                f"Method: {r.extraction_method}\n"
-                f"Summary: {r.summary}\n"
-                f"Topics: {', '.join(r.topics or [])}\n"
+                f"Report: {_for_prompt(r.filename)}\n"
+                f"Date: {_for_prompt(r.report_date)}\n"
+                f"Location: {_for_prompt(r.location)}\n"
+                f"Mineral: {_for_prompt(r.mineral_type)}\n"
+                f"Quantity: {_for_prompt(r.quantity_extracted)}\n"
+                f"Method: {_for_prompt(r.extraction_method)}\n"
+                f"Summary: {_for_prompt(r.summary)}\n"
+                f"Topics: {_for_prompt(', '.join(r.topics or []))}\n"
             )
         
         reports_context = "\n---\n".join(context_parts)
