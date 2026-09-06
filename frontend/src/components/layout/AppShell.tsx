@@ -7,6 +7,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { NavigationTab, OrganisationFilter, EvidenceSnippet } from "@/types";
 import { checkBackendHealth } from "@/services/api";
 import { DESKTOP_QUERY, useMediaQuery } from "@/lib/useMediaQuery";
+import { SessionUser } from "@/lib/session";
 
 interface AppShellProps {
   currentTab: NavigationTab;
@@ -16,6 +17,8 @@ interface AppShellProps {
   activeEvidence: EvidenceSnippet | null;
   onCloseEvidence: () => void;
   onQuickUpload: () => void;
+  user: SessionUser;
+  onSignOut: () => void;
   children: React.ReactNode;
 }
 
@@ -27,6 +30,8 @@ export function AppShell({
   activeEvidence,
   onCloseEvidence,
   onQuickUpload,
+  user,
+  onSignOut,
   children,
 }: AppShellProps) {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
@@ -106,6 +111,8 @@ export function AppShell({
           onToggleCollapse={toggleSidebar}
           isMobileOpen={isMobileNavOpen}
           onCloseMobile={() => setIsMobileNavOpen(false)}
+          user={user}
+          onSignOut={onSignOut}
         />
 
         <div className="flex flex-1 flex-col overflow-hidden">

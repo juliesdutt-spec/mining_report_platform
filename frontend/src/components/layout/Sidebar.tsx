@@ -9,12 +9,14 @@ import {
   LucideIcon,
   Settings,
   ShieldCheck,
+  LogOut,
   Sparkles,
   X,
 } from "lucide-react";
 import { NavigationTab, OrganisationFilter } from "@/types";
 import { organisationsIn, useCorpus } from "@/lib/corpus";
 import { cn } from "@/lib/utils";
+import { SessionUser } from "@/lib/session";
 import { Separator } from "@/components/ui/separator";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
@@ -28,6 +30,8 @@ interface SidebarProps {
   /** Below `md` the sidebar slides over the content instead of docking. */
   isMobileOpen: boolean;
   onCloseMobile: () => void;
+  user: SessionUser;
+  onSignOut: () => void;
 }
 
 interface NavItem {
@@ -49,6 +53,14 @@ const NAV_ITEMS: NavItem[] = [
   { id: "settings", label: "Settings", icon: Settings },
 ];
 
+/** Up to two initials from a display name, falling back to the username. */
+function initialsOf(user: SessionUser): string {
+  const source = (user.display_name || user.username || "?").trim();
+  const words = source.split(/\s+/).filter(Boolean);
+  if (words.length >= 2) return (words[0][0] + words[1][0]).slice(0, 2);
+  return source.slice(0, 2);
+}
+
 export function Sidebar({
   currentTab,
   onSelectTab,
@@ -57,6 +69,8 @@ export function Sidebar({
   isCollapsed,
   isMobileOpen,
   onCloseMobile,
+  user,
+  onSignOut,
 }: SidebarProps) {
   // Organisations come from the documents themselves, so the filter lists
   // exactly what has been indexed — never a roster of bodies with no documents.
@@ -204,17 +218,33 @@ export function Sidebar({
         )}
       </nav>
 
-      {/* Operator identity */}
+      {/* Who is signed in. This was a fixed name and address before accounts
+          existed - it now names the actual session, and can end it. */}
       <div className="border-t border-border p-3">
         <div className={cn("flex items-center gap-2.5", isCollapsed && "justify-center")}>
-          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-medium text-foreground">
-            AD
+          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-medium uppercase text-foreground">
+            {initialsOf(user)}
           </div>
           {!isCollapsed && (
-            <div className="min-w-0">
-              <div className="truncate text-xs font-medium text-foreground">Auditor desk</div>
-              <div className="truncate text-[11px] text-muted-foreground">cmpdi.officer@cil.gov.in</div>
-            </div>
+            <>
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-xs font-medium text-foreground">
+                  {user.display_name || user.username}
+                </div>
+                <div className="truncate text-[11px] text-muted-foreground">
+                  {user.readonly ? "Read-only access" : "Full access"}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={onSignOut}
+                aria-label="Sign out"
+                title="Sign out"
+                className="shrink-0 rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <LogOut className="h-3.5 w-3.5" />
+              </button>
+            </>
           )}
         </div>
       </div>

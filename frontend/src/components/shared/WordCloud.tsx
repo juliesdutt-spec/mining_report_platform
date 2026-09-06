@@ -1,21 +1,52 @@
 import React from "react";
 import { Skeleton } from "@/components/ui/skeleton";
-import { reportWordCloudUrl } from "@/services/api";
+import { fetchFile } from "@/services/api";
 import { cn } from "@/lib/utils";
 
 /**
  * Renders GET /reports/{id}/wordcloud.
  *
- * The backend builds the PNG from the report's stored text and returns 400/404
- * when there is nothing to render. Both are treated as "unavailable" — no
- * placeholder graphic stands in for a cloud that does not exist.
+ * The image is fetched rather than set as a bare <img src>. That endpoint now
+ * requires a signed-in account, and a browser cannot attach an Authorization
+ * header to an <img> - it would simply be refused. Fetching the bytes and
+ * showing them through an object URL keeps the token in a header instead of
+ * putting it in a URL that ends up in logs.
+ *
+ * The backend returns 400/404 when there is nothing to render. Both are treated
+ * as "unavailable" - no placeholder graphic stands in for a cloud that does not
+ * exist.
  */
 export function WordCloud({ reportId, className }: { reportId: number; className?: string }) {
   const [state, setState] = React.useState<"loading" | "ready" | "unavailable">("loading");
+  const [src, setSrc] = React.useState<string | null>(null);
 
-  // Reset whenever the report changes, so the previous image is not shown.
   React.useEffect(() => {
+    let cancelled = false;
+    let revoke: (() => void) | null = null;
+
     setState("loading");
+    setSrc(null);
+
+    fetchFile(`/reports/${reportId}/wordcloud`)
+      .then((file) => {
+        if (cancelled) {
+          // The report changed while this was in flight; releasing the blob
+          // here avoids leaking one per switch.
+          file.revoke();
+          return;
+        }
+        revoke = file.revoke;
+        setSrc(file.url);
+        setState("ready");
+      })
+      .catch(() => {
+        if (!cancelled) setState("unavailable");
+      });
+
+    return () => {
+      cancelled = true;
+      revoke?.();
+    };
   }, [reportId]);
 
   return (
@@ -28,14 +59,13 @@ export function WordCloud({ reportId, className }: { reportId: number; className
         </p>
       )}
 
-      <img
-        key={reportId}
-        src={reportWordCloudUrl(reportId)}
-        alt={`Word frequency cloud generated from the text of report ${reportId}`}
-        onLoad={() => setState("ready")}
-        onError={() => setState("unavailable")}
-        className={cn("w-full rounded-md", state === "ready" ? "block" : "hidden")}
-      />
+      {state === "ready" && src && (
+        <img
+          src={src}
+          alt={`Word frequency cloud generated from the text of report ${reportId}`}
+          className="w-full rounded-md"
+        />
+      )}
     </div>
   );
 }

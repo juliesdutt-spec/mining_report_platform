@@ -3,6 +3,7 @@
 // Every response shape below is derived from backend/api.py — do not change one
 // without checking the corresponding endpoint.
 import { BUILT_IN_API_URL, savedApiUrl } from '@/lib/settings';
+import { clearToken, getToken, setToken, SessionUser } from '@/lib/session';
 
 /**
  * Where to send requests, resolved per call.
@@ -32,6 +33,31 @@ function unreachableMessage(base: string): string {
     : `Cannot reach the DataForge backend at ${base}. It may be starting up, or offline - retry in a moment. You can point the app elsewhere in Settings.`;
 }
 
+/**
+ * Add the session token to a request's headers.
+ *
+ * Kept separate from apiFetch because the file-fetching helpers below need the
+ * same header: a browser cannot attach one to an <img src> or a download link,
+ * which is why those now go through fetch instead of a bare URL.
+ */
+function withAuth(existing?: HeadersInit): Headers {
+  const headers = new Headers(existing);
+  const token = getToken();
+  if (token) headers.set('Authorization', `Bearer ${token}`);
+  return headers;
+}
+
+/**
+ * A 401 means the session is over - expired, or the account was removed.
+ *
+ * Clearing it here rather than at each call site is what makes the app fall
+ * back to the sign-in screen instead of showing a signed-in shell over an API
+ * that refuses everything.
+ */
+function handleUnauthorized(status: number): void {
+  if (status === 401 && getToken()) clearToken();
+}
+
 /** Raised for any non-2xx response or transport failure. */
 export class ApiError extends Error {
   readonly status?: number;
@@ -56,7 +82,11 @@ export async function apiFetch<T>(
 
   let res: Response;
   try {
-    res = await fetch(`${apiBaseUrl()}${path}`, { ...init, signal: controller.signal });
+    res = await fetch(`${apiBaseUrl()}${path}`, {
+      ...init,
+      headers: withAuth(init?.headers),
+      signal: controller.signal,
+    });
   } catch (err) {
     if (err instanceof DOMException && err.name === 'AbortError') {
       throw new ApiError('The backend took too long to respond. Is it still processing?');
@@ -67,6 +97,7 @@ export async function apiFetch<T>(
   }
 
   if (!res.ok) {
+    handleUnauthorized(res.status);
     // FastAPI reports errors as { detail: string }.
     let detail = `${res.status} ${res.statusText}`;
     try {
@@ -264,7 +295,7 @@ export function reportWordCloudUrl(reportId: number): string {
  * POST /reports/generate — composes a dossier PDF across all completed reports.
  * Returned as a URL so the browser downloads it directly.
  */
-export function dossierUrl(options: {
+export function dossierPath(options: {
   title: string;
   period: string;
   execSummary: boolean;
@@ -283,7 +314,116 @@ export function dossierUrl(options: {
     source_references: String(options.sourceReferences),
     format: options.format ?? 'pdf',
   });
-  return `${apiBaseUrl()}/reports/generate?${params.toString()}`;
+  return `/reports/generate?${params.toString()}`;
+}
+
+/* ------------------------------------------------------------------ auth */
+
+export interface LoginResult {
+  access_token: string;
+  token_type: string;
+  user: SessionUser;
+}
+
+/** Exchange credentials for a session. Stores the token on success. */
+export async function login(username: string, password: string): Promise<SessionUser> {
+  const result = await apiFetch<LoginResult>('/auth/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, password }),
+  });
+  setToken(result.access_token);
+  return result.user;
+}
+
+/** Who the stored token belongs to, or null if it is no longer valid. */
+export async function fetchCurrentUser(): Promise<SessionUser | null> {
+  if (!getToken()) return null;
+  try {
+    return await apiFetch<SessionUser>('/auth/me');
+  } catch {
+    // apiFetch has already cleared the token on a 401; a transport failure
+    // should not sign someone out, but it cannot confirm them either.
+    return null;
+  }
+}
+
+export interface DemoCredentials {
+  enabled: boolean;
+  username?: string;
+  password?: string;
+}
+
+/** The published demo login, shown on the sign-in page. */
+export async function fetchDemoCredentials(): Promise<DemoCredentials> {
+  try {
+    return await apiFetch<DemoCredentials>('/auth/demo');
+  } catch {
+    return { enabled: false };
+  }
+}
+
+/* --------------------------------------------------- authenticated files */
+
+export interface FetchedFile {
+  /** An object URL, valid until revoke() is called. */
+  url: string;
+  filename: string;
+  revoke: () => void;
+}
+
+/**
+ * Fetch a file the browser would otherwise load by URL alone.
+ *
+ * <img src>, <object data> and <a download> cannot carry an Authorization
+ * header, so every one of them would now be refused. Fetching the bytes here
+ * and handing back an object URL keeps the token in a header where it belongs,
+ * rather than putting it in a URL that ends up in logs and Referer headers.
+ */
+export async function fetchFile(path: string): Promise<FetchedFile> {
+  const res = await fetch(`${apiBaseUrl()}${path}`, { headers: withAuth() });
+  if (!res.ok) {
+    handleUnauthorized(res.status);
+    throw new ApiError(`${res.status} ${res.statusText}`, res.status);
+  }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  return { url, filename: filenameFrom(res.headers), revoke: () => URL.revokeObjectURL(url) };
+}
+
+/** Fetch a file and hand it to the browser as a download. */
+export async function saveFile(path: string, fallbackName: string): Promise<void> {
+  const file = await fetchFile(path);
+  const anchor = document.createElement('a');
+  anchor.href = file.url;
+  anchor.download = file.filename || fallbackName;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  // Revoking immediately can cancel the download in some browsers; the next
+  // tick is after the click has been handled.
+  setTimeout(file.revoke, 0);
+}
+
+/**
+ * The server's filename for a download.
+ *
+ * The header is built per RFC 6266, so the real name is in filename* as
+ * percent-encoded UTF-8 and the quoted filename is a reduced ASCII fallback.
+ * Prefer the former; fall back rather than throw on anything unexpected.
+ */
+function filenameFrom(headers: Headers): string {
+  const header = headers.get('content-disposition') ?? '';
+  const encoded = /filename\*=UTF-8''([^;]+)/i.exec(header);
+  if (encoded) {
+    try {
+      return decodeURIComponent(encoded[1]);
+    } catch {
+      /* Malformed encoding - fall through to the ASCII form. */
+    }
+  }
+  const quoted = /filename="([^"]*)"/i.exec(header);
+  return quoted ? quoted[1] : '';
 }
 
 export { apiBaseUrl };
