@@ -70,10 +70,21 @@ export function ReportStudioPage() {
         ? "FY 2024-25 Q1"
         : "FY 2024-25 Q2";
 
+  // The template chooses what the dossier is called. It selected nothing
+  // before: all four options produced a document titled identically, so the
+  // control claimed four statutory document types and delivered one.
+  const TEMPLATE_TITLES: Record<string, string> = {
+    executive_summary: "Executive Production Summary",
+    statutory_audit: "Statutory DGMS Safety Audit",
+    parliamentary: "Parliamentary Inquiry Dossier",
+    geological_reserve: "Geological Exploration Assessment",
+  };
+  const dossierTitle = TEMPLATE_TITLES[reportType] ?? "Consolidated Mining Report Dossier";
+
   // Both exports compose the same dossier from the same sections; only the
   // container differs, so the two files cannot disagree about the corpus.
   const dossierOptions = {
-    title: "Consolidated Mining Report Dossier",
+    title: dossierTitle,
     period: periodLabel,
     execSummary: selectedSections.execSummary,
     productionOverview: selectedSections.productionOverview,
@@ -156,6 +167,13 @@ export function ReportStudioPage() {
                   <SelectItem value="fy2024_25_q2">FY 2024-25 Q2</SelectItem>
                 </SelectContent>
               </Select>
+              {/* Uploaded reports rarely carry a parseable date - report_date
+                  is null on most extractions - so this cannot select which
+                  documents are included, and the dossier says so itself. */}
+              <p className="text-xs text-muted-foreground">
+                Printed on the dossier as its filing period. It does not filter
+                which documents are included — every indexed report is.
+              </p>
             </div>
 
             <div className="space-y-2.5">

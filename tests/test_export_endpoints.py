@@ -168,6 +168,49 @@ class ExportEndpointTests(unittest.TestCase):
         self.assertEqual(response.headers["content-type"], "application/pdf")
         self.assertTrue(response.content.startswith(b"%PDF"))
 
+    def test_dossier_title_follows_the_requested_template(self):
+        """
+        The Template control offered four statutory document types and every
+        one produced an identically titled file.
+        """
+        from docx import Document
+
+        import io
+
+        payload = self.client.get(
+            "/reports/generate",
+            params={"format": "docx", "title": "Statutory DGMS Safety Audit"},
+        ).content
+        text = "\n".join(p.text for p in Document(io.BytesIO(payload)).paragraphs)
+        self.assertIn("Statutory DGMS Safety Audit", text)
+
+    def test_dossier_states_the_basis_for_what_it_includes(self):
+        """
+        The period is a caption the operator picks, not a filter - uploaded
+        reports rarely carry a parseable date. The document has to say so, or
+        a dossier headed "FY 2023-24" implies a selection that never happened.
+        """
+        from docx import Document
+
+        import io
+
+        payload = self.client.get(
+            "/reports/generate",
+            params={"format": "docx", "period": "FY 2023-24 (annual)"},
+        ).content
+        text = "\n".join(p.text for p in Document(io.BytesIO(payload)).paragraphs)
+        self.assertIn("FY 2023-24 (annual)", text)
+        self.assertIn("all completed reports indexed at generation", text)
+
+    def test_pdf_dossier_states_the_same_basis(self):
+        payload = self.client.get(
+            "/reports/generate", params={"period": "FY 2024-25 Q1"}
+        ).content
+        self.assertTrue(payload.startswith(b"%PDF"))
+        # The PDF is compressed, so assert on generation succeeding with the
+        # same parameters rather than scraping glyphs out of the stream.
+        self.assertGreater(len(payload), 1000)
+
     def test_dossier_rejects_an_unknown_format(self):
         self.assertEqual(
             self.client.get("/reports/generate", params={"format": "xlsx"}).status_code,

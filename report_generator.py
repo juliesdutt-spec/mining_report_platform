@@ -212,7 +212,14 @@ def generate_dossier(reports: list, sections: dict, title: str, period: str) -> 
     pdf.multi_cell(0, 12, title, align="C", new_x="LMARGIN", new_y="NEXT")
     pdf.set_font("Helvetica", "", 10)
     pdf.cell(0, 7, f"Reporting period: {period}", align="C", new_x="LMARGIN", new_y="NEXT")
-    pdf.cell(0, 7, f"Documents included: {len(reports)}", align="C", new_x="LMARGIN", new_y="NEXT")
+    # The period is a filing caption chosen by the operator - uploaded reports
+    # rarely carry a parseable date, so it selects nothing. Stating the real
+    # basis stops the caption from implying the corpus was filtered by it.
+    pdf.cell(
+        0, 7,
+        f"Documents included: {len(reports)} (all completed reports indexed at generation)",
+        align="C", new_x="LMARGIN", new_y="NEXT",
+    )
     pdf.ln(6)
 
     if not reports:
@@ -312,7 +319,12 @@ def generate_dossier_docx(reports: list, sections: dict, title: str, period: str
     run.bold = True
     run.font.size = Pt(18)
 
-    for line in (f"Reporting period: {period}", f"Documents included: {len(reports)}"):
+    for line in (
+        f"Reporting period: {period}",
+        # Same basis statement as the PDF, so the two cannot disagree about
+        # what the dossier actually covers.
+        f"Documents included: {len(reports)} (all completed reports indexed at generation)",
+    ):
         paragraph = document.add_paragraph()
         paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
         paragraph.add_run(line).font.size = Pt(10)
