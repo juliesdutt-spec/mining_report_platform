@@ -15,7 +15,94 @@ except ImportError:
     FPDF_AVAILABLE = False
 
 
-class MiningReportPDF(FPDF):
+# Text that a PDF must carry comes out of uploaded documents and out of a
+# language model, so it is not ASCII and cannot be assumed to be. fpdf2's
+# built-in fonts - Helvetica among them - encode latin-1 only, and raise on
+# anything outside it. An em dash or a curly quote is enough, and both appear
+# constantly in generated summaries; so does the rupee sign in Indian mining
+# figures. Every one of those crashed the download with a 500.
+#
+# DejaVu covers all of them and ships inside matplotlib, which is already a
+# dependency here for word clouds - so this needs no font file in the
+# repository and no new package. Registration is attempted once; if it fails
+# for any reason the document still renders, in Helvetica, with unsupported
+# characters replaced rather than raising.
+UNICODE_FAMILY = "DejaVu"
+_UNICODE_FONT_READY = None  # None = not yet attempted
+
+
+def _register_unicode_font(pdf) -> bool:
+    """Attach DejaVu to this document, reporting whether it is usable."""
+    global _UNICODE_FONT_READY
+    if _UNICODE_FONT_READY is False:
+        return False
+
+    try:
+        import matplotlib
+
+        ttf = os.path.join(matplotlib.get_data_path(), "fonts", "ttf")
+        faces = {
+            "": "DejaVuSans.ttf",
+            "B": "DejaVuSans-Bold.ttf",
+            "I": "DejaVuSans-Oblique.ttf",
+            "BI": "DejaVuSans-BoldOblique.ttf",
+        }
+        for style, filename in faces.items():
+            path = os.path.join(ttf, filename)
+            if not os.path.exists(path):
+                raise FileNotFoundError(path)
+            pdf.add_font(UNICODE_FAMILY, style, path)
+    except Exception as exc:
+        if _UNICODE_FONT_READY is None:
+            print(f"Unicode PDF font unavailable ({exc}); falling back to Helvetica.")
+        _UNICODE_FONT_READY = False
+        return False
+
+    _UNICODE_FONT_READY = True
+    return True
+
+
+def _latin1_safe(text) -> str:
+    """
+    Make text renderable by a latin-1 core font.
+
+    Only used when DejaVu could not be registered. Replacing a character is a
+    visible loss; raising would lose the whole document.
+    """
+    return str(text).encode("latin-1", "replace").decode("latin-1")
+
+
+class _UnicodePDF(FPDF):
+    """
+    An FPDF that renders text instead of raising on it.
+
+    Two seams, so the rest of this module keeps asking for "Helvetica" and does
+    not need to know which font is actually available:
+
+    set_font redirects the built-in latin-1 families to DejaVu when it loaded.
+    normalize_text runs on every string fpdf2 writes, and is where a document
+    that had to fall back replaces unsupported characters - a visible loss on
+    one character, rather than a 500 that loses the whole download.
+    """
+
+    _CORE_FAMILIES = {"helvetica", "arial", "times", "courier"}
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._unicode_ok = _register_unicode_font(self)
+
+    def set_font(self, family=None, style="", size=0):
+        if self._unicode_ok and family and family.lower() in self._CORE_FAMILIES:
+            family = UNICODE_FAMILY
+        return super().set_font(family, style, size)
+
+    def normalize_text(self, text):
+        if self._unicode_ok:
+            return super().normalize_text(text)
+        return super().normalize_text(_latin1_safe(text))
+
+
+class MiningReportPDF(_UnicodePDF):
     """Custom PDF class for mining reports"""
     
     def header(self):
