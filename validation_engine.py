@@ -15,12 +15,20 @@ Four kinds of finding, all computed from stored reports:
 import re
 from typing import Any, Dict, List, Optional
 
-# Fields compared across reports about the same mine.
+# Fields compared across reports about the same mine, and whether the value is
+# expected to change between reporting periods.
+#
+# Production and reserves do change: a mine that extracted 45,000 t in Q1 and
+# 52,000 t in Q2 is not contradicting itself, and reporting that as a conflict
+# is a false alarm on the most ordinary pair of documents a corpus can hold.
+# What a mine produces and how it is worked do not vary by quarter, so those
+# stay comparable across periods - a report calling a mine coal and another
+# calling it iron ore disagree whenever they were written.
 COMPARABLE_FIELDS = [
-    ("quantity_extracted", "Quantity extracted", "high"),
-    ("reserve_estimate", "Reserve estimate", "high"),
-    ("extraction_method", "Extraction method", "medium"),
-    ("mineral_type", "Mineral type", "medium"),
+    ("quantity_extracted", "Quantity extracted", "high", True),
+    ("reserve_estimate", "Reserve estimate", "high", True),
+    ("extraction_method", "Extraction method", "medium", False),
+    ("mineral_type", "Mineral type", "medium", False),
 ]
 
 # Fields a completed extraction is expected to populate.
@@ -38,11 +46,50 @@ def _norm(value: Optional[str]) -> str:
     return re.sub(r"\s+", " ", str(value)).strip().casefold()
 
 
+# Period labels that sit in front of the figure they describe. Extracted values
+# arrive as free text, so "Q1 2026: 45,000 t" is an ordinary shape - and the
+# first number in it is the 1 of "Q1", not the quantity. Two such values were
+# compared as 1 against 1 and agreed, so the real disagreement between 45,000
+# and 46,000 was never reported.
+_PERIOD_LABEL = re.compile(
+    r"""(?ix)
+    \b(?:
+        q[1-4]                              # Q1, Q4
+      | (?:fy|ay)\s*[-/]?\s*\d{2,4}         # FY2026, FY 25-26
+      | h[12]                               # H1, H2
+      | (?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*
+    )
+    \s*[-/]?\s*
+    (?:                                     # an optional year, or year range
+        \d{4}\s*[-/]\s*\d{2,4}(?![\d,])     # 2025-26, but not "2025 - 46,000"
+      | \d{2,4}(?![\d,])
+    )?
+    """,
+)
+
+
 def _numeric(value: Optional[str]) -> Optional[float]:
-    """First number in a string, so '52.50 MT' and '52.5 MT' are not a conflict."""
+    """
+    The quantity a value states, ignoring any period label in front of it.
+
+    '52.50 MT' and '52.5 MT' are the same figure; 'Q1 2026: 45,000 t' is 45,000
+    rather than 1. Period labels are stripped rather than guessed at by size -
+    a rule like "take the largest number" would read a reserve stated as
+    "500 MT over 2026-2030" as 2030.
+    """
     if not value:
         return None
-    match = re.search(r"[-+]?\d[\d,]*\.?\d*", str(value))
+
+    text = str(value)
+    without_period = _PERIOD_LABEL.sub(" ", text)
+    if without_period != text:
+        # A period label was present. What remains is the figure it described -
+        # and if nothing remains, the value stated a period and no quantity.
+        if not re.search(r"\d", without_period):
+            return None
+        text = without_period
+
+    match = re.search(r"[-+]?\d[\d,]*\.?\d*", text)
     if not match:
         return None
     try:
@@ -80,6 +127,75 @@ def _field_of(report: Any, field: str) -> Optional[str]:
     return str(value) if value else None
 
 
+# Reporting periods, as they appear in extracted text: "2026-03-01", "Q1 2026",
+# "March 2026", "FY2026", a bare year.
+_ISO_DATE = re.compile(r"\b((?:19|20)\d{2})[-/](\d{1,2})")
+_QUARTER = re.compile(r"(?i)\bQ([1-4])\b")
+_YEAR = re.compile(r"\b((?:19|20)\d{2})\b")
+_MONTHS = {
+    "jan": 1, "feb": 2, "mar": 3, "apr": 4, "may": 5, "jun": 6,
+    "jul": 7, "aug": 8, "sep": 9, "oct": 10, "nov": 11, "dec": 12,
+}
+_MONTH_NAME = re.compile(r"(?i)\b(" + "|".join(_MONTHS) + r")[a-z]*\b")
+
+
+def _period_of(report: Any) -> Optional[tuple]:
+    """
+    The reporting period as (year, quarter), with quarter None when unknown.
+
+    Returns None when no period can be read at all, which is the common case
+    for a poor extraction - and the reason a missing period never suppresses a
+    comparison below.
+    """
+    raw = _field_of(report, "report_date")
+    if not raw:
+        return None
+    text = str(raw)
+
+    iso = _ISO_DATE.search(text)
+    if iso:
+        month = int(iso.group(2))
+        if 1 <= month <= 12:
+            return (int(iso.group(1)), (month - 1) // 3 + 1)
+
+    year_match = _YEAR.search(text)
+    year = int(year_match.group(1)) if year_match else None
+    if year is None:
+        return None
+
+    quarter = _QUARTER.search(text)
+    if quarter:
+        return (year, int(quarter.group(1)))
+
+    month_name = _MONTH_NAME.search(text)
+    if month_name:
+        month = _MONTHS[month_name.group(1).lower()[:3]]
+        return (year, (month - 1) // 3 + 1)
+
+    return (year, None)
+
+
+def _periods_differ(a: Any, b: Any) -> bool:
+    """
+    True only when both reports state a period and those periods disagree.
+
+    Deliberately one-directional: an unknown period is not evidence that two
+    documents describe different periods, and suppressing a comparison on a
+    guess would hide the conflicts this engine exists to find. Coarser beats
+    wrong - "2026" against "Q1 2026" agrees on everything both of them state.
+    """
+    period_a, period_b = _period_of(a), _period_of(b)
+    if period_a is None or period_b is None:
+        return False
+    if period_a[0] != period_b[0]:
+        return True
+    return (
+        period_a[1] is not None
+        and period_b[1] is not None
+        and period_a[1] != period_b[1]
+    )
+
+
 def _mine_key(report: Any) -> Optional[str]:
     """Group reports by the mine they describe; fall back to location."""
     return _norm(_field_of(report, "mine_name")) or _norm(_field_of(report, "location")) or None
@@ -92,6 +208,28 @@ def _source(report: Any, field: str) -> Dict[str, Any]:
         "documentName": report.filename,
         "value": _field_of(report, field),
     }
+
+
+def _comparable_pair(group_a: List[Any], group_b: List[Any], period_sensitive: bool):
+    """
+    Two documents stating different values that can fairly be compared.
+
+    Picking one representative per value and testing only those would decide a
+    whole position on whichever document happened to come first: a genuine
+    same-quarter disagreement would be dropped because the two documents chosen
+    to stand for it were from different quarters. So when the period matters,
+    look for a pair that actually shares one.
+
+    Returns (None, None) when no such pair exists.
+    """
+    if not period_sensitive:
+        return group_a[0], group_b[0]
+
+    for a in group_a:
+        for b in group_b:
+            if not _periods_differ(a, b):
+                return a, b
+    return None, None
 
 
 def detect_discrepancies(reports: List[Any]) -> List[Dict[str, Any]]:
@@ -116,7 +254,7 @@ def detect_discrepancies(reports: List[Any]) -> List[Dict[str, Any]]:
             continue
         ordered = sorted(group, key=lambda r: r.id)
 
-        for field, label, severity in COMPARABLE_FIELDS:
+        for field, label, severity, period_sensitive in COMPARABLE_FIELDS:
             # Cluster reports by the value they state, so a field is compared
             # once per distinct value rather than once per document pair. Ten
             # copies of the same figure are one position, not forty-five
@@ -130,12 +268,18 @@ def detect_discrepancies(reports: List[Any]) -> List[Dict[str, Any]]:
             if len(clusters) < 2:
                 continue
 
-            representatives = [reports[0] for reports in clusters.values()]
-            representatives.sort(key=lambda r: r.id)
+            # One position per distinct value, ordered so findings are stable.
+            positions = sorted(clusters.values(), key=lambda group: group[0].id)
 
-            for i in range(len(representatives)):
-                for j in range(i + 1, len(representatives)):
-                    a, b = representatives[i], representatives[j]
+            for i in range(len(positions)):
+                for j in range(i + 1, len(positions)):
+                    a, b = _comparable_pair(positions[i], positions[j], period_sensitive)
+                    if a is None:
+                        # Every document stating one value covers a different
+                        # period from every document stating the other. Different
+                        # quarters reporting different production is the expected
+                        # case, not a contradiction.
+                        continue
                     if not _values_conflict(_field_of(a, field), _field_of(b, field)):
                         continue
 
