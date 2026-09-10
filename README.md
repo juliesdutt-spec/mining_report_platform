@@ -275,6 +275,51 @@ needs no migration step. The database starts empty: re-upload your PDFs.
 
 ---
 
+## 🔎 Deploying the frontend, and search visibility
+
+The frontend is a static bundle. Beyond `VITE_API_URL` it takes three
+optional variables, all read at **build** time — changing one in the host's
+panel needs a redeploy to take effect.
+
+| Variable | Why |
+|---|---|
+| `VITE_API_URL` | The backend's URL. Without it the app calls `http://localhost:8000`, which exists for nobody but you. |
+| `VITE_SITE_URL` | The site's own canonical origin, e.g. `https://dataforge.example.com`. Drives the canonical tag, the share-card URL and `sitemap.xml`. Unset, those are **skipped rather than guessed** — a canonical pointing at the wrong host de-indexes the right one. On Vercel, `VERCEL_URL` is used as a fallback so previews still get correct tags. |
+| `VITE_GSC_VERIFICATION` | The token from Google Search Console's *HTML tag* method — the `content="…"` value only, not the whole tag. |
+
+`robots.txt` and `sitemap.xml` are generated into the bundle at build time by
+`frontend/plugins/seo.ts`; neither is a checked-in file, so neither can drift
+from the domain actually deployed. Preview deployments are emitted `noindex`
+with a disallow-all `robots.txt`, so they never compete with production for
+the same query.
+
+### Why the sitemap has one URL
+
+That is not an oversight. Navigation is hash-based (`#/documents`,
+`#/analytics`), and a crawler discards everything from the `#` onward, so
+those are not separate URLs to Google. Every one of them sits behind the
+sign-in wall besides — a crawler only ever reaches the sign-in screen. `/` is
+the only address that exists here, and a sitemap listing routes that return
+the same login page would be padding.
+
+The share card (`og-card.png`) matters more than the sitemap for this kind of
+project: it is what appears when the link is pasted into Slack, WhatsApp or
+LinkedIn, which is how a demo actually travels.
+
+### Verifying with Google Search Console
+
+Either method works:
+
+- **HTML tag** — set `VITE_GSC_VERIFICATION` to the token and redeploy.
+- **HTML file** — drop the `google….html` file Google gives you into
+  `frontend/public/`. Anything in that directory is served from the site root.
+
+Then submit `https://your-domain/sitemap.xml` as the sitemap. Expect Search
+Console to report one page discovered, and to describe the site as requiring
+sign-in. Both are correct.
+
+---
+
 ## 📖 API Endpoints
 
 | Method | Endpoint | Description |
