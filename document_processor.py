@@ -20,6 +20,46 @@ except (ImportError, OSError):
     print("[WARN] pytesseract not available. OCR for scanned PDFs will be limited.")
 
 
+# Which languages OCR should look for, as tesseract language codes joined by
+# "+". A scanned Hindi page read as English does not fail - it returns
+# confident nonsense, Devanagari guessed at through a Latin model, which then
+# flows into extraction and answers as if it were text. English stays first
+# so mixed CMPDI documents, which are the norm, keep their current behaviour.
+#
+# Each language needs its traineddata installed on the host
+# (tesseract-ocr-hin for Hindi); a code with no traineddata makes tesseract
+# fail outright, so an unavailable one is dropped rather than passed on.
+OCR_LANGUAGES = os.getenv("OCR_LANGUAGES", "eng+hin")
+_ocr_langs_checked = None
+
+
+def _available_ocr_languages() -> str:
+    """OCR_LANGUAGES narrowed to what this host can actually read."""
+    global _ocr_langs_checked
+    if _ocr_langs_checked is not None:
+        return _ocr_langs_checked
+
+    wanted = [c for c in OCR_LANGUAGES.split("+") if c.strip()]
+    try:
+        installed = set(pytesseract.get_languages(config=""))
+    except Exception:
+        # No binary, or a version without get_languages. Ask for English only:
+        # it is the one language a tesseract install is almost certain to have.
+        _ocr_langs_checked = "eng"
+        return _ocr_langs_checked
+
+    usable = [c for c in wanted if c in installed]
+    missing = [c for c in wanted if c not in installed]
+    if missing:
+        print(
+            f"[WARN] OCR language data missing for {'+'.join(missing)}; "
+            f"scanned pages in those languages will not read correctly. "
+            f"Install tesseract-ocr-{missing[0]} to fix."
+        )
+    _ocr_langs_checked = "+".join(usable) or "eng"
+    return _ocr_langs_checked
+
+
 def extract_text_from_pdf(pdf_bytes: bytes, filename: str = "") -> str:
     """
     Extract text from a PDF file.
@@ -83,8 +123,9 @@ def _ocr_pdf(pdf_bytes: bytes) -> str:
         try:
             from pdf2image import convert_from_bytes
             images = convert_from_bytes(pdf_bytes, dpi=200)
+            lang = _available_ocr_languages()
             for img in images:
-                page_text = pytesseract.image_to_string(img)
+                page_text = pytesseract.image_to_string(img, lang=lang)
                 text_parts.append(page_text)
         except ImportError:
             # Direct image OCR not available without pdf2image

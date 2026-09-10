@@ -24,6 +24,73 @@ except ImportError:
     MATPLOTLIB_AVAILABLE = False
 
 
+# Indic vowel signs, viramas and nuktas are Unicode categories Mn/Mc, and `\w`
+# matches neither - it is letters, digits and underscore only. So a scrub of
+# `[^\w\s]` deletes every matra in the text: "रिपोर्ट उत्पादन कोयला" comes out
+# as "र प र ट उत प दन क यल", words shattered into bare consonants. Nothing
+# raises; the topics list just comes back empty or meaningless.
+#
+# Telugu is listed alongside Devanagari because it is the next script asked
+# for, and leaving it out would reintroduce exactly this bug.
+_COMBINING_MARKS = (
+    "\u0300-\u036F"                                        # generic diacritics
+    "\u0900-\u0903\u093A-\u094F\u0951-\u0957\u0962-\u0963"  # Devanagari
+    "\u0C00-\u0C04\u0C3E-\u0C56\u0C62-\u0C63"              # Telugu
+)
+
+# A word is a letter followed by letters, digits or combining marks. Anchoring
+# on a letter keeps bare numerals out without a separate strip pass.
+_WORD_RE = re.compile(rf"[^\W\d_][\w{_COMBINING_MARKS}]*")
+
+# WordCloud tokenises the text again itself, with its own default of
+# `\w[\w']+` - which drops matras exactly as our old pattern did, shattering
+# "कोयला" into "क" and "यल" in the rendered image even though the topic list
+# beside it was correct. It has to be given the same Unicode-aware pattern.
+_WORDCLOUD_REGEXP = rf"[^\W\d_][\w'{_COMBINING_MARKS}]+"
+_NON_WORD_RE = re.compile(rf"[^\w\s{_COMBINING_MARKS}]")
+
+# Devanagari occupies U+0900-U+097F; the presence of any of it decides which
+# font the cloud is drawn with.
+_DEVANAGARI_RE = re.compile(r"[\u0900-\u097F]")
+
+_FONT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "fonts")
+_DEVANAGARI_FONT = os.path.join(_FONT_DIR, "NotoSansDevanagari-Regular.ttf")
+
+
+def _font_for(text: str):
+    """
+    The font to draw this cloud with, or None to keep the library default.
+
+    Only Hindi text switches font. Noto Sans Devanagari covers Latin too, so a
+    mixed English/Hindi document renders in one face; an English-only document
+    is left looking exactly as it did.
+    """
+    if _DEVANAGARI_RE.search(text or "") and os.path.exists(_DEVANAGARI_FONT):
+        return _DEVANAGARI_FONT
+    return None
+
+
+def _stopwords() -> set:
+    """Every stopword, in one place - the filters and the cloud must agree."""
+    return MINING_STOPWORDS | HINDI_STOPWORDS
+
+
+def _tokenise(text: str) -> list:
+    """Words of three characters or more, in any script."""
+    return [w for w in _WORD_RE.findall(_preprocess_text(text).lower()) if len(w) >= 3]
+
+
+# The Hindi function words that would otherwise dominate every cloud, the way
+# "the" and "of" do in English.
+HINDI_STOPWORDS = {
+    "का", "के", "की", "को", "में", "से", "है", "हैं", "था", "थे", "थी",
+    "और", "या", "पर", "यह", "वह", "इस", "उस", "एक", "तथा", "कि", "तो",
+    "ही", "भी", "ने", "हुआ", "हुई", "हुए", "गया", "गई", "गए", "किया",
+    "करने", "करना", "लिए", "द्वारा", "साथ", "अपने", "सभी", "कुछ", "जो",
+    "जब", "तक", "नहीं", "रहा", "रही", "रहे", "होता", "होती", "होने",
+    "बाद", "आदि", "अन्य", "इसके", "उनके", "वाले", "वाली", "गयी",
+}
+
 # Mining-specific stopwords
 MINING_STOPWORDS = {
     "the", "a", "an", "and", "or", "but", "in", "on", "at", "to", "for",
@@ -65,12 +132,14 @@ def generate_word_cloud(text: str, output_path: str = None) -> str:
         
         # Generate word cloud
         wc = WordCloud(
+            font_path=_font_for(text),
+            regexp=_WORDCLOUD_REGEXP,
             width=800,
             height=400,
             background_color="white",
             max_words=100,
             colormap="viridis",
-            stopwords=MINING_STOPWORDS,
+            stopwords=_stopwords(),
             min_font_size=10,
             max_font_size=80,
             prefer_horizontal=0.7,
@@ -114,12 +183,14 @@ def generate_word_cloud_bytes(text: str) -> bytes:
             return None
         
         wc = WordCloud(
+            font_path=_font_for(text),
+            regexp=_WORDCLOUD_REGEXP,
             width=800,
             height=400,
             background_color="white",
             max_words=100,
             colormap="viridis",
-            stopwords=MINING_STOPWORDS,
+            stopwords=_stopwords(),
             min_font_size=10,
             max_font_size=80,
             prefer_horizontal=0.7,
@@ -158,11 +229,8 @@ def extract_topics(text: str, top_n: int = 10) -> list:
     if not text:
         return []
     
-    clean_text = _preprocess_text(text)
-    words = re.findall(r"\b[a-zA-Z]{3,}\b", clean_text.lower())
-    
-    # Filter stopwords
-    filtered_words = [w for w in words if w not in MINING_STOPWORDS and len(w) >= 3]
+    words = _tokenise(text)
+    filtered_words = [w for w in words if w not in _stopwords()]
     
     # Get frequency distribution
     word_freq = Counter(filtered_words)
@@ -178,9 +246,8 @@ def get_topic_distribution(text: str, top_n: int = 8) -> dict:
     if not text:
         return {}
     
-    clean_text = _preprocess_text(text)
-    words = re.findall(r"\b[a-zA-Z]{3,}\b", clean_text.lower())
-    filtered_words = [w for w in words if w not in MINING_STOPWORDS and len(w) >= 3]
+    words = _tokenise(text)
+    filtered_words = [w for w in words if w not in _stopwords()]
     
     word_freq = Counter(filtered_words)
     return dict(word_freq.most_common(top_n))
@@ -191,8 +258,8 @@ def _preprocess_text(text: str) -> str:
     if not text:
         return ""
     
-    # Remove special characters but keep spaces
-    text = re.sub(r"[^\w\s]", " ", text)
+    # Keep combining marks: stripping them dismembers every Indic word.
+    text = _NON_WORD_RE.sub(" ", text)
     
     # Remove numbers
     text = re.sub(r"\b\d+\b", "", text)
