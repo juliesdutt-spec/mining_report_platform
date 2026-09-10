@@ -17,6 +17,7 @@ import { NavigationTab, OrganisationFilter } from "@/types";
 import { organisationsIn, useCorpus } from "@/lib/corpus";
 import { cn } from "@/lib/utils";
 import { SessionUser } from "@/lib/session";
+import { Wordmark, WordmarkGlyph } from "@/components/brand/Wordmark";
 import { Separator } from "@/components/ui/separator";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
@@ -56,8 +57,11 @@ const NAV_ITEMS: NavItem[] = [
 /** Up to two initials from a display name, falling back to the username. */
 function initialsOf(user: SessionUser): string {
   const source = (user.display_name || user.username || "?").trim();
-  const words = source.split(/\s+/).filter(Boolean);
-  if (words.length >= 2) return (words[0][0] + words[1][0]).slice(0, 2);
+  // Only words that begin with a letter or digit are names. A parenthetical
+  // qualifier counted as one, so "Demo (read-only)" drew the avatar as "D(".
+  const words = source.split(/\s+/).filter((word) => /^[\p{L}\p{N}]/u.test(word));
+  if (words.length >= 2) return words[0][0] + words[1][0];
+  if (words.length === 1) return words[0].slice(0, 2);
   return source.slice(0, 2);
 }
 
@@ -97,14 +101,13 @@ export function Sidebar({
     >
       {/* Organisation identity */}
       <div className="flex h-14 items-center gap-2.5 border-b border-border px-3">
-        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary font-mono text-sm font-semibold text-primary-foreground">
-          DF
-        </div>
-        {!isCollapsed && (
+        {isCollapsed ? (
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border">
+            <WordmarkGlyph />
+          </div>
+        ) : (
           <div className="min-w-0 flex-1">
-            <div className="truncate text-sm font-semibold tracking-tight text-foreground">
-              DataForge
-            </div>
+            <Wordmark size="sm" />
             <div className="truncate text-[11px] text-muted-foreground">CMPDI · Coal India</div>
           </div>
         )}

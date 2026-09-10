@@ -3,6 +3,22 @@
 @tailwind utilities;
 
 /*
+  The wordmark face. Self-hosted and subset to the eight glyphs "Dataforge"
+  draws, which is 1.1 kB — small enough that shipping it beats a round trip to
+  a font CDN. A logo that falls back to Inter is not the logo: Inter's
+  double-storey 'a' and 'g' draw a different mark. `swap` over `block` so a
+  failed load costs a flash rather than invisible text.
+*/
+@font-face {
+  font-family: "Poppins";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("/fonts/poppins-600-wordmark.woff2") format("woff2");
+  unicode-range: U+44, U+61, U+65-67, U+6F, U+72, U+74;
+}
+
+/*
   DataForge design tokens.
   Light-first, institutional palette. Blue (#1D4ED8) drives navigation,
   primary actions, links and focus. Teal (#0F766E) is a sparing analytical
@@ -32,6 +48,9 @@
 
     --accent: 210 40% 96%;            /* neutral hover accent */
     --accent-foreground: 222 38% 15%;
+
+    /* Brand orange. The wordmark and nothing else — see Wordmark.tsx. */
+    --brand: 25 100% 55%;             /* #FF7A1A DataForge orange */
 
     /* Analytical accent — data emphasis only, used sparingly */
     --teal: 175 79% 26%;              /* #0F766E mineral teal */
@@ -78,6 +97,8 @@
 
     --accent: 217 33% 17%;
     --accent-foreground: 210 40% 96%;
+
+    --brand: 25 100% 62%;            /* lifted; #FF7A1A goes muddy on slate */
 
     --teal: 172 66% 45%;             /* teal-500 lifted */
     --teal-foreground: 222 47% 11%;

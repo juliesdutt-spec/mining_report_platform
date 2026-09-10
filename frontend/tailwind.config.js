@@ -13,6 +13,9 @@ export default {
         sans: ["Inter", "ui-sans-serif", "system-ui", "sans-serif"],
         mono: ["Geist Mono", "ui-monospace", "SFMono-Regular", "monospace"],
         serif: ["Charter", "Georgia", "Cambria", "serif"],
+        // Geometric sans, wordmark only. Inter's double-storey 'a' and 'g'
+        // do not draw the DataForge mark.
+        brand: ["Poppins", "Inter", "ui-sans-serif", "system-ui", "sans-serif"],
       },
       colors: {
         border: "hsl(var(--border))",
@@ -49,6 +52,8 @@ export default {
           DEFAULT: "hsl(var(--card))",
           foreground: "hsl(var(--card-foreground))",
         },
+        // Brand orange — the wordmark only, never UI chrome
+        brand: "hsl(var(--brand))",
         // Analytical accent — data emphasis only
         teal: {
           DEFAULT: "hsl(var(--teal))",
