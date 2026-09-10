@@ -284,14 +284,20 @@ panel needs a redeploy to take effect.
 | Variable | Why |
 |---|---|
 | `VITE_API_URL` | The backend's URL. Without it the app calls `http://localhost:8000`, which exists for nobody but you. |
-| `VITE_SITE_URL` | The site's own canonical origin, e.g. `https://dataforge.example.com`. Drives the canonical tag, the share-card URL and `sitemap.xml`. Unset, those are **skipped rather than guessed** — a canonical pointing at the wrong host de-indexes the right one. On Vercel, `VERCEL_URL` is used as a fallback so previews still get correct tags. |
+| `VITE_SITE_URL` | **Optional override.** The canonical origin is baked in as `https://getdataforge.online`, so a plain redeploy produces correct tags with no dashboard step. Set this only if the site moves. Preview deployments ignore both and speak as their own hostname. |
 | `VITE_GSC_VERIFICATION` | The token from Google Search Console's *HTML tag* method — the `content="…"` value only, not the whole tag. |
 
 `robots.txt` and `sitemap.xml` are generated into the bundle at build time by
 `frontend/plugins/seo.ts`; neither is a checked-in file, so neither can drift
 from the domain actually deployed. Preview deployments are emitted `noindex`
-with a disallow-all `robots.txt`, so they never compete with production for
-the same query.
+with a disallow-all `robots.txt`, and speak as their own hostname rather than
+the canonical one, so they never compete with production for the same query.
+
+Note that `VERCEL_URL` is the *per-deployment* hostname even in production, so
+it is deliberately **not** used to derive the production canonical — doing so
+would have every deploy claim a different canonical URL and split the ranking
+between them. It is used for previews, which have no canonical identity of
+their own.
 
 ### Why the sitemap has one URL
 
