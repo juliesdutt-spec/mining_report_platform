@@ -43,6 +43,9 @@ matplotlib==3.9.2
 
 # Report Generation
 fpdf2==2.7.9
+# Shapes Devanagari. Without it fpdf2 places vowel signs in logical order,
+# rendering "रिपोर्ट" as "रपिोर्ट" - silently, and only wrong to a reader of the script.
+uharfbuzz==0.56.1
 # Report Studio's DOCX export. Without it that endpoint returns 503 rather
 # than a file Word cannot open - see generate_dossier_docx.
 python-docx==1.1.2

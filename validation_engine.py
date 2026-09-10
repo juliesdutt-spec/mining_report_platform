@@ -80,8 +80,8 @@ def _numeric(value: Optional[str]) -> Optional[float]:
     if not value:
         return None
 
-    text = str(value)
-    without_period = _PERIOD_LABEL.sub(" ", text)
+    text = _fold_digits(str(value))
+    without_period = _PERIOD_LABEL_HI.sub(" ", _PERIOD_LABEL.sub(" ", text))
     if without_period != text:
         # A period label was present. What remains is the figure it described -
         # and if nothing remains, the value stated a period and no quantity.
@@ -129,6 +129,54 @@ def _field_of(report: Any, field: str) -> Optional[str]:
 
 # Reporting periods, as they appear in extracted text: "2026-03-01", "Q1 2026",
 # "March 2026", "FY2026", a bare year.
+# Devanagari digits are matched by \d and understood by int(), but not by a
+# pattern like (?:19|20)\d{2} - "२०२६" is a year and never looks like one.
+# Folding them to ASCII once lets every pattern below stay as it is.
+_DEVANAGARI_DIGITS = str.maketrans("०१२३४५६७८९", "0123456789")
+
+
+def _fold_digits(text: str) -> str:
+    return text.translate(_DEVANAGARI_DIGITS)
+
+
+# Hindi period vocabulary, kept as its own pattern rather than folded into the
+# English one, because \b is not usable in Devanagari: word boundaries are
+# defined by \w, matras are not \w, so \b fires *inside* "तिमाही" between
+# त and ि. These words are distinctive enough not to need the anchor.
+_HI_ORDINAL = (
+    "पहली|पहला|प्रथम|दूसरी|दूसरा|द्वितीय|"
+    "तीसरी|तीसरा|तृतीय|चौथी|चौथा|चतुर्थ"
+)
+_HI_MONTHS = {
+    "जनवरी": 1, "फरवरी": 2, "मार्च": 3, "अप्रैल": 4, "मई": 5, "जून": 6,
+    "जुलाई": 7, "अगस्त": 8, "सितंबर": 9, "सितम्बर": 9, "अक्टूबर": 10,
+    "नवंबर": 11, "नवम्बर": 11, "दिसंबर": 12, "दिसम्बर": 12,
+}
+_HI_PERIOD_WORD = (
+    rf"(?:{_HI_ORDINAL})\s*तिमाही"
+    r"|तिमाही\s*[1-4]?"
+    r"|(?:वित्त|वित्तीय)\s*वर्ष"
+    r"|छमाही|अर्धवार्षिक"
+    rf"|{'|'.join(_HI_MONTHS)}"
+)
+_PERIOD_LABEL_HI = re.compile(
+    rf"(?:{_HI_PERIOD_WORD})"
+    r"\s*[-/]?\s*"
+    r"(?:\d{4}\s*[-/]\s*\d{2,4}(?![\d,])|\d{2,4}(?![\d,]))?"
+)
+
+# "पहली तिमाही" / "तिमाही 2" -> the quarter number.
+_HI_QUARTER_ORDINAL = re.compile(rf"({_HI_ORDINAL})\s*तिमाही")
+_HI_QUARTER_NUMBER = re.compile(r"तिमाही\s*([1-4])")
+_HI_ORDINAL_VALUE = {
+    "पहली": 1, "पहला": 1, "प्रथम": 1,
+    "दूसरी": 2, "दूसरा": 2, "द्वितीय": 2,
+    "तीसरी": 3, "तीसरा": 3, "तृतीय": 3,
+    "चौथी": 4, "चौथा": 4, "चतुर्थ": 4,
+}
+_HI_MONTH_NAME = re.compile("(" + "|".join(_HI_MONTHS) + ")")
+
+
 _ISO_DATE = re.compile(r"\b((?:19|20)\d{2})[-/](\d{1,2})")
 _QUARTER = re.compile(r"(?i)\bQ([1-4])\b")
 _YEAR = re.compile(r"\b((?:19|20)\d{2})\b")
@@ -150,7 +198,7 @@ def _period_of(report: Any) -> Optional[tuple]:
     raw = _field_of(report, "report_date")
     if not raw:
         return None
-    text = str(raw)
+    text = _fold_digits(str(raw))
 
     iso = _ISO_DATE.search(text)
     if iso:
@@ -167,10 +215,22 @@ def _period_of(report: Any) -> Optional[tuple]:
     if quarter:
         return (year, int(quarter.group(1)))
 
+    hi_ordinal = _HI_QUARTER_ORDINAL.search(text)
+    if hi_ordinal:
+        return (year, _HI_ORDINAL_VALUE[hi_ordinal.group(1)])
+
+    hi_number = _HI_QUARTER_NUMBER.search(text)
+    if hi_number:
+        return (year, int(hi_number.group(1)))
+
     month_name = _MONTH_NAME.search(text)
     if month_name:
         month = _MONTHS[month_name.group(1).lower()[:3]]
         return (year, (month - 1) // 3 + 1)
+
+    hi_month = _HI_MONTH_NAME.search(text)
+    if hi_month:
+        return (year, (_HI_MONTHS[hi_month.group(1)] - 1) // 3 + 1)
 
     return (year, None)
 

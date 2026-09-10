@@ -6,6 +6,7 @@ Generates formatted PDF reports from extracted mining data.
 """
 import io
 import os
+import re
 from datetime import datetime
 
 try:
@@ -29,6 +30,39 @@ except ImportError:
 # characters replaced rather than raising.
 UNICODE_FAMILY = "DejaVu"
 _UNICODE_FONT_READY = None  # None = not yet attempted
+
+# DejaVu is broad but it is not universal: it carries no Devanagari at all, so
+# a Hindi report rendered with it loses every character of the mine name and
+# the summary. That failure is silent - fpdf2 warns and writes nothing, the
+# download still returns 200, and the document simply arrives with holes in
+# it, which is worse than the crash the DejaVu work replaced.
+#
+# Noto Sans Devanagari covers the script and ships in this repository under
+# the OFL. It is registered as a *fallback* rather than a second primary font,
+# so a document mixing English and Hindi - the normal case for CMPDI
+# reporting - renders correctly with no per-string script detection.
+_DEVANAGARI_RE = re.compile(r"[\u0900-\u097F]")
+
+
+def needs_shaping(*values) -> bool:
+    """
+    True when any of these strings contains Devanagari.
+
+    Shaping is switched on per document rather than globally for two reasons.
+    It roughly doubles render time, and it defeats alias_nb_pages: that works
+    by substituting the literal "{nb}" in the content stream, which the shaper
+    has already turned into glyph ids, so the placeholder survives into the
+    finished PDF. An English report therefore keeps both its speed and its
+    "Page 1/3" footer exactly as before, and only a Hindi document - which is
+    unreadable without shaping - trades the total away for correct text.
+    """
+    return any(_DEVANAGARI_RE.search(str(v)) for v in values if v)
+
+
+DEVANAGARI_FAMILY = "NotoDevanagari"
+_FONT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "fonts")
+_DEVANAGARI_FONT_READY = None
+_SHAPING_READY = None
 
 
 def _register_unicode_font(pdf) -> bool:
@@ -62,6 +96,63 @@ def _register_unicode_font(pdf) -> bool:
     return True
 
 
+def _register_devanagari_font(pdf) -> bool:
+    """Attach Noto Sans Devanagari, reporting whether it is usable."""
+    global _DEVANAGARI_FONT_READY
+    if _DEVANAGARI_FONT_READY is False:
+        return False
+
+    try:
+        for style, filename in {
+            "": "NotoSansDevanagari-Regular.ttf",
+            "B": "NotoSansDevanagari-Bold.ttf",
+        }.items():
+            path = os.path.join(_FONT_DIR, filename)
+            if not os.path.exists(path):
+                raise FileNotFoundError(path)
+            pdf.add_font(DEVANAGARI_FAMILY, style, path)
+    except Exception as exc:
+        if _DEVANAGARI_FONT_READY is None:
+            print(f"Devanagari PDF font unavailable ({exc}); Hindi text will not render.")
+        _DEVANAGARI_FONT_READY = False
+        return False
+
+    _DEVANAGARI_FONT_READY = True
+    return True
+
+
+def _enable_text_shaping(pdf) -> bool:
+    """
+    Turn on the shaping engine, without which Devanagari is quietly wrong.
+
+    Having the glyphs is not the same as placing them. Devanagari reorders at
+    render time: the i-matra in "रिपोर्ट" is stored after its consonant and
+    drawn before it, and "र" before a consonant becomes a reph drawn above the
+    next one. Mapping codepoints to glyphs in logical order - fpdf2's
+    behaviour with no shaping engine - renders those as "रपिोर्ट", which is
+    not a spelling variant but a different, unreadable string.
+
+    It is a silent failure in the worst way: it raises nothing, warns nothing,
+    and looks like plausible Devanagari to a reader who does not read
+    Devanagari. Hence uharfbuzz as a hard dependency rather than an extra.
+    """
+    global _SHAPING_READY
+    if _SHAPING_READY is False:
+        return False
+    try:
+        pdf.set_text_shaping(True)
+    except Exception as exc:
+        if _SHAPING_READY is None:
+            print(
+                f"Text shaping unavailable ({exc}); Devanagari will render with "
+                "misplaced vowel signs. Install uharfbuzz."
+            )
+        _SHAPING_READY = False
+        return False
+    _SHAPING_READY = True
+    return True
+
+
 def _latin1_safe(text) -> str:
     """
     Make text renderable by a latin-1 core font.
@@ -87,9 +178,17 @@ class _UnicodePDF(FPDF):
 
     _CORE_FAMILIES = {"helvetica", "arial", "times", "courier"}
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, shape_text: bool = False, **kwargs):
         super().__init__(*args, **kwargs)
+        self._shaping_on = False
         self._unicode_ok = _register_unicode_font(self)
+        if self._unicode_ok and _register_devanagari_font(self):
+            # exact_match=False so that italic Hindi falls back to the regular
+            # Devanagari face rather than to nothing: only two styles are
+            # registered, and a missing glyph is the failure being fixed here.
+            self.set_fallback_fonts([DEVANAGARI_FAMILY], exact_match=False)
+            if shape_text:
+                self._shaping_on = _enable_text_shaping(self)
 
     def set_font(self, family=None, style="", size=0):
         if self._unicode_ok and family and family.lower() in self._CORE_FAMILIES:
@@ -100,7 +199,6 @@ class _UnicodePDF(FPDF):
         if self._unicode_ok:
             return super().normalize_text(text)
         return super().normalize_text(_latin1_safe(text))
-
 
 class MiningReportPDF(_UnicodePDF):
     """Custom PDF class for mining reports"""
@@ -116,7 +214,12 @@ class MiningReportPDF(_UnicodePDF):
     def footer(self):
         self.set_y(-15)
         self.set_font("Helvetica", "I", 8)
-        self.cell(0, 10, f"Generated: {datetime.now().strftime('%d-%m-%Y %H:%M')} | Page {self.page_no()}/{{nb}}", align="C")
+        total = "" if self._shaping_on else "/{nb}"
+        self.cell(
+            0, 10,
+            f"Generated: {datetime.now().strftime('%d-%m-%Y %H:%M')} | Page {self.page_no()}{total}",
+            align="C",
+        )
     
     def section_title(self, title):
         self.set_font("Helvetica", "B", 11)
@@ -145,8 +248,9 @@ def generate_pdf_report(extracted_data: dict, filename: str = "mining_report.pdf
     if not FPDF_AVAILABLE:
         return _generate_text_report(extracted_data)
     
-    pdf = MiningReportPDF()
-    pdf.alias_nb_pages()
+    pdf = MiningReportPDF(shape_text=needs_shaping(*extracted_data.values()))
+    if not pdf._shaping_on:
+        pdf.alias_nb_pages()
     pdf.add_page()
     
     # Title
@@ -291,8 +395,22 @@ def generate_dossier(reports: list, sections: dict, title: str, period: str) -> 
     if not FPDF_AVAILABLE:
         return _generate_text_report({"summary": "PDF generation unavailable (fpdf2 not installed)."})
 
-    pdf = MiningReportPDF()
-    pdf.alias_nb_pages()
+    # Any Devanagari anywhere in the dossier - a single Hindi mine name is
+    # enough - decides shaping for the whole document.
+    dossier_text = [title, period]
+    for report in reports:
+        dossier_text.extend(
+            str(getattr(report, field, "") or "")
+            for field in (
+                "mine_name", "location", "mineral_type", "extraction_method",
+                "quantity_extracted", "reserve_estimate", "summary",
+                "company_name", "filename",
+            )
+        )
+
+    pdf = MiningReportPDF(shape_text=needs_shaping(*dossier_text))
+    if not pdf._shaping_on:
+        pdf.alias_nb_pages()
     pdf.add_page()
 
     pdf.set_font("Helvetica", "B", 16)

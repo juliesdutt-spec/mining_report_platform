@@ -1,0 +1,4 @@
+# Test-only dependencies. Kept out of requirements.txt so a production
+# install does not carry a PDF rasteriser it never uses.
+pytest
+pypdfium2
