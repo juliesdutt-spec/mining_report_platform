@@ -164,7 +164,9 @@ class TheFontCanActuallyDrawHindi(unittest.TestCase):
 
     def test_its_licence_ships_with_it(self):
         self.assertTrue(
-            os.path.exists(os.path.join(report_generator._FONT_DIR, "OFL.txt"))
+            os.path.exists(
+                os.path.join(report_generator._FONT_DIR, "OFL-NotoSansDevanagari.txt")
+            )
         )
 
     def test_the_font_covers_every_character_of_a_hindi_report(self):

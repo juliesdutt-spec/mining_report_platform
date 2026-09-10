@@ -31,38 +31,73 @@ except ImportError:
 UNICODE_FAMILY = "DejaVu"
 _UNICODE_FONT_READY = None  # None = not yet attempted
 
-# DejaVu is broad but it is not universal: it carries no Devanagari at all, so
-# a Hindi report rendered with it loses every character of the mine name and
-# the summary. That failure is silent - fpdf2 warns and writes nothing, the
-# download still returns 200, and the document simply arrives with holes in
-# it, which is worse than the crash the DejaVu work replaced.
+# DejaVu is broad but it is not universal: it carries no Devanagari and no
+# Telugu, so an Indian-language report rendered with it loses every character
+# of the mine name and the summary. That failure is silent - fpdf2 writes
+# nothing, the download still returns 200, and the document simply arrives
+# with holes in it, which is worse than the crash the DejaVu work replaced.
 #
-# Noto Sans Devanagari covers the script and ships in this repository under
-# the OFL. It is registered as a *fallback* rather than a second primary font,
-# so a document mixing English and Hindi - the normal case for CMPDI
-# reporting - renders correctly with no per-string script detection.
-_DEVANAGARI_RE = re.compile(r"[\u0900-\u097F]")
+# Noto covers both scripts and ships in this repository under the OFL. The
+# faces are registered as fpdf2 *fallbacks* rather than as second primary
+# fonts. fpdf2 resolves fallbacks per character, so one document mixing
+# English, Hindi and Telugu - which is what a CMPDI corpus spanning Jharkhand
+# and Telangana actually looks like - renders from all three faces with no
+# per-string script detection anywhere in this module.
+_FONT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "fonts")
+
+#: family name -> (regular, bold, the Unicode block it serves)
+INDIC_FACES = {
+    "NotoDevanagari": (
+        "NotoSansDevanagari-Regular.ttf",
+        "NotoSansDevanagari-Bold.ttf",
+        r"\u0900-\u097F",
+    ),
+    "NotoTelugu": (
+        "NotoSansTelugu-Regular.ttf",
+        "NotoSansTelugu-Bold.ttf",
+        r"\u0C00-\u0C7F",
+    ),
+}
+
+# Scripts that reorder at render time and are wrong, not merely ugly, without
+# a shaping engine.
+COMPLEX_SCRIPT_RE = re.compile("[" + "".join(block for _, _, block in INDIC_FACES.values()) + "]")
+
+_INDIC_FONTS_READY = None
+_SHAPING_READY = None
 
 
 def needs_shaping(*values) -> bool:
     """
-    True when any of these strings contains Devanagari.
+    True when any of these strings is in a script that must be shaped.
 
     Shaping is switched on per document rather than globally for two reasons.
     It roughly doubles render time, and it defeats alias_nb_pages: that works
     by substituting the literal "{nb}" in the content stream, which the shaper
     has already turned into glyph ids, so the placeholder survives into the
     finished PDF. An English report therefore keeps both its speed and its
-    "Page 1/3" footer exactly as before, and only a Hindi document - which is
+    "Page 1/3" footer exactly as before, and only an Indic document - which is
     unreadable without shaping - trades the total away for correct text.
     """
-    return any(_DEVANAGARI_RE.search(str(v)) for v in values if v)
+    return any(COMPLEX_SCRIPT_RE.search(str(v)) for v in values if v)
 
 
-DEVANAGARI_FAMILY = "NotoDevanagari"
-_FONT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "fonts")
-_DEVANAGARI_FONT_READY = None
-_SHAPING_READY = None
+def dominant_script(*values):
+    """
+    The Indic face this document should lead with, or None for Latin.
+
+    Whichever script contributes the most characters wins. A document holding
+    both Hindi and Telugu can only lead with one of them, and the other falls
+    back - correct, but it loses the spaces around it, so the majority script
+    is the one to keep whole.
+    """
+    text = " ".join(str(v) for v in values if v)
+    best, best_count = None, 0
+    for family, (_regular, _bold, block) in INDIC_FACES.items():
+        count = len(re.findall("[" + block + "]", text))
+        if count > best_count:
+            best, best_count = family, count
+    return best
 
 
 def _register_unicode_font(pdf) -> bool:
@@ -96,41 +131,51 @@ def _register_unicode_font(pdf) -> bool:
     return True
 
 
-def _register_devanagari_font(pdf) -> bool:
-    """Attach Noto Sans Devanagari, reporting whether it is usable."""
-    global _DEVANAGARI_FONT_READY
-    if _DEVANAGARI_FONT_READY is False:
-        return False
+def _register_indic_fonts(pdf) -> list:
+    """Attach every Indic face, returning the families that are usable."""
+    global _INDIC_FONTS_READY
+    if _INDIC_FONTS_READY is False:
+        return []
 
-    try:
-        for style, filename in {
-            "": "NotoSansDevanagari-Regular.ttf",
-            "B": "NotoSansDevanagari-Bold.ttf",
-        }.items():
-            path = os.path.join(_FONT_DIR, filename)
-            if not os.path.exists(path):
-                raise FileNotFoundError(path)
-            pdf.add_font(DEVANAGARI_FAMILY, style, path)
-    except Exception as exc:
-        if _DEVANAGARI_FONT_READY is None:
-            print(f"Devanagari PDF font unavailable ({exc}); Hindi text will not render.")
-        _DEVANAGARI_FONT_READY = False
-        return False
+    families = []
+    for family, (regular, bold, _block) in INDIC_FACES.items():
+        try:
+            # Noto ships no italic for these scripts, and neither does any
+            # free Devanagari or Telugu face worth using. The upright file is
+            # registered under the italic styles too: the footer and the
+            # disclaimer ask for italic, and an unstyled line is a far smaller
+            # loss than the "Undefined font" that would otherwise be raised
+            # the moment an Indic document leads with its own face.
+            for style, filename in (
+                ("", regular), ("B", bold), ("I", regular), ("BI", bold),
+            ):
+                path = os.path.join(_FONT_DIR, filename)
+                if not os.path.exists(path):
+                    raise FileNotFoundError(path)
+                pdf.add_font(family, style, path)
+        except Exception as exc:
+            # One missing face must not cost the others: a corpus of Hindi
+            # documents should still render if only the Telugu font is absent.
+            if _INDIC_FONTS_READY is None:
+                print(f"PDF font {family} unavailable ({exc}); that script will not render.")
+            continue
+        families.append(family)
 
-    _DEVANAGARI_FONT_READY = True
-    return True
+    _INDIC_FONTS_READY = bool(families)
+    return families
 
 
 def _enable_text_shaping(pdf) -> bool:
     """
     Turn on the shaping engine, without which Devanagari is quietly wrong.
 
-    Having the glyphs is not the same as placing them. Devanagari reorders at
-    render time: the i-matra in "रिपोर्ट" is stored after its consonant and
+    Having the glyphs is not the same as placing them. Indic scripts reorder
+    at render time: the i-matra in "रिपोर्ट" is stored after its consonant and
     drawn before it, and "र" before a consonant becomes a reph drawn above the
     next one. Mapping codepoints to glyphs in logical order - fpdf2's
     behaviour with no shaping engine - renders those as "रपिोर्ट", which is
-    not a spelling variant but a different, unreadable string.
+    not a spelling variant but a different, unreadable string. Telugu stacks
+    its consonant conjuncts below the base letter and is no more forgiving.
 
     It is a silent failure in the worst way: it raises nothing, warns nothing,
     and looks like plausible Devanagari to a reader who does not read
@@ -170,35 +215,62 @@ class _UnicodePDF(FPDF):
     Two seams, so the rest of this module keeps asking for "Helvetica" and does
     not need to know which font is actually available:
 
-    set_font redirects the built-in latin-1 families to DejaVu when it loaded.
-    normalize_text runs on every string fpdf2 writes, and is where a document
-    that had to fall back replaces unsupported characters - a visible loss on
-    one character, rather than a 500 that loses the whole download.
+    set_font redirects the built-in latin-1 families to whichever Unicode face
+    is serving as primary. normalize_text runs on every string fpdf2 writes,
+    and is where a document that had to fall back replaces unsupported
+    characters - a visible loss on one character, rather than a 500 that loses
+    the whole download.
+
+    Which face is primary depends on the document, and that is not cosmetic.
+    fpdf2 splits text into one fragment per font, and with the shaping engine
+    on it *drops the space* at a fragment boundary: with DejaVu primary and
+    Telugu as a fallback, "బొగ్గును ఉత్పత్తి" renders as one run-on word,
+    measurably narrower than the same string with the space deleted. Making
+    the document's own script primary keeps its text, its Latin and the
+    spaces between them in a single fragment, which is the only arrangement
+    where the space survives. DejaVu stays on as a fallback for the handful
+    of symbols Noto lacks (dagger, fractions, superscripts, some maths).
     """
 
     _CORE_FAMILIES = {"helvetica", "arial", "times", "courier"}
 
-    def __init__(self, *args, shape_text: bool = False, **kwargs):
+    def __init__(self, *args, shape_text: bool = False, script: str = None, **kwargs):
         super().__init__(*args, **kwargs)
         self._shaping_on = False
+        self._primary = UNICODE_FAMILY
         self._unicode_ok = _register_unicode_font(self)
-        if self._unicode_ok and _register_devanagari_font(self):
-            # exact_match=False so that italic Hindi falls back to the regular
-            # Devanagari face rather than to nothing: only two styles are
-            # registered, and a missing glyph is the failure being fixed here.
-            self.set_fallback_fonts([DEVANAGARI_FAMILY], exact_match=False)
-            if shape_text:
-                self._shaping_on = _enable_text_shaping(self)
+        if not self._unicode_ok:
+            return
+
+        families = _register_indic_fonts(self)
+        if not families:
+            return
+
+        # An Indic document leads with its own face; everything else keeps
+        # DejaVu, so English output is byte-for-byte what it was.
+        if script and script in families:
+            self._primary = script
+            fallbacks = [UNICODE_FAMILY] + [f for f in families if f != script]
+        else:
+            fallbacks = families
+
+        # exact_match=False so italic Indic text falls back to the regular
+        # face rather than to nothing: only two styles are registered per
+        # script, and a missing glyph is the failure being fixed here.
+        self.set_fallback_fonts(fallbacks, exact_match=False)
+        if shape_text:
+            self._shaping_on = _enable_text_shaping(self)
 
     def set_font(self, family=None, style="", size=0):
         if self._unicode_ok and family and family.lower() in self._CORE_FAMILIES:
-            family = UNICODE_FAMILY
+            family = self._primary
         return super().set_font(family, style, size)
 
     def normalize_text(self, text):
         if self._unicode_ok:
             return super().normalize_text(text)
         return super().normalize_text(_latin1_safe(text))
+
 
 class MiningReportPDF(_UnicodePDF):
     """Custom PDF class for mining reports"""
@@ -248,7 +320,10 @@ def generate_pdf_report(extracted_data: dict, filename: str = "mining_report.pdf
     if not FPDF_AVAILABLE:
         return _generate_text_report(extracted_data)
     
-    pdf = MiningReportPDF(shape_text=needs_shaping(*extracted_data.values()))
+    values = list(extracted_data.values())
+    pdf = MiningReportPDF(
+        shape_text=needs_shaping(*values), script=dominant_script(*values)
+    )
     if not pdf._shaping_on:
         pdf.alias_nb_pages()
     pdf.add_page()
@@ -408,7 +483,9 @@ def generate_dossier(reports: list, sections: dict, title: str, period: str) -> 
             )
         )
 
-    pdf = MiningReportPDF(shape_text=needs_shaping(*dossier_text))
+    pdf = MiningReportPDF(
+        shape_text=needs_shaping(*dossier_text), script=dominant_script(*dossier_text)
+    )
     if not pdf._shaping_on:
         pdf.alias_nb_pages()
     pdf.add_page()

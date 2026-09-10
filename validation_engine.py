@@ -81,7 +81,9 @@ def _numeric(value: Optional[str]) -> Optional[float]:
         return None
 
     text = _fold_digits(str(value))
-    without_period = _PERIOD_LABEL_HI.sub(" ", _PERIOD_LABEL.sub(" ", text))
+    without_period = text
+    for pattern in (_PERIOD_LABEL, _PERIOD_LABEL_HI, _PERIOD_LABEL_TE):
+        without_period = pattern.sub(" ", without_period)
     if without_period != text:
         # A period label was present. What remains is the figure it described -
         # and if nothing remains, the value stated a period and no quantity.
@@ -129,14 +131,17 @@ def _field_of(report: Any, field: str) -> Optional[str]:
 
 # Reporting periods, as they appear in extracted text: "2026-03-01", "Q1 2026",
 # "March 2026", "FY2026", a bare year.
-# Devanagari digits are matched by \d and understood by int(), but not by a
-# pattern like (?:19|20)\d{2} - "२०२६" is a year and never looks like one.
-# Folding them to ASCII once lets every pattern below stay as it is.
-_DEVANAGARI_DIGITS = str.maketrans("०१२३४५६७८९", "0123456789")
+# Indic digits are matched by \d and understood by int(), but not by a
+# pattern like (?:19|20)\d{2} - "२०२६" and "౨౦౨౬" are years and never look
+# like one. Folding them to ASCII once lets every pattern below stay as it is.
+_INDIC_DIGITS = str.maketrans(
+    "०१२३४५६७८९" "౦౧౨౩౪౫౬౭౮౯",
+    "0123456789" "0123456789",
+)
 
 
 def _fold_digits(text: str) -> str:
-    return text.translate(_DEVANAGARI_DIGITS)
+    return text.translate(_INDIC_DIGITS)
 
 
 # Hindi period vocabulary, kept as its own pattern rather than folded into the
@@ -175,6 +180,45 @@ _HI_ORDINAL_VALUE = {
     "चौथी": 4, "चौथा": 4, "चतुर्थ": 4,
 }
 _HI_MONTH_NAME = re.compile("(" + "|".join(_HI_MONTHS) + ")")
+
+
+# Telugu, same shape as the Hindi block above and for the same reason: \b is
+# defined by \w, which matches no combining mark, so it fires inside a word.
+_TE_ORDINAL = (
+    "మొదటి|మొదట|ప్రథమ|"
+    "రెండవ|రెండో|ద్వితీయ|"
+    "మూడవ|మూడో|తృతీయ|"
+    "నాల్గవ|నాలుగవ|నాల్గో|చతుర్థ"
+)
+_TE_MONTHS = {
+    "జనవరి": 1, "ఫిబ్రవరి": 2, "మార్చి": 3, "ఏప్రిల్": 4, "మే": 5, "జూన్": 6,
+    "జూలై": 7, "ఆగస్టు": 8, "సెప్టెంబర్": 9, "అక్టోబర్": 10,
+    "నవంబర్": 11, "డిసెంబర్": 12,
+}
+# Longest first, so "మార్చి" is not cut short by a shorter alternative.
+_TE_MONTH_ALT = "|".join(sorted(_TE_MONTHS, key=len, reverse=True))
+_TE_PERIOD_WORD = (
+    rf"(?:{_TE_ORDINAL})\s*త్రైమాసికం?"
+    r"|త్రైమాసికం?\s*[1-4]?"
+    r"|ఆర్థిక\s*సంవత్సరం"
+    r"|అర్ధ\s*సంవత్సరం|అర్ధవార్షిక"
+    rf"|{_TE_MONTH_ALT}"
+)
+_PERIOD_LABEL_TE = re.compile(
+    rf"(?:{_TE_PERIOD_WORD})"
+    r"\s*[-/]?\s*"
+    r"(?:\d{4}\s*[-/]\s*\d{2,4}(?![\d,])|\d{2,4}(?![\d,]))?"
+)
+
+_TE_QUARTER_ORDINAL = re.compile(rf"({_TE_ORDINAL})\s*త్రైమాసికం?")
+_TE_QUARTER_NUMBER = re.compile(r"త్రైమాసికం?\s*([1-4])")
+_TE_ORDINAL_VALUE = {
+    "మొదటి": 1, "మొదట": 1, "ప్రథమ": 1,
+    "రెండవ": 2, "రెండో": 2, "ద్వితీయ": 2,
+    "మూడవ": 3, "మూడో": 3, "తృతీయ": 3,
+    "నాల్గవ": 4, "నాలుగవ": 4, "నాల్గో": 4, "చతుర్థ": 4,
+}
+_TE_MONTH_NAME = re.compile("(" + _TE_MONTH_ALT + ")")
 
 
 _ISO_DATE = re.compile(r"\b((?:19|20)\d{2})[-/](\d{1,2})")
@@ -223,6 +267,14 @@ def _period_of(report: Any) -> Optional[tuple]:
     if hi_number:
         return (year, int(hi_number.group(1)))
 
+    te_ordinal = _TE_QUARTER_ORDINAL.search(text)
+    if te_ordinal:
+        return (year, _TE_ORDINAL_VALUE[te_ordinal.group(1)])
+
+    te_number = _TE_QUARTER_NUMBER.search(text)
+    if te_number:
+        return (year, int(te_number.group(1)))
+
     month_name = _MONTH_NAME.search(text)
     if month_name:
         month = _MONTHS[month_name.group(1).lower()[:3]]
@@ -231,6 +283,10 @@ def _period_of(report: Any) -> Optional[tuple]:
     hi_month = _HI_MONTH_NAME.search(text)
     if hi_month:
         return (year, (_HI_MONTHS[hi_month.group(1)] - 1) // 3 + 1)
+
+    te_month = _TE_MONTH_NAME.search(text)
+    if te_month:
+        return (year, (_TE_MONTHS[te_month.group(1)] - 1) // 3 + 1)
 
     return (year, None)
 
