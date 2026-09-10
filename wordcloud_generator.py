@@ -49,30 +49,45 @@ _WORD_RE = re.compile(rf"[^\W\d_][\w{_COMBINING_MARKS}]*")
 _WORDCLOUD_REGEXP = rf"[^\W\d_][\w'{_COMBINING_MARKS}]+"
 _NON_WORD_RE = re.compile(rf"[^\w\s{_COMBINING_MARKS}]")
 
-# Devanagari occupies U+0900-U+097F; the presence of any of it decides which
-# font the cloud is drawn with.
-_DEVANAGARI_RE = re.compile(r"[\u0900-\u097F]")
-
+# Which face each script needs. Unlike the PDF, which resolves fallbacks per
+# character, WordCloud takes a single font_path for the whole image - so a
+# document mixing Hindi and Telugu can only be drawn in one of them, and the
+# other would come out as empty boxes. The dominant script wins, and that is
+# a real limitation rather than a rounding error; it is called out in the
+# README.
 _FONT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "fonts")
-_DEVANAGARI_FONT = os.path.join(_FONT_DIR, "NotoSansDevanagari-Regular.ttf")
+_SCRIPT_FONTS = (
+    (re.compile(r"[\u0900-\u097F]"), "NotoSansDevanagari-Regular.ttf"),  # Devanagari
+    (re.compile(r"[\u0C00-\u0C7F]"), "NotoSansTelugu-Regular.ttf"),      # Telugu
+)
 
 
 def _font_for(text: str):
     """
     The font to draw this cloud with, or None to keep the library default.
 
-    Only Hindi text switches font. Noto Sans Devanagari covers Latin too, so a
-    mixed English/Hindi document renders in one face; an English-only document
-    is left looking exactly as it did.
+    Only Indic text switches font. Both Noto faces cover Latin as well, so a
+    mixed English/Hindi document renders in one face; an English-only
+    document is left looking exactly as it did.
     """
-    if _DEVANAGARI_RE.search(text or "") and os.path.exists(_DEVANAGARI_FONT):
-        return _DEVANAGARI_FONT
-    return None
+    if not text:
+        return None
+
+    best, best_count = None, 0
+    for pattern, filename in _SCRIPT_FONTS:
+        count = len(pattern.findall(text))
+        if count > best_count:
+            best, best_count = filename, count
+
+    if not best:
+        return None
+    path = os.path.join(_FONT_DIR, best)
+    return path if os.path.exists(path) else None
 
 
 def _stopwords() -> set:
     """Every stopword, in one place - the filters and the cloud must agree."""
-    return MINING_STOPWORDS | HINDI_STOPWORDS
+    return MINING_STOPWORDS | HINDI_STOPWORDS | TELUGU_STOPWORDS
 
 
 def _tokenise(text: str) -> list:
@@ -89,6 +104,16 @@ HINDI_STOPWORDS = {
     "करने", "करना", "लिए", "द्वारा", "साथ", "अपने", "सभी", "कुछ", "जो",
     "जब", "तक", "नहीं", "रहा", "रही", "रहे", "होता", "होती", "होने",
     "बाद", "आदि", "अन्य", "इसके", "उनके", "वाले", "वाली", "गयी",
+}
+
+# The Telugu function words that would otherwise dominate every cloud. Short
+# ones (ఈ, ఆ, కు, లో) are already dropped by the three-character floor.
+TELUGU_STOPWORDS = {
+    "మరియు", "లేదా", "కోసం", "ద్వారా", "ఉంది", "ఉన్నాయి", "ఉన్న", "చేసిన",
+    "చేయడం", "జరిగింది", "వారు", "అతను", "ఆమె", "ఇది", "అది", "ఇవి", "అవి",
+    "తర్వాత", "ముందు", "అన్ని", "కొన్ని", "ఎక్కువ", "వంటి", "కూడా",
+    "మాత్రమే", "ప్రకారం", "అయితే", "అలాగే", "గురించి", "వరకు", "నుండి",
+    "కాదు", "లేదు", "అందుకే", "వల్ల", "కంటే", "వంటివి",
 }
 
 # Mining-specific stopwords

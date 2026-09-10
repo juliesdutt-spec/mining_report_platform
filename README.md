@@ -275,55 +275,85 @@ needs no migration step. The database starts empty: re-upload your PDFs.
 
 ---
 
-## 🇮🇳 Hindi
+## 🇮🇳 Hindi and Telugu
 
-Hindi documents now survive the pipeline. Every failure fixed here was
+Documents in both scripts survive the pipeline. Every failure fixed here was
 **silent** - nothing raised, every endpoint returned 200, and the output
-looked plausible to anyone who does not read Devanagari:
+looked plausible to anyone who does not read the script:
 
 | What broke | What it looked like |
 |---|---|
-| The PDF font carried no Devanagari at all | Hindi simply absent from the report; the download still succeeded |
+| No Devanagari or Telugu in the PDF font | The text simply **absent** from the report; the download still succeeded |
 | No shaping engine, so glyphs landed in logical order | `रिपोर्ट` drawn as `रपिोर्ट` - a different, unreadable string |
 | `[^\w\s]` scrubbing deleted every combining mark | `रिपोर्ट उत्पादन` became `र प र ट उत प दन`; topics came back empty |
 | The word cloud re-tokenised with its own ASCII pattern | Whole words shattered into single consonants in the image |
 | `पहली तिमाही 2026: 45,000 टन` read as its year | The figure recorded as **2026** - the Hindi half of the defect fixed for `Q1 2026` in #5 |
-| OCR was never told the language | A scanned Hindi page read as English, returning confident nonsense |
+| `త్రైమాసికం 2 2026: 52,000 టన్నులు` read as its quarter | The figure recorded as **2** |
+| OCR was never told the language | A scanned page read as English, returning confident nonsense |
 
-A corpus mixing the two languages is the normal case for CMPDI, and is
-handled: `पहली तिमाही 2026` and `Q1 2026` are recognised as **the same
-reporting period**, so a Hindi report and an English one covering the same
-quarter are compared rather than silently excused as different periods.
-Devanagari numerals (`४५,०००`) are read as figures.
+A corpus mixing all three languages is the normal case for a body spanning
+Jharkhand and Telangana, and is handled: `Q1 2026`, `पहली तिमाही 2026` and
+`మొదటి త్రైమాసికం 2026` all resolve to **the same reporting period**, so
+reports covering one quarter are compared rather than silently excused as
+different periods. Devanagari (`४५,०००`) and Telugu (`౪౫,౦౦౦`) numerals are
+read as figures.
 
 ### What this needs
 
 - **`uharfbuzz`** is a hard dependency, not an extra. Without it fpdf2 places
-  vowel signs in logical order and Devanagari is quietly wrong.
-- **The font ships in `assets/fonts/`** - Noto Sans Devanagari, subset to
-  static Regular and Bold instances, under the OFL (`OFL.txt` beside it). It
-  is registered as a fpdf2 *fallback*, so a document mixing English and Hindi
-  renders correctly with no per-string script detection.
-- **`OCR_LANGUAGES`** defaults to `eng+hin`. Each language needs its
-  traineddata on the host (`tesseract-ocr-hin`); a code with no traineddata is
-  dropped with a warning rather than passed on, because it would fail the
-  whole OCR call.
+  vowel signs in logical order and both scripts are quietly wrong.
+- **The fonts ship in `assets/fonts/`** - Noto Sans Devanagari and Noto Sans
+  Telugu, subset to static Regular and Bold, each with its own OFL licence
+  beside it. They are registered as fpdf2 *fallbacks*, which resolve per
+  character, so one PDF can hold English, Hindi and Telugu at once with no
+  script detection anywhere in the rendering code.
+- **`OCR_LANGUAGES`** defaults to `eng+hin+tel`. Each needs its traineddata on
+  the host (`tesseract-ocr-hin`, `tesseract-ocr-tel`); a code with no
+  traineddata is dropped with a warning rather than passed on, because it
+  would fail the whole OCR call.
 
-### Two things to know
+### What to know before changing any of this
 
-Shaping is switched on **per document**, only when Devanagari is present. It
-roughly doubles render time, and it defeats fpdf2's `alias_nb_pages`, which
-substitutes a literal `{nb}` that the shaper has already turned into glyph
-ids. So an English report keeps both its speed and its `Page 1/3` footer
-exactly as before, and a Hindi report - unreadable without shaping - shows
-`Page 1` without the total. That is the trade, and it is the right way round.
+**A document leads with its own script.** The Noto face for the dominant
+script is the *primary* font; DejaVu drops to a fallback. That is not a
+preference. fpdf2 splits text into one fragment per font, and with the
+shaping engine on it **drops the space at a fragment boundary** — with
+DejaVu primary and Telugu merely a fallback, `బొగ్గును ఉత్పత్తి` rendered as
+one run-on word, measurably *narrower* than the same string with the space
+deleted. Nothing raised. Leading with the document's own face keeps its
+text, its Latin and the spaces between them in one fragment. DejaVu stays on
+for the handful of symbols Noto lacks (`†‡½¼²³µΩ≈≤≥±→←✓`).
 
-**Extraction itself is not yet validated for Hindi.** This work makes Hindi
-survive ingestion, comparison, rendering and export. Whether the language
-model reads mining fields as accurately out of a Hindi report as an English
-one is a separate question, and answering it needs a corpus of real Hindi
-documents to measure against. Do not assume the extraction quality carries
-over.
+**Shaping is switched on per document**, only when an Indic script is
+present. It roughly doubles render time, and it defeats fpdf2's
+`alias_nb_pages`, which substitutes a literal `{nb}` that the shaper has
+already turned into glyph ids. So an English report keeps both its speed and
+its `Page 1/3` footer exactly as before, and an Indic report — unreadable
+without shaping — shows `Page 1` without the total.
+
+**Indic reports are not italic.** No free Devanagari or Telugu face ships
+one, so the upright file is registered under the italic styles too. The
+footer and disclaimer simply render upright; the alternative was an
+`Undefined font` exception the moment a report led with an Indic face.
+
+**A minority script copies out imperfectly.** Everything *renders*
+correctly, whichever face serves it. But glyphs drawn from a fallback face
+carry an imperfect ToUnicode map, so selecting Hindi text out of a
+Telugu-led PDF can yield a stray character. Search and copy-paste are
+reliable for the leading script and for Latin.
+
+**A word cloud can only use one font.** Unlike the PDF, `WordCloud` takes a
+single `font_path` for the whole image, so a document mixing Hindi *and*
+Telugu is drawn in whichever script dominates and the other renders as empty
+boxes. Mixing either script with English is fine — both Noto faces cover
+Latin.
+
+**Extraction itself is not yet validated for either language.** This work
+makes them survive ingestion, comparison, rendering and export. Whether the
+language model reads mining fields as accurately out of a Hindi or Telugu
+report as an English one is a separate question, and answering it needs a
+corpus of real documents to measure against. Do not assume the extraction
+quality carries over.
 
 ---
 

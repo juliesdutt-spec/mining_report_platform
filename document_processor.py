@@ -27,9 +27,9 @@ except (ImportError, OSError):
 # so mixed CMPDI documents, which are the norm, keep their current behaviour.
 #
 # Each language needs its traineddata installed on the host
-# (tesseract-ocr-hin for Hindi); a code with no traineddata makes tesseract
+# (tesseract-ocr-hin, tesseract-ocr-tel); a code with no traineddata makes tesseract
 # fail outright, so an unavailable one is dropped rather than passed on.
-OCR_LANGUAGES = os.getenv("OCR_LANGUAGES", "eng+hin")
+OCR_LANGUAGES = os.getenv("OCR_LANGUAGES", "eng+hin+tel")
 _ocr_langs_checked = None
 
 
