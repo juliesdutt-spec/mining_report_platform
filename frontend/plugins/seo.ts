@@ -4,10 +4,9 @@ import type { Plugin } from "vite";
  * Build-time SEO output: canonical/Open Graph tags in the document head, plus
  * robots.txt and sitemap.xml written into the bundle.
  *
- * Everything absolute derives from one value, SITE_URL, because a canonical
- * tag, a share-card URL and a sitemap that disagree about the domain are worse
- * than none at all. When it is unset the absolute tags are skipped rather than
- * guessed — a canonical pointing at the wrong host de-indexes the right one.
+ * Everything absolute derives from one value, CANONICAL_SITE, because a
+ * canonical tag, a share-card URL and a sitemap that disagree about the domain
+ * are worse than none at all.
  *
  * The sitemap lists a single URL, and that is not an oversight. Navigation is
  * hash-based (`#/documents`), and a crawler discards everything from the `#`
@@ -21,23 +20,38 @@ const DESCRIPTION =
 
 const TITLE = "DataForge — CMPDI / CIL Mining Intelligence";
 
+/**
+ * Where this app lives. Baked in rather than left to an environment variable
+ * so a plain redeploy produces correct tags with no dashboard step — a
+ * canonical that silently depends on someone remembering to set a variable is
+ * a canonical that is missing. `VITE_SITE_URL` still overrides it if the site
+ * ever moves.
+ */
+const CANONICAL_SITE = "https://getdataforge.online";
+
 /** Trailing slashes make `${site}/path` produce a double slash. */
 function normalise(url: string): string {
   return url.replace(/\/+$/, "");
 }
 
 export function seo(): Plugin {
-  // Vercel exposes the deployment host, so a preview gets correct tags too
-  // without anyone setting anything.
-  const explicit = process.env.VITE_SITE_URL || process.env.SITE_URL;
-  const vercel = process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "";
-  const site = normalise(explicit || vercel || "");
-
   // Only the production deployment should be indexed. Two previews and a
   // production build competing for the same query is how a site ranks itself
   // down. Vercel also sends X-Robots-Tag on previews; this agrees with it.
   const env = process.env.VERCEL_ENV;
   const indexable = !env || env === "production";
+
+  const explicit = process.env.VITE_SITE_URL || process.env.SITE_URL;
+  const deployment = process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "";
+
+  // Production speaks as the canonical domain, never as VERCEL_URL. That
+  // variable holds the *per-deployment* hostname even in production, so
+  // deriving the canonical from it would have every deploy claim a different
+  // one and split the ranking between them. A preview has no canonical
+  // identity of its own, so there it is exactly the right value to use.
+  const site = normalise(
+    explicit || (indexable ? CANONICAL_SITE : deployment || CANONICAL_SITE)
+  );
 
   const verification = process.env.VITE_GSC_VERIFICATION || "";
 
@@ -57,9 +71,9 @@ export function seo(): Plugin {
         `<meta name="twitter:description" content="${DESCRIPTION}">`,
       ];
 
-      if (site) {
-        // Crawlers will not resolve a relative og:image, so the card only
-        // appears once the site URL is known.
+      {
+        // Crawlers will not resolve a relative og:image, so every one of
+        // these has to carry the origin.
         tags.push(
           `<link rel="canonical" href="${site}/">`,
           `<meta property="og:url" content="${site}/">`,
@@ -81,7 +95,7 @@ export function seo(): Plugin {
 
     generateBundle() {
       const robots = indexable
-        ? ["User-agent: *", "Allow: /", ...(site ? ["", `Sitemap: ${site}/sitemap.xml`] : [])]
+        ? ["User-agent: *", "Allow: /", "", `Sitemap: ${site}/sitemap.xml`]
         : ["# Preview deployment — not the canonical site.", "User-agent: *", "Disallow: /"];
 
       this.emitFile({
@@ -90,9 +104,9 @@ export function seo(): Plugin {
         source: robots.join("\n") + "\n",
       });
 
-      // Without a host there is no valid <loc>, and an invalid sitemap is a
-      // Search Console error rather than a no-op.
-      if (site && indexable) {
+      // A preview has no business advertising a sitemap: it would name the
+      // canonical domain's pages from a host that should not be indexed.
+      if (indexable) {
         this.emitFile({
           type: "asset",
           fileName: "sitemap.xml",
