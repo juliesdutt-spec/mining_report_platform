@@ -307,13 +307,27 @@ export function ValidationPage({ selectedOrganisation }: ValidationPageProps) {
 
               {activeItem.status !== "pending" ? (
                 <div className="flex flex-wrap items-start justify-between gap-3">
-                  <p className="flex items-start gap-2 text-sm text-success">
-                    <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
-                    <span>
-                      {activeItem.resolutionNote ||
-                        `Marked ${activeItem.status} by the auditor.`}
-                    </span>
-                  </p>
+                  <div className="min-w-0 flex-1">
+                    <p className="flex items-start gap-2 text-sm text-success">
+                      <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+                      <span>
+                        {activeItem.resolutionNote || `Marked ${activeItem.status}.`}
+                      </span>
+                    </p>
+                    {/* A decision with no decision-maker is not an audit trail.
+                        Findings resolved before this was recorded have no
+                        author, and say so rather than implying one. */}
+                    <p className="mt-1 pl-6 text-xs text-muted-foreground">
+                      {activeItem.resolvedBy
+                        ? `${activeItem.status === "flagged" ? "Flagged" : "Resolved"} by ${activeItem.resolvedBy}`
+                        : "Recorded before decisions were attributed"}
+                      {activeItem.resolvedAt &&
+                        ` · ${new Date(activeItem.resolvedAt).toLocaleString("en-IN", {
+                          dateStyle: "medium",
+                          timeStyle: "short",
+                        })}`}
+                    </p>
+                  </div>
                   <Button
                     variant="ghost"
                     size="sm"

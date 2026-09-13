@@ -87,6 +87,26 @@ Return a JSON object with these fields (use null if not found):
 TEXT:
 {text[:8000]}
 
+LANGUAGE
+The source document may be in English, Hindi or Telugu, and a national corpus
+holds all three. Two rules, because these fields are read by different things:
+
+1. Fields that are MATCHED ACROSS DOCUMENTS must be in English, translating
+   where the source is not: mineral_type, extraction_method, mine_name,
+   location, district, state, company_name, minerals_mentioned,
+   locations_mentioned. Use the standard English or transliterated form
+   ("coal" for कोयला and బొగ్గు; "Singareni" for సింగరేణి; "opencast" for
+   खुली खदान). These decide whether two reports describe the same mine and
+   whether they agree, so a mineral named in two languages would otherwise
+   read as two different minerals and raise a false conflict.
+
+2. Fields a PERSON READS stay in the language of the source document:
+   summary, key_findings, environmental_notes. A Telugu report should
+   summarise in Telugu; translating it loses the filer's own words.
+
+Numbers keep their digits as written, including Devanagari and Telugu
+numerals, and units stay as the document gives them.
+
 Respond ONLY with valid JSON. No markdown, no explanation."""
 
     try:

@@ -251,6 +251,10 @@ tesseract binary is absent.
 | `ALLOWED_ORIGINS` | Defaults to `*`. Set it to your frontend's URL so upload and delete are not open to every site. |
 | `ALLOWED_ORIGIN_REGEX` | Optional. Preview deployments get a generated hostname per build, which no fixed list can name — this admits that family without opening the API to everyone. |
 | `AUTH_USERS` | Without it the only account is the read-only demo, and nobody can upload. |
+| `QUERY_RATE_LIMIT` | Questions per account per window (default 60). `/query` reaches a language model on every call, and the demo password is public, so without a ceiling anyone who opens the site can spend the API budget. |
+| `QUERY_RATE_LIMIT_DEMO` | The read-only account's tighter ceiling (default 15). |
+| `QUERY_RATE_WINDOW_SECONDS` | The window those counts apply to (default 3600). |
+| `OCR_LANGUAGES` | Tesseract codes joined by `+` (default `eng+hin+tel`). Each needs its traineddata installed. |
 | `AUTH_SECRET` | Signs session tokens. No default, on purpose: a key in source would let anyone mint a token for any user. Unset, one is generated per process, so a restart signs everyone out. |
 
 `postgres://` URLs are rewritten to `postgresql://` automatically, so the URL
@@ -272,6 +276,37 @@ your host hands you works unedited.
 
 Tables are created on startup, so the first boot against an empty Postgres
 needs no migration step. The database starts empty: re-upload your PDFs.
+
+---
+
+## 📏 What is measured, and what is not
+
+**Extraction accuracy is the number everything else rests on.** Every figure
+reported and every conflict raised comes out of that one step, and for most
+of this project's life it had no measurement attached in any language.
+
+`evaluation/` now scores it against documents a person has read by hand:
+
+    python -m evaluation.score
+    python -m evaluation.score --language hi
+
+Each labelled field lands in one of four buckets — **exact**, **equivalent**
+(wording the platform already treats as the same), **missing**, **wrong** —
+and missing is reported apart from wrong on purpose: a blank field is a gap
+someone can see and fill, while a confidently wrong value is what silently
+corrupts a conflict report.
+
+Equivalence reuses `validation_engine`'s own comparison, so the score
+describes the system that ships rather than a stricter one it never applies.
+
+**The scorer refuses to run against mock extraction.** Without a provider key
+the extractor returns stand-ins, and scoring those would produce a fabricated
+accuracy figure — worse than having none. See `evaluation/README.md` for how
+to add documents.
+
+The repository ships one labelled English document. **A real figure needs
+real reports**, and until they are added the honest statement remains that
+accuracy is unmeasured.
 
 ---
 
