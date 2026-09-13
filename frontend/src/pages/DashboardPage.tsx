@@ -158,6 +158,15 @@ export function DashboardPage({
               </TableRow>
             </TableHeader>
             <TableBody>
+              {/* Headers over nothing is what a new account sees first, and it
+                  reads as broken rather than as empty. */}
+              {filteredDocs.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={5} className="py-10 text-center text-sm text-muted-foreground">
+                    No documents indexed yet. Upload a report to begin.
+                  </TableCell>
+                </TableRow>
+              )}
               {filteredDocs.map((doc) => (
                 <TableRow key={doc.id}>
                   <TableCell>
@@ -198,6 +207,14 @@ export function DashboardPage({
               </TableRow>
             </TableHeader>
             <TableBody>
+              {openAlerts.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={6} className="py-10 text-center text-sm text-muted-foreground">
+                    No open discrepancies. Findings appear here when two reports
+                    disagree about the same mine.
+                  </TableCell>
+                </TableRow>
+              )}
               {openAlerts.map((alert) => (
                 <TableRow key={alert.id}>
                   <TableCell>

@@ -15,6 +15,7 @@ import { Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { PageHeader } from "@/components/shared/PageHeader";
+import { LoadFailure } from "@/components/shared/LoadFailure";
 import { Section } from "@/components/shared/Section";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Stat, StatGroup } from "@/components/shared/StatGroup";
@@ -23,7 +24,7 @@ import { OrganisationFilter } from "@/types";
 import { downloadCsv, toCsv } from "@/lib/csv";
 
 import { fetchPlatformStats } from "@/services/analytics";
-import { BackendStats } from "@/services/api";
+import { BackendStats , ApiError } from "@/services/api";
 
 interface AnalyticsPageProps {
   selectedOrganisation: OrganisationFilter;
@@ -36,11 +37,22 @@ export function AnalyticsPage({ selectedOrganisation }: AnalyticsPageProps) {
   // Everything on this page comes from GET /stats — real aggregates over the
   // indexed reports. The backend has no production time series or per-
   // subsidiary targets, so no such chart is shown.
+  // A failed request used to set stats to null, which rendered exactly like
+  // an empty corpus - so an unreachable backend read as "no data".
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
+
   useEffect(() => {
     fetchPlatformStats(selectedOrganisation)
-      .then(setStats)
-      .catch(() => setStats(null));
-  }, [selectedOrganisation]);
+      .then((result) => {
+        setStats(result);
+        setLoadError(null);
+      })
+      .catch((err) => {
+        setStats(null);
+        setLoadError(err instanceof ApiError ? err.message : null);
+      });
+  }, [selectedOrganisation, reloadKey]);
 
   const palette = [colors.primary, colors.teal, colors["muted-foreground"]];
 
@@ -88,6 +100,14 @@ export function AnalyticsPage({ selectedOrganisation }: AnalyticsPageProps) {
 
   return (
     <div className="space-y-8">
+      {loadError !== null && (
+        <LoadFailure
+          message={loadError}
+          what="the analytics"
+          onRetry={() => setReloadKey((k) => k + 1)}
+        />
+      )}
+
       <PageHeader
         title="Analytics"
         description="Aggregates over the indexed report corpus, computed by the backend."

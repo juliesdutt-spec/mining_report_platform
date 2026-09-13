@@ -20,6 +20,8 @@ import {
 } from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PageHeader } from "@/components/shared/PageHeader";
+import { LoadFailure } from "@/components/shared/LoadFailure";
+import { ApiError } from "@/services/api";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import { SourceCitation } from "@/components/shared/SourceCitation";
 import { cn } from "@/lib/utils";
@@ -76,12 +78,25 @@ export function DataExplorerPage({ onInspectEvidence, selectedOrganisation }: Da
   const [isLoading, setIsLoading] = useState(true);
 
   // Rows are the real indexed reports from GET /reports.
+  // Catching a failure into an empty array made an unreachable backend look
+  // exactly like a corpus with nothing in it, which points the reader at the
+  // wrong problem entirely.
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
+
   useEffect(() => {
+    setIsLoading(true);
     fetchDocuments()
-      .then(setDocuments)
-      .catch(() => setDocuments([]))
+      .then((docs) => {
+        setDocuments(docs);
+        setLoadError(null);
+      })
+      .catch((err) => {
+        setDocuments([]);
+        setLoadError(err instanceof ApiError ? err.message : "Could not load the indexed reports.");
+      })
       .finally(() => setIsLoading(false));
-  }, []);
+  }, [reloadKey]);
 
   const records = documents.map((doc) => ({
     id: String(doc.id),
@@ -163,6 +178,14 @@ export function DataExplorerPage({ onInspectEvidence, selectedOrganisation }: Da
 
   return (
     <div className="space-y-6">
+      {loadError !== null && (
+        <LoadFailure
+          message={loadError}
+          what="the indexed reports"
+          onRetry={() => setReloadKey((k) => k + 1)}
+        />
+      )}
+
       <PageHeader
         title="Data Explorer"
         description="Extracted tabular records with line-level provenance. Every row resolves to a page in its source document."

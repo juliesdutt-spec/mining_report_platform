@@ -20,6 +20,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { PageHeader } from "@/components/shared/PageHeader";
+import { LoadFailure } from "@/components/shared/LoadFailure";
 import { FieldLabel } from "@/components/shared/Section";
 import { ApiError, dossierPath, saveFile } from "@/services/api";
 import { usePendingState } from "@/lib/usePendingState";
@@ -57,12 +58,25 @@ export function ReportStudioPage() {
   const [isLoading, setIsLoading] = useState(true);
 
   // The preview and the generated PDF read the same indexed reports.
+  // Catching a failure into an empty array made an unreachable backend look
+  // exactly like a corpus with nothing in it, which points the reader at the
+  // wrong problem entirely.
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
+
   useEffect(() => {
+    setIsLoading(true);
     fetchDocuments()
-      .then(setDocuments)
-      .catch(() => setDocuments([]))
+      .then((docs) => {
+        setDocuments(docs);
+        setLoadError(null);
+      })
+      .catch((err) => {
+        setDocuments([]);
+        setLoadError(err instanceof ApiError ? err.message : "Could not load the indexed reports.");
+      })
       .finally(() => setIsLoading(false));
-  }, []);
+  }, [reloadKey]);
 
   const periodLabel =
     reportingPeriod === "fy2023_24"
@@ -117,6 +131,14 @@ export function ReportStudioPage() {
 
   return (
     <div className="space-y-6">
+      {loadError !== null && (
+        <LoadFailure
+          message={loadError}
+          what="the indexed reports"
+          onRetry={() => setReloadKey((k) => k + 1)}
+        />
+      )}
+
       <PageHeader
         title="Report Studio"
         description="Compose statutory reports and parliamentary dossiers from indexed sources."
