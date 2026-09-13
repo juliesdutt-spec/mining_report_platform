@@ -243,6 +243,21 @@ for (const route of ROUTES) {
   }
 }
 
+// WCAG 1.4.10 puts the number at 320px: below that a reader has to scroll in
+// two directions to read one line, which is what the criterion exists to stop.
+// 390px is the phone people actually hold; 320px is the promise.
+const narrow = await browser.newContext({ viewport: { width: 320, height: 800 } });
+const tiny = await narrow.newPage();
+await signIn(tiny);
+for (const route of ROUTES) {
+  await tiny.goto(`${BASE}/#/${route}`, { waitUntil: "networkidle" });
+  await tiny.waitForTimeout(1100);
+  if (await tiny.evaluate(() =>
+    document.documentElement.scrollWidth > document.documentElement.clientWidth + 1)) {
+    add("layout", route, "horizontal scroll at 320px (WCAG 1.4.10 reflow)");
+  }
+}
+
 await browser.close();
 
 if (consoleErrors.size) {
