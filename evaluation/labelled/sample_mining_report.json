@@ -1,0 +1,13 @@
+{
+  "document": "sample_mining_report.pdf",
+  "language": "en",
+  "note": "Hand-read from the PDF. Only fields the document actually states are listed; a field absent here is not scored, because a missing label is not evidence of a wrong extraction.",
+  "expected": {
+    "mine_name": "Jharia Coal Mine",
+    "location": "Dhanbad, Jharkhand, India",
+    "state": "Jharkhand",
+    "district": "Dhanbad",
+    "company_name": "Bharat Coking Coal Limited (BCCL)",
+    "extraction_method": "Underground"
+  }
+}

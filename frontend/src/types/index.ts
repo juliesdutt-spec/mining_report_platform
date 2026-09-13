@@ -130,6 +130,8 @@ export interface ValidationItem {
   status: 'pending' | 'resolved' | 'flagged';
   resolutionNote?: string | null;
   resolvedAt?: string | null;
+  /** Who recorded the decision. Null for decisions made before this was kept. */
+  resolvedBy?: string | null;
   /** The organisation of the report the finding was raised against. */
   organisation?: Organisation;
 }

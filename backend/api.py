@@ -32,6 +32,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from database import init_db, get_db, MiningReport, QueryHistory, ValidationResolution, User
 from auth import create_access_token, decode_access_token, verify_password
 from auth_seed import DEMO_ENABLED, DEMO_PASSWORD, DEMO_USERNAME, seed_users
+from rate_limit import limit_for, query_limiter
 from document_processor import (
     extract_text_from_pdf, extract_pages_from_pdf, chunk_text, get_pdf_metadata
 )
@@ -648,6 +649,29 @@ def query_mining_reports(
     When `organisation` is given, only that organisation's reports form the
     context, so an answer never draws on documents the user has filtered out.
     """
+
+    # A blank question costs a paid model call and leaves a meaningless row
+    # in the history. Refused before the throttle, so an accidental empty
+    # submit does not also spend the asker's allowance.
+    question = (question or "").strip()
+    if not question:
+        raise HTTPException(status_code=400, detail="Ask a question first.")
+
+    # Every call here reaches a language model, and the demo account's
+    # password is printed on the sign-in page, so without a ceiling anyone
+    # who opens the site can spend the project's API budget.
+    allowed, remaining, retry_after = query_limiter.check(
+        user.username, limit_for(user.username, user.is_readonly)
+    )
+    if not allowed:
+        raise HTTPException(
+            status_code=429,
+            detail=(
+                "Question limit reached for this account. "
+                f"Try again in about {max(retry_after // 60, 1)} minute(s)."
+            ),
+            headers={"Retry-After": str(retry_after)},
+        )
     try:
         query = db.query(MiningReport).filter(MiningReport.status == "completed")
         if organisation:
@@ -811,6 +835,7 @@ def list_validation_findings(
         record = resolutions.get(finding["id"])
         finding["status"] = record.status if record else "pending"
         finding["resolutionNote"] = record.resolution_note if record else None
+        finding["resolvedBy"] = record.resolved_by if record else None
         finding["resolvedAt"] = (
             record.resolved_at.isoformat() if record and record.resolved_at else None
         )
@@ -852,19 +877,30 @@ def resolve_validation_finding(
             db.commit()
         return {"finding_id": finding_id, "status": "pending"}
 
+    # Whoever is signed in owns this decision. Reversals are attributed to
+    # whoever made them, not to whoever decided first.
+    author = user.display_name or user.username
+
     if record:
         record.status = status
         record.resolution_note = note
         record.resolved_at = datetime.utcnow()
+        record.resolved_by = author
     else:
         db.add(ValidationResolution(
             finding_id=finding_id,
             status=status,
             resolution_note=note,
+            resolved_by=author,
         ))
     db.commit()
 
-    return {"finding_id": finding_id, "status": status, "resolutionNote": note}
+    return {
+        "finding_id": finding_id,
+        "status": status,
+        "resolutionNote": note,
+        "resolvedBy": author,
+    }
 
 
 @app.get("/query-history")

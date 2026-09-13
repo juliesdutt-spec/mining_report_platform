@@ -46,6 +46,61 @@ def _norm(value: Optional[str]) -> str:
     return re.sub(r"\s+", " ", str(value)).strip().casefold()
 
 
+# Punctuation between words is noise: "Open-cast", "Open Cast" and "opencast"
+# are one method written three ways. Only separators are removed - Indic
+# combining marks are letters here and must survive, so this strips by class
+# rather than keeping an allowlist of ASCII.
+_SEPARATORS = re.compile(r"[^\w\s\u0900-\u097F\u0C00-\u0C7F]+", re.UNICODE)
+
+
+def _canonical(value: Optional[str]) -> str:
+    """Casefolded, punctuation-free, whitespace-collapsed."""
+    if not value:
+        return ""
+    return re.sub(r"\s+", " ", _SEPARATORS.sub(" ", str(value))).strip().casefold()
+
+
+def _tokens(value: Optional[str]) -> frozenset:
+    return frozenset(_canonical(value).split())
+
+
+# Words that name a legal wrapper or a generic facility rather than the mine.
+# "Singareni Collieries" and "Singareni Collieries Company Ltd" are one mine;
+# grouping them apart meant their disagreements were never compared at all,
+# which is a quieter failure than a false conflict and a worse one.
+_ENTITY_NOISE = frozenset({
+    "company", "companies", "co", "ltd", "limited", "pvt", "private",
+    "corporation", "corp", "india", "indian", "the", "of", "and",
+    "mine", "mines", "mining", "colliery", "collieries", "project",
+})
+
+# Surface forms that mean the same thing. Cross-language entries matter because
+# one report may be filed in Hindi and another in English about the same mine:
+# without these, "coal" against "कोयला" is reported as a contradiction.
+_EQUIVALENTS = {
+    # extraction method
+    "opencast": "opencast", "open cast": "opencast", "open pit": "opencast",
+    "openpit": "opencast", "surface": "opencast", "surface mining": "opencast",
+    "strip": "opencast", "strip mining": "opencast",
+    "खुली खदान": "opencast", "बहिरंगा": "opencast", "బహిరంగ": "opencast",
+    "underground": "underground", "sub surface": "underground",
+    "subsurface": "underground", "deep": "underground", "shaft": "underground",
+    "भूमिगत": "underground", "భూగర్భ": "underground",
+    # mineral
+    "coal": "coal", "कोयला": "coal", "బొగ్గు": "coal",
+    "lignite": "lignite", "लिग्नाइट": "lignite",
+    "iron ore": "iron ore", "iron": "iron ore",
+    "लौह अयस्क": "iron ore", "ఇనుప ఖనిజం": "iron ore",
+    "bauxite": "bauxite", "बॉक्साइट": "bauxite",
+    "limestone": "limestone", "चूना पत्थर": "limestone",
+}
+
+
+def _equivalent_term(value: str) -> Optional[str]:
+    """The canonical term this value states, if it states a known one."""
+    return _EQUIVALENTS.get(_canonical(value))
+
+
 # Period labels that sit in front of the figure they describe. Extracted values
 # arrive as free text, so "Q1 2026: 45,000 t" is an ordinary shape - and the
 # first number in it is the 1 of "Q1", not the quantity. Two such values were
@@ -101,11 +156,34 @@ def _numeric(value: Optional[str]) -> Optional[float]:
 
 
 def _values_conflict(a: Optional[str], b: Optional[str]) -> bool:
-    """True when two reported values genuinely disagree."""
+    """
+    True when two reported values genuinely disagree.
+
+    Text was compared by casefolded equality alone, so "Open Cast" against
+    "opencast" was reported as a high-severity conflict - a guarantee of
+    false alarms on ordinary filings, in the one feature this platform leads
+    with. A detector that cries wolf is worse than none.
+
+    Each rule below suppresses only on positive evidence that the two values
+    say the same thing. Anything unrecognised still conflicts, because the
+    engine exists to find disagreements and silence is the costlier mistake.
+    """
     if not a or not b:
         return False
-    if _norm(a) == _norm(b):
+
+    # Punctuation and spacing: "Open-cast" / "Open Cast" / "opencast".
+    canon_a, canon_b = _canonical(a), _canonical(b)
+    if canon_a == canon_b:
         return False
+    if canon_a.replace(" ", "") == canon_b.replace(" ", ""):
+        return False
+
+    # A known term written differently, or in another language. Both sides
+    # have to be recognised: one known term against an unknown string is not
+    # evidence of agreement, so that case falls through and still conflicts.
+    term_a, term_b = _equivalent_term(a), _equivalent_term(b)
+    if term_a and term_b:
+        return term_a != term_b
 
     num_a, num_b = _numeric(a), _numeric(b)
     if num_a is not None and num_b is not None:
@@ -115,6 +193,13 @@ def _values_conflict(a: Optional[str], b: Optional[str]) -> bool:
         larger = max(abs(num_a), abs(num_b)) or 1.0
         # Ignore sub-1% differences, which are rounding rather than disagreement.
         return abs(num_a - num_b) / larger >= 0.01
+
+    # One value is the other with a qualifier: "Coal" and "Bituminous Coal",
+    # "Singareni Collieries" and "Singareni Collieries Company Ltd". A more
+    # specific statement of the same thing is not a contradiction of it.
+    tokens_a, tokens_b = _tokens(a), _tokens(b)
+    if tokens_a and tokens_b and (tokens_a <= tokens_b or tokens_b <= tokens_a):
+        return False
 
     return True
 
@@ -313,8 +398,23 @@ def _periods_differ(a: Any, b: Any) -> bool:
 
 
 def _mine_key(report: Any) -> Optional[str]:
-    """Group reports by the mine they describe; fall back to location."""
-    return _norm(_field_of(report, "mine_name")) or _norm(_field_of(report, "location")) or None
+    """
+    Group reports by the mine they describe; fall back to location.
+
+    Keyed on the distinguishing words only. "Jharia Coal Mine" and
+    "Jharia Coal-Mine" are the same pit, and keying on the raw string put
+    them in different groups - so their figures were never compared and a
+    real conflict went unreported. Words are sorted because "Jharia
+    Colliery" and "Colliery, Jharia" name one place.
+    """
+    raw = _field_of(report, "mine_name") or _field_of(report, "location")
+    if not raw:
+        return None
+
+    words = [w for w in _canonical(raw).split() if w not in _ENTITY_NOISE]
+    # Everything was a generic noun: keep the original rather than collapsing
+    # every such report into one group.
+    return " ".join(sorted(words)) if words else _canonical(raw)
 
 
 def _source(report: Any, field: str) -> Dict[str, Any]:

@@ -124,6 +124,13 @@ class ValidationResolution(Base):
     status = Column(String(50), default="resolved")  # resolved, flagged
     resolution_note = Column(Text, nullable=True)
     resolved_at = Column(DateTime, default=datetime.utcnow)
+    # An auditor's decision is not auditable without the auditor. The endpoint
+    # already authenticates the caller and used to discard them, so a finding
+    # could be marked resolved with no record of who resolved it - in a
+    # platform whose whole claim is a defensible reconciliation trail.
+    # Nullable because decisions recorded before this column existed have no
+    # author to backfill, and inventing one would be worse than admitting it.
+    resolved_by = Column(String(150), nullable=True)
 
 
 def _add_missing_columns():

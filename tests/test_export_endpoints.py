@@ -267,3 +267,25 @@ class ExportEndpointTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ResolutionRecordsItsAuthor(unittest.TestCase):
+    """
+    A finding could be marked resolved with no record of who resolved it.
+    The endpoint authenticated the caller and then discarded them, in a
+    platform whose claim is a defensible reconciliation trail.
+    """
+
+    def test_the_model_carries_an_author(self):
+        from database import ValidationResolution
+
+        self.assertIn(
+            "resolved_by", {c.name for c in ValidationResolution.__table__.columns}
+        )
+
+    def test_the_author_is_nullable_for_decisions_made_before_it_existed(self):
+        # Backfilling an author would invent one; admitting the gap is better.
+        from database import ValidationResolution
+
+        column = ValidationResolution.__table__.columns["resolved_by"]
+        self.assertTrue(column.nullable)
