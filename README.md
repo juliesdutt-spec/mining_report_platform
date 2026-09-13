@@ -302,6 +302,96 @@ ignore it.
 
 ---
 
+## 🔎 Semantic search (pgvector)
+
+Ask DataForge can answer from the passages closest to a question rather than
+from a truncated dump of every report's extracted fields. It is **off until
+configured**, and everything works without it.
+
+### What it changes
+
+Without it, `/query` concatenates every completed report's extracted fields
+and `ai_extractor` cuts the result at 6000 characters. Two consequences, both
+worse the larger the corpus gets:
+
+- whatever falls past the cut is never seen by the model, and nothing in the
+  answer says so;
+- the document **body** is not in the prompt at all — only the fields
+  extraction already pulled out — so a figure sitting in a paragraph nobody
+  extracted cannot be answered from.
+
+With it, the question is embedded and the nearest passages are retrieved.
+Chunks are cut along page boundaries, so each retrieved passage is labelled
+with the document and page it came from.
+
+### Setting it up
+
+Railway's standard Postgres image ships no extensions:
+
+> "Railway's standard Postgres image does not include pgvector. Use the
+> pgvector template instead." — [docs.railway.com](https://docs.railway.com/guides/rag-pipeline-pgvector)
+
+So this uses **its own database**, separate from `DATABASE_URL`. Every row in
+it is derived from the reports table and can be rebuilt at any time, which is
+why it is kept out of the database holding the only copy of anything.
+
+```bash
+# 1. Deploy Railway's pgvector template into the same project
+#    https://railway.com/deploy/3jJFCA
+#
+# 2. Point the backend at it. Use the private-network reference so the
+#    traffic never leaves Railway:
+VECTOR_DATABASE_URL=${{pgvector.DATABASE_URL}}
+
+# 3. Index the reports already in the database
+python -m vector_backfill
+
+# 4. Confirm it is serving
+curl -s $BACKEND/health | jq .retrieval
+# {"enabled": true, "embedding_model": "text-embedding-004",
+#  "indexed_chunks": 24, "indexed_reports": 6, ...}
+```
+
+Locally, any Postgres with the extension will do:
+
+```bash
+apt-get install -y postgresql-16-pgvector      # or your platform's package
+createdb dataforge_vectors
+export VECTOR_DATABASE_URL=postgresql://localhost/dataforge_vectors
+python -m vector_backfill
+```
+
+### Embeddings
+
+Vectors come from the **same provider that answers questions**, so no second
+account is needed — Gemini in production, via its free-tier
+`text-embedding-004`. Ollama works locally with `nomic-embed-text`. Anthropic
+publishes no embeddings API, so with `AI_PROVIDER=claude` retrieval reports
+itself off and `/query` uses the field dump.
+
+| variable | default | what it does |
+|---|---|---|
+| `VECTOR_DATABASE_URL` | *unset* | Postgres with pgvector. Unset means retrieval is off. |
+| `GEMINI_EMBED_MODEL` | `text-embedding-004` | 768 dimensions |
+| `OLLAMA_EMBED_MODEL` | `nomic-embed-text` | for local use |
+| `VECTOR_TOP_K` | `8` | passages retrieved per question |
+| `VECTOR_CHUNK_CHARS` | `1200` | characters per chunk |
+| `VECTOR_CHUNK_OVERLAP` | `150` | repeated between chunks, so a straddling sentence is not lost |
+
+### It is never the reason a question fails
+
+No database, no embeddings API, an unreachable host, a missing extension —
+each is reported as a reason and `/query` falls back to the behaviour it had
+before. The response says which happened:
+
+```json
+{ "retrieval_mode": "semantic" | "full-corpus", "retrieval_note": null }
+```
+
+Changing the embedding model means rebuilding: vectors from two models are
+not comparable, and the store refuses to mix them rather than returning
+nonsense that looks like a working search. `python -m vector_backfill --reset`.
+
 ## 📏 What is measured, and what is not
 
 **Extraction accuracy is the number everything else rests on.** Every figure

@@ -52,6 +52,12 @@ GEMINI_API_KEY = _env("GEMINI_API_KEY") or _env("GOOGLE_API_KEY")
 # available to new users" for fresh ones. The 404 names the replacement, and
 # doctor.py surfaces it, so a future retirement is a one-line change here.
 GEMINI_MODEL = _env("GEMINI_MODEL", "gemini-3.6-flash")
+# Embeddings are a different model from the one that writes answers, and a
+# different shape of thing: a fixed-width vector, not text. The dimension is
+# baked into the pgvector column, so changing this model means rebuilding the
+# index — vector_store records which model wrote each row so that a change is
+# caught rather than silently mixing two incompatible vector spaces.
+GEMINI_EMBED_MODEL = _env("GEMINI_EMBED_MODEL", "text-embedding-004")
 # Overridable for regional endpoints and corporate proxies.
 GEMINI_BASE_URL = _env(
     "GEMINI_BASE_URL", "https://generativelanguage.googleapis.com/v1beta"
@@ -70,6 +76,7 @@ OPENROUTER_BASE_URL = _env(
 
 OLLAMA_HOST = _env("OLLAMA_HOST", "http://localhost:11434").rstrip("/")
 OLLAMA_MODEL = _env("OLLAMA_MODEL", "llama3.2")
+OLLAMA_EMBED_MODEL = _env("OLLAMA_EMBED_MODEL", "nomic-embed-text")
 
 FORCE_MOCK = _env("USE_MOCK_AI", "false").lower() == "true"
 REQUESTED_PROVIDER = _env("AI_PROVIDER", "auto").lower()
@@ -150,6 +157,24 @@ class Provider:
 
     def complete(self, prompt: str, max_tokens: int = 1000) -> str:
         raise NotImplementedError
+
+    # -------------------------------------------------------- embeddings ---
+
+    embed_model = ""
+
+    def can_embed(self) -> bool:
+        """
+        Whether this provider offers an embeddings API at all.
+
+        Not every one does — Anthropic publishes no embeddings endpoint — and
+        that is a different thing from being unconfigured. Retrieval asks this
+        before it offers itself, so the reason it stayed off can be specific.
+        """
+        return bool(self.embed_model)
+
+    def embed(self, texts: list[str]) -> list[list[float]]:
+        """Embed each text, in order. One request where the API allows it."""
+        raise ProviderError(f"{self.name} has no embeddings API.")
 
 
 class ClaudeProvider(Provider):
@@ -240,6 +265,38 @@ class GeminiProvider(Provider):
         return text
 
 
+    # Gemini batches embeddings, so a whole document goes in one request
+    # instead of one per chunk — which is the difference between a backfill
+    # that takes a minute and one that takes an hour on a free-tier quota.
+    embed_model = GEMINI_EMBED_MODEL
+
+    def embed(self, texts: list[str]) -> list[list[float]]:
+        if not texts:
+            return []
+        qualified = f"models/{self.embed_model}"
+        data = _post_json(
+            f"{self.endpoint}/{self.embed_model}:batchEmbedContents",
+            {
+                "requests": [
+                    {"model": qualified, "content": {"parts": [{"text": text}]}}
+                    for text in texts
+                ]
+            },
+            {"x-goog-api-key": GEMINI_API_KEY},
+        )
+        vectors = [
+            [float(v) for v in (item or {}).get("values") or []]
+            for item in data.get("embeddings") or []
+        ]
+        if len(vectors) != len(texts) or any(not v for v in vectors):
+            # A short or ragged batch would otherwise be written to the index
+            # misaligned, pairing each chunk with its neighbour's vector.
+            raise ProviderError(
+                f"Gemini returned {len(vectors)} embeddings for {len(texts)} inputs."
+            )
+        return vectors
+
+
 class OpenRouterProvider(Provider):
     """OpenRouter's OpenAI-compatible endpoint, including its free models."""
 
@@ -327,6 +384,27 @@ class OllamaProvider(Provider):
 
 #: Auto-detection order. Claude first so an existing paid setup keeps working,
 #: then the providers with a free tier, then the local one.
+    # Ollama embeds one input per request, so this loops. That is fine for a
+    # local server and the reason Gemini is the default in production.
+    embed_model = OLLAMA_EMBED_MODEL
+
+    def embed(self, texts: list[str]) -> list[list[float]]:
+        vectors = []
+        for text in texts:
+            data = _post_json(
+                f"{self.host}/api/embeddings",
+                {"model": self.embed_model, "prompt": text},
+            )
+            values = [float(v) for v in data.get("embedding") or []]
+            if not values:
+                raise ProviderError(
+                    f"Ollama returned no embedding for {self.embed_model}. "
+                    f"Pull it first: ollama pull {self.embed_model}"
+                )
+            vectors.append(values)
+        return vectors
+
+
 PROVIDERS = {
     "claude": ClaudeProvider,
     "gemini": GeminiProvider,
@@ -398,6 +476,45 @@ def complete(prompt: str, max_tokens: int = 1000) -> str:
     if ACTIVE_PROVIDER is None:
         raise ProviderError(MOCK_REASON or "No AI provider is configured.")
     return ACTIVE_PROVIDER.complete(prompt, max_tokens)
+
+
+def embed(texts: list[str]) -> list[list[float]]:
+    """
+    Embed texts with the active provider.
+
+    Raises ProviderError when there is no provider, or when the one in play
+    has no embeddings API — the same single failure path complete() gives, so
+    retrieval has one thing to catch and one place to fall back from.
+    """
+    if ACTIVE_PROVIDER is None:
+        raise ProviderError(MOCK_REASON or "No AI provider is configured.")
+    if not ACTIVE_PROVIDER.can_embed():
+        raise ProviderError(f"{ACTIVE_PROVIDER.name} has no embeddings API.")
+    return ACTIVE_PROVIDER.embed(texts)
+
+
+def embeddings_describe() -> dict:
+    """
+    Whether semantic retrieval can be fed, and by what.
+
+    `reason` is set only when it cannot, so /health can say which of the two
+    reasons applies: no provider at all, or a provider that does not embed.
+    """
+    if ACTIVE_PROVIDER is None:
+        return {"available": False, "provider": None, "model": None, "reason": MOCK_REASON}
+    if not ACTIVE_PROVIDER.can_embed():
+        return {
+            "available": False,
+            "provider": ACTIVE_PROVIDER.name,
+            "model": None,
+            "reason": f"{ACTIVE_PROVIDER.name} has no embeddings API.",
+        }
+    return {
+        "available": True,
+        "provider": ACTIVE_PROVIDER.name,
+        "model": ACTIVE_PROVIDER.embed_model,
+        "reason": None,
+    }
 
 
 def describe() -> dict:
