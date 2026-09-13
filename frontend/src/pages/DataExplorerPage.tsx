@@ -21,7 +21,6 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { StatusBadge } from "@/components/shared/StatusBadge";
-import { ConfidenceMeter } from "@/components/shared/ConfidenceMeter";
 import { SourceCitation } from "@/components/shared/SourceCitation";
 import { cn } from "@/lib/utils";
 import { EvidenceSnippet, MiningDocument, OrganisationFilter } from "@/types";
@@ -34,7 +33,7 @@ interface DataExplorerPageProps {
 }
 
 
-type SortField = "mineName" | "organisation" | "productionNum" | "confidence";
+type SortField = "mineName" | "organisation" | "productionNum";
 
 /** Sortable column head — the arrow only appears on the active column. */
 function SortableHead({
@@ -57,7 +56,7 @@ function SortableHead({
     <TableHead className={className}>
       <button
         onClick={() => onSort(field)}
-        className="inline-flex items-center gap-1 rounded transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className="inline-flex min-h-[24px] items-center gap-1 rounded py-0.5 transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         aria-label={`Sort by ${label}`}
       >
         <span>{label}</span>
@@ -93,7 +92,6 @@ export function DataExplorerPage({ onInspectEvidence, selectedOrganisation }: Da
     method: doc.extractionMethod,
     mineral: doc.mineralType,
     reserves: doc.reserveEstimate,
-    confidence: doc.confidenceScore,
     status: doc.validationStatus ?? doc.status,
     filename: doc.filename,
     evidenceSnippet: doc.evidenceSnippets[0],
@@ -137,7 +135,6 @@ export function DataExplorerPage({ onInspectEvidence, selectedOrganisation }: Da
         "Method",
         "Mineral",
         "Reserves",
-        "Confidence",
         "Validation",
         "Source document",
       ],
@@ -148,7 +145,6 @@ export function DataExplorerPage({ onInspectEvidence, selectedOrganisation }: Da
         r.method ?? "",
         r.mineral ?? "",
         r.reserves ?? "",
-        r.confidence ?? "",
         r.status ?? "",
         r.filename,
       ]),
@@ -230,7 +226,6 @@ export function DataExplorerPage({ onInspectEvidence, selectedOrganisation }: Da
               <TableHead>Method</TableHead>
               <TableHead>Mineral</TableHead>
               <TableHead className="text-right">Reserves</TableHead>
-              <SortableHead field="confidence" label="Confidence" sortField={sortField} sortAsc={sortAsc} onSort={handleSort} />
               <TableHead>Validation</TableHead>
               <TableHead className="text-right">Source</TableHead>
             </TableRow>
@@ -258,9 +253,6 @@ export function DataExplorerPage({ onInspectEvidence, selectedOrganisation }: Da
                 <TableCell className="text-muted-foreground">{row.method ?? "\u2014"}</TableCell>
                 <TableCell className="text-muted-foreground">{row.mineral ?? "\u2014"}</TableCell>
                 <TableCell className="text-right font-mono tabular-nums text-muted-foreground">{row.reserves ?? "\u2014"}</TableCell>
-                <TableCell>
-                  <ConfidenceMeter value={row.confidence} />
-                </TableCell>
                 <TableCell>
                   <StatusBadge status={row.status} />
                 </TableCell>

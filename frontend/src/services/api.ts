@@ -184,6 +184,12 @@ export interface BackendReportListItem {
   topics: string[] | null;
   company_name?: string | null;
   mine_name?: string | null;
+  // The document, explorer and report tables all have columns for these.
+  // The list endpoint did not send them, so those columns rendered an em
+  // dash on every row while the values sat in the database.
+  extraction_method?: string | null;
+  reserve_estimate?: string | null;
+  report_date?: string | null;
 }
 
 export interface BackendReportListResponse {
@@ -252,11 +258,43 @@ export interface BackendQueryHistoryResponse {
 }
 
 /** GET /stats */
+/**
+ * How good the extraction is, as two separate figures.
+ *
+ * `completeness` is coverage — how many of the fields the platform depends on
+ * came back populated. It is computable from the live corpus and says nothing
+ * about whether those values are right.
+ *
+ * `measured` is accuracy, and only exists once someone has scored extraction
+ * against hand-read documents (`python -m evaluation.score --json`). It is
+ * null until then, and the UI says so rather than showing coverage in its
+ * place — they measure different things.
+ */
+export interface ExtractionQuality {
+  fields: string[];
+  completeness: {
+    documents: number;
+    fieldsExpected: number;
+    fieldsPopulated: number;
+    ratio: number | null;
+  };
+  measured: {
+    accuracy: number;
+    fieldsScored: number;
+    documents: number;
+    exact: number;
+    equivalent: number;
+    missing: number;
+    wrong: number;
+  } | null;
+}
+
 export interface BackendStats {
   total_reports: number;
   completed: number;
   errors: number;
   total_queries: number;
+  extraction_quality?: ExtractionQuality;
   mineral_distribution: Record<string, number>;
   location_distribution: Record<string, number>;
 }

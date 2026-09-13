@@ -40,7 +40,10 @@ function clean(value: string | null | undefined): string | undefined {
  * Only fields the backend actually returns are populated. Page count,
  * extraction confidence, validation state and per-snippet evidence are not
  * modelled server-side, so they are deliberately left undefined rather than
- * invented — the UI shows an em dash for them. The organisation comes from
+ * invented — the UI shows an em dash for them. Extraction method, reserve
+ * estimate and report date *are* returned by both endpoints and must be read
+ * from either: they were previously taken only from a detail response, so
+ * every list-driven table showed an em dash for values that existed. The organisation comes from
  * the report's extracted company name, and is absent when none was found.
  */
 export function mapReportToDocument(
@@ -64,7 +67,7 @@ export function mapReportToDocument(
     mineralType: clean(report.mineral_type) ?? clean(extracted.mineral_type),
     quantityExtracted: clean(report.quantity_extracted) ?? clean(extracted.quantity_extracted),
     extractionMethod: clean(detail.extraction_method) ?? clean(extracted.extraction_method),
-    reserveEstimate: clean(extracted.reserve_estimate),
+    reserveEstimate: clean(detail.reserve_estimate) ?? clean(extracted.reserve_estimate),
 
     topics: report.topics ?? extracted.topics ?? [],
     summary: clean(report.summary) ?? clean(extracted.summary) ?? '',
