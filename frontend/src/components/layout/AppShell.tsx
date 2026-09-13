@@ -124,7 +124,7 @@ export function AppShell({
 
   return (
     <TooltipProvider delayDuration={200}>
-      <div className="flex h-screen w-full overflow-hidden bg-background text-foreground">
+      <div id="app-shell" className="flex h-screen w-full overflow-hidden bg-background text-foreground">
         {/* Dimmed backdrop for the drawer. Tapping the page is the gesture
             people try first, so it has to close the drawer. */}
         {isMobileNavOpen && (
@@ -170,7 +170,7 @@ export function AppShell({
           onSignOut={onSignOut}
         />
 
-        <div className="flex flex-1 flex-col overflow-hidden">
+        <div id="app-content" className="flex flex-1 flex-col overflow-hidden">
           <Header
             currentTab={currentTab}
             isCollapsed={isCollapsed}
@@ -191,7 +191,23 @@ export function AppShell({
           </div>
 
           <main id="main-content" tabIndex={-1} className="flex-1 overflow-y-auto focus:outline-none">
-            <div className="mx-auto max-w-[1400px] px-4 py-6 sm:px-6 sm:py-8 lg:px-8">{children}</div>
+            <div className="mx-auto max-w-[1400px] px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
+              {/* On paper the sidebar and the header are gone, and with them
+                  every clue about which screen this is, whose documents it
+                  covers and when it was taken. A sheet of production figures
+                  with none of that on it is not a record of anything. */}
+              <div className="mb-6 hidden border-b border-border pb-3 print:block">
+                <div className="text-sm font-semibold text-foreground">
+                  DataForge · {TAB_TITLES[currentTab]}
+                </div>
+                <div className="mt-0.5 text-xs text-muted-foreground">
+                  CMPDI · Coal India · Scope:{" "}
+                  {selectedOrganisation === "ALL" ? "All organisations" : selectedOrganisation} ·
+                  Printed {new Date().toLocaleString("en-IN")}
+                </div>
+              </div>
+              {children}
+            </div>
           </main>
         </div>
 

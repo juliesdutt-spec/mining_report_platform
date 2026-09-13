@@ -209,7 +209,9 @@ export function DataExplorerPage({ onInspectEvidence, selectedOrganisation }: Da
 
       {/* Filter bar — controls on the page surface, not inside a box */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+        {/* The controls go; the record count stays, because it is the one
+            thing on this bar that describes what was printed. */}
+        <div data-print-hide className="flex flex-col gap-3 sm:flex-row sm:items-center">
           <div className="relative w-full sm:w-72">
             <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
             <Input

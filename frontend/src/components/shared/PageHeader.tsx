@@ -32,7 +32,13 @@ export function PageHeader({ title, description, actions, meta, className }: Pag
           <p className="mt-1.5 max-w-3xl text-sm text-muted-foreground">{description}</p>
         )}
       </div>
-      {actions && <div className="flex flex-shrink-0 items-center gap-2">{actions}</div>}
+      {/* Export, ingest and the rest are things to press. On paper they are
+          ink spent on controls nobody can reach. */}
+      {actions && (
+        <div data-print-hide className="flex flex-shrink-0 items-center gap-2">
+          {actions}
+        </div>
+      )}
     </div>
   );
 }

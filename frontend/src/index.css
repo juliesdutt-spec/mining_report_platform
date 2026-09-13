@@ -227,3 +227,146 @@
     animation: df-loading-fade 1.8s ease-in-out infinite !important;
   }
 }
+
+/* Print.
+   ------------------------------------------------------------------
+   The app is a fixed-height shell: h-screen on the outer frame,
+   overflow hidden on it, and a scroll container for the page itself.
+   That is right on a screen and wrong on paper — printing the Data
+   Explorer produced one A4 page carrying nine of sixteen rows, with
+   the rest silently gone and four of nine columns cut off the right
+   edge. A table of production figures that quietly drops half its
+   rows is worse than one that will not print at all.
+
+   So on paper the shell stops being a viewport: heights are released,
+   the document flows across as many pages as it needs, and the chrome
+   that cannot be acted on — navigation, search, buttons, the theme
+   toggle — is left off. */
+@media print {
+  html,
+  body {
+    height: auto !important;
+    overflow: visible !important;
+    background: #fff !important;
+  }
+
+  #app-shell,
+  #app-content {
+    display: block !important;
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+  }
+
+  #main-content {
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    flex: none !important;
+  }
+
+  /* The page already has a margin — @page gives it 14mm. The app's own
+     gutter on top of that was a second margin the table paid for: a
+     nine-column table came out 21px wider than the box left for it and
+     lost its right-hand edge. */
+  #main-content > div {
+    max-width: none !important;
+    padding-left: 0 !important;
+    padding-right: 0 !important;
+  }
+
+  /* Navigation, the command search, the evidence sheet and the
+     backdrop: none of it can be used on paper. */
+  #app-sidebar,
+  header,
+  [data-print-hide],
+  [role="dialog"],
+  [data-radix-popper-content-wrapper] {
+    display: none !important;
+  }
+
+  /* A table that scrolls sideways on screen has nowhere to scroll on
+     paper. Before this, the Data Explorer lost its last three columns
+     off the right edge and truncated the reserve figures in the one
+     before them — with nothing on the sheet to say so. Release the
+     clipping, let cells wrap, and set the whole table smaller so nine
+     columns fit the width of A4. */
+  .overflow-x-auto,
+  .overflow-hidden,
+  .overflow-y-auto {
+    overflow: visible !important;
+  }
+
+  table {
+    width: 100% !important;
+    font-size: 8.5pt !important;
+  }
+
+  th,
+  td {
+    white-space: normal !important;
+    max-width: none !important;
+    padding: 1.6mm 1.4mm !important;
+    /* `anywhere` fitted the width and broke the content doing it:
+       METHOD came out as "METHO / D" and a production figure as
+       "1,25,0 / 00 MT", which a reader could misread as a value.
+       `break-word` only breaks a word that cannot fit a line on its
+       own, and unlike `anywhere` it does not let a column shrink below
+       its longest word — so headings and figures stay whole. */
+    overflow-wrap: break-word !important;
+  }
+
+  /* One case still does not fit: a source filename is a single
+     unbroken 24-character token, and no amount of `break-word` will
+     split it, so the table's min-content width stayed wider than the
+     sheet and the Source column ran past its own right-hand rule.
+     Figures in this app are always marked `tabular-nums` and filenames
+     never are, so breaking mid-token is allowed for exactly the second
+     kind — `1,25,000 MT` is never split, `sample_mining_report.pdf`
+     always may be. */
+  td .font-mono:not(.tabular-nums),
+  td.font-mono:not(.tabular-nums) {
+    overflow-wrap: anywhere !important;
+  }
+
+  .truncate {
+    overflow: visible !important;
+    text-overflow: clip !important;
+    white-space: normal !important;
+  }
+
+  /* A long table carries its own headings onto each sheet, and a row
+     is not split across the fold. */
+  thead {
+    display: table-header-group;
+  }
+  tr,
+  img,
+  pre {
+    break-inside: avoid;
+  }
+  h1,
+  h2,
+  h3 {
+    break-after: avoid;
+  }
+
+  /* Dark theme on paper would empty a cartridge to print a table. */
+  :root,
+  :root.dark {
+    --background: 0 0% 100%;
+    --card: 0 0% 100%;
+    --foreground: 0 0% 0%;
+    --muted: 0 0% 96%;
+    --muted-foreground: 0 0% 30%;
+    --border: 0 0% 80%;
+  }
+
+  * {
+    box-shadow: none !important;
+  }
+
+  @page {
+    margin: 14mm;
+  }
+}
