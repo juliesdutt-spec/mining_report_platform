@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { AlertCircle, Download, Printer } from "lucide-react";
+import { AlertCircle, Download, Loader2, Printer } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -22,6 +22,7 @@ import {
 import { PageHeader } from "@/components/shared/PageHeader";
 import { FieldLabel } from "@/components/shared/Section";
 import { ApiError, dossierPath, saveFile } from "@/services/api";
+import { usePendingState } from "@/lib/usePendingState";
 import { fetchDocuments } from "@/services/documents";
 import { MiningDocument } from "@/types";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -95,6 +96,10 @@ export function ReportStudioPage() {
   // requires an account, and a download link cannot carry the header.
   const [exportError, setExportError] = useState<string | null>(null);
   const [exporting, setExporting] = useState<"pdf" | "docx" | null>(null);
+  // A dossier composes in roughly 340ms, so an indicator shown immediately
+  // appears and vanishes before it can be read. Nothing is shown until the
+  // export is actually slow enough to need explaining.
+  const pending = usePendingState(exporting !== null);
 
   async function exportDossier(format: "pdf" | "docx") {
     setExporting(format);
@@ -130,8 +135,12 @@ export function ReportStudioPage() {
               disabled={exporting !== null}
               aria-label="Download the composed dossier as DOCX"
             >
-              <Download className="h-3.5 w-3.5" />
-              {exporting === "docx" ? "Preparing…" : "DOCX"}
+              {pending.visible && exporting === "docx" ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Download className="h-3.5 w-3.5" />
+              )}
+              DOCX
             </Button>
             {/* POST /reports/generate composes the dossier from indexed reports. */}
             <Button
@@ -140,8 +149,12 @@ export function ReportStudioPage() {
               disabled={exporting !== null}
               aria-label="Download the composed dossier as PDF"
             >
-              <Download className="h-3.5 w-3.5" />
-              {exporting === "pdf" ? "Preparing…" : "PDF"}
+              {pending.visible && exporting === "pdf" ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Download className="h-3.5 w-3.5" />
+              )}
+              PDF
             </Button>
           </>
         }
@@ -154,6 +167,23 @@ export function ReportStudioPage() {
         >
           <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
           <span className="min-w-0">{exportError}</span>
+        </div>
+      )}
+
+      {/* Past a couple of seconds the cause is almost never the composing,
+          which takes well under one - it is the backend waking up. Left
+          unsaid, that is indistinguishable from a hang, and people give up on
+          a request that was going to succeed. */}
+      {pending.slow && (
+        <div
+          role="status"
+          className="flex items-start gap-2 rounded-lg border border-border bg-muted px-4 py-3 text-sm text-muted-foreground"
+        >
+          <Loader2 className="mt-0.5 h-4 w-4 shrink-0 animate-spin" />
+          <span className="min-w-0">
+            Still composing. The backend sleeps when idle, so the first request
+            after a quiet spell can take up to a minute to answer.
+          </span>
         </div>
       )}
 
@@ -212,13 +242,22 @@ export function ReportStudioPage() {
             <div className="space-y-2.5">
               <FieldLabel>Sections</FieldLabel>
               {SECTIONS.map((sec) => (
-                <div key={sec.key} className="flex items-center gap-2.5">
+                // py-1 lifts the row to a 24px tap target without moving
+                // anything: the box stays 16px, the reachable area does not.
+                <div key={sec.key} className="flex items-center gap-2.5 py-1">
                   <Checkbox
                     id={sec.key}
                     checked={selectedSections[sec.key]}
                     onCheckedChange={() => toggleSection(sec.key)}
                   />
-                  <Label htmlFor={sec.key} className="cursor-pointer text-sm font-normal">
+                  {/* The box is 16px and the label was 20px, so neither
+                      reached a reliable tap target on a phone. Growing the
+                      label rather than the box keeps the control looking the
+                      same while making the row itself the thing you hit. */}
+                  <Label
+                    htmlFor={sec.key}
+                    className="flex min-h-[24px] flex-1 cursor-pointer items-center text-sm font-normal"
+                  >
                     {sec.label}
                   </Label>
                 </div>

@@ -33,6 +33,7 @@ from database import init_db, get_db, MiningReport, QueryHistory, ValidationReso
 from auth import create_access_token, decode_access_token, verify_password
 from auth_seed import DEMO_ENABLED, DEMO_PASSWORD, DEMO_USERNAME, seed_users
 from rate_limit import limit_for, query_limiter
+import extraction_quality
 from document_processor import (
     extract_text_from_pdf, extract_pages_from_pdf, chunk_text, get_pdf_metadata
 )
@@ -406,6 +407,15 @@ def list_reports(
                 # a report belongs to without fetching each report's detail.
                 "company_name": r.company_name,
                 "mine_name": r.mine_name,
+                # The document, explorer and report tables all have columns
+                # for these. They were never sent, so every one of those
+                # columns rendered an em dash on every row for every user -
+                # the data was in the database the whole time.
+                "extraction_method": r.extraction_method,
+                # Not a column - the extractor returns it, so it lives in the
+                # extracted_data blob and has to be read from there.
+                "reserve_estimate": (r.extracted_data or {}).get("reserve_estimate"),
+                "report_date": r.report_date,
             }
             for r in reports
         ]
@@ -790,11 +800,20 @@ def get_statistics(
         .filter(MiningReport.status == "completed")
     ).group_by(MiningReport.location).all()
 
+    # Coverage of the fields the platform actually depends on, plus the last
+    # recorded accuracy run. These measure different things and are reported
+    # separately: a complete field can still hold a wrong value, so coverage
+    # must never be presented as accuracy.
+    quality = extraction_quality.summarise(
+        scoped(db.query(MiningReport)).all()
+    )
+
     return {
         "total_reports": total,
         "completed": completed,
         "errors": errors,
         "total_queries": queries,
+        "extraction_quality": quality,
         "mineral_distribution": {m: c for m, c in minerals if m},
         "location_distribution": {l: c for l, c in locations if l},
     }

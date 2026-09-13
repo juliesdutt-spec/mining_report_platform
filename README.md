@@ -279,6 +279,26 @@ needs no migration step. The database starts empty: re-upload your PDFs.
 
 ---
 
+## 🖥️ Checking the interface
+
+    npm run dev                  # one shell
+    node scripts/ux-audit.mjs    # another
+
+Checks the things that are cheap to get wrong and invisible in review: table
+columns that can never fill, placeholder text left on screen, tap targets too
+small for a finger, controls a screen reader cannot name, horizontal overflow
+at desktop and phone widths. Exits non-zero when it finds something.
+
+Two of its rules were wrong when first written, and the corrections are worth
+knowing. A control is not unnamed just because its element has no text — a
+`<label for>` names it, and checking `textContent` alone reported four
+perfectly accessible checkboxes as broken. And a 16px checkbox is not
+unreachable when a 24px label beside it toggles the same state, which is the
+exemption WCAG 2.5.8 makes. An audit that reports those trains people to
+ignore it.
+
+---
+
 ## 📏 What is measured, and what is not
 
 **Extraction accuracy is the number everything else rests on.** Every figure

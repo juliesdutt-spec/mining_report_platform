@@ -107,7 +107,7 @@ export function AskPage({ onInspectEvidence, selectedOrganisation }: AskPageProp
                   setQueryInput(q);
                   handleRunQuery(q);
                 }}
-                className="max-w-sm truncate text-left text-xs text-primary underline-offset-4 transition-colors hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                className="min-h-[24px] max-w-sm truncate py-1 text-left text-xs text-primary underline-offset-4 transition-colors hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
                 {q}
               </button>

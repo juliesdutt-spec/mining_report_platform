@@ -15,8 +15,8 @@ import { PageHeader } from "@/components/shared/PageHeader";
 import { Section } from "@/components/shared/Section";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Stat, StatGroup } from "@/components/shared/StatGroup";
+import { ExtractionQualityPanel } from "@/components/shared/ExtractionQuality";
 import { StatusBadge } from "@/components/shared/StatusBadge";
-import { ConfidenceMeter } from "@/components/shared/ConfidenceMeter";
 import { SourceCitation } from "@/components/shared/SourceCitation";
 import {
   MiningDocument,
@@ -131,6 +131,10 @@ export function DashboardPage({
       </StatGroup>
       )}
 
+      {/* Coverage and accuracy, side by side and never conflated: a field can
+          be fully populated and completely wrong. */}
+      <ExtractionQualityPanel quality={stats?.extraction_quality} />
+
       {/* Operational tables — rows, not stacks of cards */}
       <Tabs defaultValue="documents">
         <div className="flex items-center justify-between gap-3 border-b border-border pb-3">
@@ -150,9 +154,7 @@ export function DashboardPage({
                 <TableHead>Organisation</TableHead>
                 <TableHead>Mine</TableHead>
                 <TableHead className="text-right">Output</TableHead>
-                <TableHead>Confidence</TableHead>
                 <TableHead>Status</TableHead>
-                <TableHead className="text-right">Source</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -161,7 +163,11 @@ export function DashboardPage({
                   <TableCell>
                     <div className="font-medium text-foreground">{doc.filename}</div>
                     <div className="mt-0.5 text-xs text-muted-foreground">
-                      {doc.fileType} · {doc.pageCount} pp.
+                      {/* pageCount is not modelled server-side, so it is
+                          usually undefined - rendering the unit regardless
+                          left "PDF · pp." on every row. */}
+                      {doc.fileType}
+                      {doc.pageCount !== undefined && ` · ${doc.pageCount} pp.`}
                     </div>
                   </TableCell>
                   <TableCell className="font-mono text-xs text-muted-foreground">
@@ -172,19 +178,7 @@ export function DashboardPage({
                     {doc.quantityExtracted}
                   </TableCell>
                   <TableCell>
-                    <ConfidenceMeter value={doc.confidenceScore} />
-                  </TableCell>
-                  <TableCell>
                     <StatusBadge status={doc.validationStatus ?? doc.status} />
-                  </TableCell>
-                  <TableCell className="text-right">
-                    {doc.evidenceSnippets[0] && (
-                      <SourceCitation
-                        evidence={doc.evidenceSnippets[0]}
-                        compact
-                        onClick={() => onInspectEvidence(doc.evidenceSnippets[0])}
-                      />
-                    )}
                   </TableCell>
                 </TableRow>
               ))}
