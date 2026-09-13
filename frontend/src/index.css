@@ -228,6 +228,65 @@
   }
 }
 
+/* The sign-in backdrop.
+   ------------------------------------------------------------------
+   Two very slow drifts, in opposite directions, so the strata and the
+   warmth coming off the seam never quite line up twice. Both keyframe
+   sets start and end in the same place: the reduced-motion rule above
+   collapses an animation to 0.01ms and one iteration, which lands on
+   the final keyframe, so a drift that ended displaced would jump the
+   image instead of settling it. */
+@keyframes df-strata-drift {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0);
+  }
+  50% {
+    transform: translate3d(-1.2%, -1.6%, 0);
+  }
+}
+
+@keyframes df-seam-breathe {
+  0%,
+  100% {
+    opacity: 0.85;
+    transform: translate3d(0, 0, 0);
+  }
+  50% {
+    opacity: 1;
+    transform: translate3d(1.4%, 1%, 0);
+  }
+}
+
+.df-strata {
+  animation: df-strata-drift 48s ease-in-out infinite;
+  transform-origin: 50% 50%;
+  will-change: transform;
+}
+
+.df-glow {
+  animation: df-seam-breathe 32s ease-in-out infinite;
+  transform-origin: 60% 40%;
+  will-change: opacity, transform;
+}
+
+/* The form arriving. One movement, once — not a loop competing with the
+   backdrop for attention. */
+@keyframes df-rise {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 10px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.df-rise {
+  animation: df-rise 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
 /* Print.
    ------------------------------------------------------------------
    The app is a fixed-height shell: h-screen on the outer frame,

@@ -2,7 +2,9 @@ import React, { useRef } from "react";
 import {
   BarChart3,
   Cloud,
+  Check,
   Database,
+  Filter,
   FileSpreadsheet,
   FileText,
   LayoutDashboard,
@@ -41,20 +43,114 @@ interface NavItem {
   id: NavigationTab;
   label: string;
   icon: LucideIcon;
-  count?: number;
 }
 
-const NAV_ITEMS: NavItem[] = [
-  { id: "dashboard", label: TAB_TITLES.dashboard, icon: LayoutDashboard },
-  { id: "documents", label: TAB_TITLES.documents, icon: FileText },
-  { id: "ask", label: TAB_TITLES.ask, icon: Sparkles },
-  { id: "analytics", label: TAB_TITLES.analytics, icon: BarChart3 },
-  { id: "topics", label: TAB_TITLES.topics, icon: Cloud },
-  { id: "reports", label: TAB_TITLES.reports, icon: FileSpreadsheet },
-  { id: "explorer", label: TAB_TITLES.explorer, icon: Database },
-  { id: "validation", label: TAB_TITLES.validation, icon: ShieldCheck },
-  { id: "settings", label: TAB_TITLES.settings, icon: Settings },
+interface NavGroup {
+  /** Null on the first group: a header above the top item is ceremony. */
+  label: string | null;
+  items: NavItem[];
+}
+
+/**
+ * Nine flat rows gave Topic Intelligence the same weight as Validation and
+ * left a newcomer — a judge, an officer opening this for the first time — no
+ * way to tell what any of them were for. Two groups is enough to say it:
+ * what is in the corpus, and what you derive from it.
+ */
+const NAV_GROUPS: NavGroup[] = [
+  {
+    label: null,
+    items: [{ id: "dashboard", label: TAB_TITLES.dashboard, icon: LayoutDashboard }],
+  },
+  {
+    label: "Corpus",
+    items: [
+      { id: "documents", label: TAB_TITLES.documents, icon: FileText },
+      { id: "validation", label: TAB_TITLES.validation, icon: ShieldCheck },
+    ],
+  },
+  {
+    label: "Analysis",
+    items: [
+      { id: "ask", label: TAB_TITLES.ask, icon: Sparkles },
+      { id: "explorer", label: TAB_TITLES.explorer, icon: Database },
+      { id: "analytics", label: TAB_TITLES.analytics, icon: BarChart3 },
+      { id: "topics", label: TAB_TITLES.topics, icon: Cloud },
+      { id: "reports", label: TAB_TITLES.reports, icon: FileSpreadsheet },
+    ],
+  },
 ];
+
+/**
+ * Settings is not a ninth destination. It is the utility every application
+ * keeps beside the account, and listing it with the eight made the primary
+ * navigation one item longer than the work it describes.
+ */
+const SETTINGS_ITEM: NavItem = { id: "settings", label: TAB_TITLES.settings, icon: Settings };
+
+/**
+ * A short badge for an organisation, for the collapsed rail.
+ * "Coal India Limited (CIL)" is already carrying its own abbreviation.
+ */
+function abbreviate(name: string): string {
+  if (name === "ALL") return "ALL";
+  const parenthesised = /\(([A-Z]{2,5})\)/.exec(name);
+  if (parenthesised) return parenthesised[1];
+  const initials = name
+    .split(/\s+/)
+    .filter((word) => /^[\p{Lu}\p{N}]/u.test(word))
+    .map((word) => word[0])
+    .join("");
+  return (initials || name).slice(0, 3).toUpperCase();
+}
+
+/** One navigation row. Shared by the grouped list and by Settings below it. */
+function NavButton({
+  item,
+  isActive,
+  isCollapsed,
+  onSelect,
+}: {
+  item: NavItem;
+  isActive: boolean;
+  isCollapsed: boolean;
+  onSelect: (tab: NavigationTab) => void;
+}) {
+  const Icon = item.icon;
+  const button = (
+    <button
+      onClick={() => onSelect(item.id)}
+      aria-current={isActive ? "page" : undefined}
+      className={cn(
+        "relative flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        isCollapsed && "justify-center px-0",
+        isActive
+          ? "bg-primary/10 font-medium text-primary"
+          : "text-muted-foreground hover:bg-accent hover:text-foreground"
+      )}
+    >
+      {/* A rail reads as "you are here" at a glance, where a tint alone has to
+          be compared against the rows around it. */}
+      {isActive && (
+        <span
+          aria-hidden="true"
+          className="absolute left-0 top-1/2 h-4 w-[3px] -translate-y-1/2 rounded-r-full bg-primary"
+        />
+      )}
+      <Icon className="h-4 w-4 shrink-0" />
+      {!isCollapsed && <span className="flex-1 truncate text-left">{item.label}</span>}
+    </button>
+  );
+
+  return isCollapsed ? (
+    <Tooltip>
+      <TooltipTrigger asChild>{button}</TooltipTrigger>
+      <TooltipContent side="right">{item.label}</TooltipContent>
+    </Tooltip>
+  ) : (
+    button
+  );
+}
 
 /** Up to two initials from a display name, falling back to the username. */
 function initialsOf(user: SessionUser): string {
@@ -138,74 +234,95 @@ export function Sidebar({
         </button>
       </div>
 
-      <nav className="flex-1 overflow-y-auto px-2 py-4">
-        {!isCollapsed && (
-          <div className="px-2 pb-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-            Platform
+      <nav className="flex-1 overflow-y-auto px-2 py-3">
+        {NAV_GROUPS.map((group, index) => (
+          <div key={group.label ?? "primary"} className={index > 0 ? "mt-4" : undefined}>
+            {group.label &&
+              (isCollapsed ? (
+                // The rail has no room for a word, but the break between
+                // groups is the part worth keeping.
+                <Separator className="mb-2" />
+              ) : (
+                <div className="px-2.5 pb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                  {group.label}
+                </div>
+              ))}
+
+            <ul className="space-y-0.5">
+              {group.items.map((item) => (
+                <li key={item.id}>
+                  <NavButton
+                    item={item}
+                    isActive={currentTab === item.id}
+                    isCollapsed={isCollapsed}
+                    onSelect={onSelectTab}
+                  />
+                </li>
+              ))}
+            </ul>
           </div>
-        )}
+        ))}
 
-        <ul className="space-y-0.5">
-          {NAV_ITEMS.map((item) => {
-            const Icon = item.icon;
-            const isActive = currentTab === item.id;
+        {/*
+          The organisation filter.
 
-            const button = (
-              <button
-                onClick={() => onSelectTab(item.id)}
-                aria-current={isActive ? "page" : undefined}
-                className={cn(
-                  "flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                  isCollapsed && "justify-center px-0",
-                  isActive
-                    ? "bg-primary/10 font-medium text-primary"
-                    : "text-muted-foreground hover:bg-accent hover:text-foreground"
-                )}
-              >
-                <Icon className="h-4 w-4 shrink-0" />
-                {!isCollapsed && (
-                  <>
-                    <span className="flex-1 truncate text-left">{item.label}</span>
-                    {item.count !== undefined && (
-                      <span className="shrink-0 font-mono text-xs tabular-nums text-muted-foreground">
-                        {item.count}
-                      </span>
-                    )}
-                  </>
-                )}
-              </button>
-            );
+          It used to sit directly under the navigation as a second list of
+          near-identical rows, and nothing about it said that these ones change
+          what every screen shows rather than which screen you are on. It is
+          now visibly a control: its own inset panel, a check against the
+          active choice, and a line saying what it does.
 
-            return (
-              <li key={item.id}>
-                {isCollapsed ? (
-                  <Tooltip>
-                    <TooltipTrigger asChild>{button}</TooltipTrigger>
-                    <TooltipContent side="right">{item.label}</TooltipContent>
-                  </Tooltip>
-                ) : (
-                  button
-                )}
-              </li>
-            );
-          })}
-        </ul>
-
-        {!isCollapsed && (
-          <>
-            <Separator className="my-4" />
-            <div className="px-2 pb-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-              Organisation
-            </div>
-            {isLoading ? (
-              <div className="px-2.5 py-1.5 text-xs text-muted-foreground">Loading…</div>
-            ) : organisations.length === 0 ? (
-              <p className="px-2.5 py-1.5 text-[11px] leading-relaxed text-muted-foreground">
-                No organisation was identified in the indexed documents.
-              </p>
-            ) : (
-              <ul className="space-y-0.5">
+          It also only appears when there is a choice to make. With a single
+          organisation indexed it read "All organisations 2 / Coal India
+          Limited (CIL) 2" — the same number twice, and no decision behind it.
+        */}
+        {organisations.length > 1 &&
+          (isCollapsed ? (
+            <>
+              <Separator className="my-2" />
+              <ul className="space-y-1">
                 {[{ name: "ALL", count: documents.length }, ...organisations].map((org) => {
+                  const label = org.name === "ALL" ? "All organisations" : org.name;
+                  const isSelected = selectedOrganisation === org.name;
+                  return (
+                    <li key={org.name}>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <button
+                            onClick={() => onSelectOrganisation(org.name)}
+                            aria-pressed={isSelected}
+                            aria-label={`Show ${label}, ${org.count} document${org.count === 1 ? "" : "s"}`}
+                            className={cn(
+                              "mx-auto flex h-8 w-8 items-center justify-center rounded-md text-[10px] font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                              isSelected
+                                ? "bg-primary/10 text-primary"
+                                : "text-muted-foreground hover:bg-accent hover:text-foreground"
+                            )}
+                          >
+                            {abbreviate(org.name)}
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent side="right">
+                          {label} · {org.count}
+                        </TooltipContent>
+                      </Tooltip>
+                    </li>
+                  );
+                })}
+              </ul>
+            </>
+          ) : (
+            <div className="mt-5 rounded-lg border border-dashed border-border bg-muted/40 p-1.5">
+              <div className="flex items-center gap-1.5 px-1.5 pt-0.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                <Filter className="h-3 w-3 shrink-0" aria-hidden="true" />
+                Organisation
+              </div>
+              <p className="px-1.5 pb-1.5 pt-0.5 text-[11px] leading-snug text-muted-foreground">
+                Filters every screen.
+              </p>
+              <ul className="space-y-px">
+                {[{ name: "ALL", count: documents.length }, ...organisations].map((org) => {
+                  const label = org.name === "ALL" ? "All organisations" : org.name;
                   const isSelected = selectedOrganisation === org.name;
                   return (
                     <li key={org.name}>
@@ -213,15 +330,20 @@ export function Sidebar({
                         onClick={() => onSelectOrganisation(org.name)}
                         aria-pressed={isSelected}
                         className={cn(
-                          "flex w-full items-baseline gap-2 rounded-md px-2.5 py-1.5 text-left text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                          "flex w-full items-center gap-1.5 rounded px-1.5 py-1 text-left text-[13px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                           isSelected
-                            ? "bg-accent font-medium text-foreground"
+                            ? "font-medium text-foreground"
                             : "text-muted-foreground hover:bg-accent hover:text-foreground"
                         )}
                       >
-                        <span className="flex-1 truncate">
-                          {org.name === "ALL" ? "All organisations" : org.name}
-                        </span>
+                        <Check
+                          aria-hidden="true"
+                          className={cn(
+                            "h-3 w-3 shrink-0",
+                            isSelected ? "text-primary" : "text-transparent"
+                          )}
+                        />
+                        <span className="flex-1 truncate">{label}</span>
                         <span className="shrink-0 font-mono text-[11px] tabular-nums text-muted-foreground">
                           {org.count}
                         </span>
@@ -230,15 +352,29 @@ export function Sidebar({
                   );
                 })}
               </ul>
-            )}
-          </>
+            </div>
+          ))}
+
+        {!isCollapsed && isLoading && (
+          <div className="mt-5 px-2.5 text-xs text-muted-foreground">Loading organisations…</div>
         )}
       </nav>
 
       {/* Who is signed in. This was a fixed name and address before accounts
           existed - it now names the actual session, and can end it. */}
-      <div className="border-t border-border p-3">
-        <div className={cn("flex items-center gap-2.5", isCollapsed && "justify-center")}>
+      <div className="border-t border-border p-2">
+        {/* Settings is a utility, not a destination, so it sits with the
+            account rather than lengthening the list of work by one. */}
+        <div className="pb-2">
+          <NavButton
+            item={SETTINGS_ITEM}
+            isActive={currentTab === SETTINGS_ITEM.id}
+            isCollapsed={isCollapsed}
+            onSelect={onSelectTab}
+          />
+        </div>
+
+        <div className={cn("flex items-center gap-2.5 px-0.5", isCollapsed && "justify-center px-0")}>
           <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-medium uppercase text-foreground">
             {initialsOf(user)}
           </div>
