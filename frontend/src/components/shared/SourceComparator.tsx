@@ -23,6 +23,25 @@ interface SourceComparatorProps {
   className?: string;
 }
 
+/**
+ * How large to set the disputed value.
+ *
+ * The panes were sized for a figure — `3,50,000 MT` at 30px reads instantly,
+ * which is the whole point of putting the two side by side. But the field in
+ * dispute is not always a figure: a duplicate finding disputes `filename`, and
+ * `sample_mining_report.pdf` at 30px overran its pane and collided with the
+ * one beside it, leaving both values unreadable. Stepping the size down by
+ * length keeps a figure emphatic and lets a long value fit; `anywhere` is
+ * applied only at the smallest step, so no figure is ever broken mid-number.
+ */
+export function valueSize(value?: string | null): string {
+  const length = (value ?? "").length;
+  if (length > 24) return "text-sm [overflow-wrap:anywhere]";
+  if (length > 16) return "text-lg [overflow-wrap:anywhere]";
+  if (length > 11) return "text-2xl";
+  return "text-3xl";
+}
+
 function SourcePane({
   label,
   source,
@@ -43,7 +62,8 @@ function SourcePane({
 
       <div
         className={cn(
-          "mt-3 font-mono text-3xl font-semibold tracking-tight tabular-nums",
+          "mt-3 font-mono font-semibold tracking-tight tabular-nums",
+          valueSize(source.value),
           emphasis === "warning" ? "text-warning" : "text-success"
         )}
       >

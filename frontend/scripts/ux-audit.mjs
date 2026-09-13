@@ -243,6 +243,36 @@ for (const route of ROUTES) {
   }
 }
 
+// Text that spills out of the box drawn around it.
+//
+// The Validation page put a disputed value in each of two side-by-side panes
+// at 30px mono. That is right for `3,50,000 MT` and wrong for a disputed
+// filename: `sample_mining_report.pdf` overran its pane and collided with the
+// value beside it, leaving the comparison the page exists to make unreadable.
+// The page did not scroll sideways, so the existing check never saw it.
+const SPILLS = () =>
+  [...document.querySelectorAll("#main-content *")]
+    .filter((el) => {
+      const style = getComputedStyle(el);
+      // Content wider than its box only matters where nothing clips or scrolls
+      // it — a truncate or an overflow-auto container is doing its job.
+      if (style.overflowX !== "visible" || style.position === "absolute") return false;
+      if (el.scrollWidth <= el.clientWidth + 1) return false;
+      // Leaf text only: a wide child reports up through every ancestor.
+      return el.children.length === 0 && (el.textContent || "").trim().length > 0;
+    })
+    .map((el) => {
+      const text = (el.textContent || "").replace(/\s+/g, " ").trim().slice(0, 28);
+      return `"${text}" overflows its box by ${el.scrollWidth - el.clientWidth}px`;
+    })
+    .slice(0, 4);
+
+for (const route of ROUTES) {
+  await page.goto(`${BASE}/#/${route}`, { waitUntil: "networkidle" });
+  await page.waitForTimeout(1200);
+  for (const spill of await page.evaluate(SPILLS)) add("layout", route, spill);
+}
+
 // Paper. The app is a fixed-height shell — h-screen on the frame, a scroll
 // container for the page — which is right on a screen and wrong on paper:
 // before the print rules, the Data Explorer printed one A4 sheet holding nine
