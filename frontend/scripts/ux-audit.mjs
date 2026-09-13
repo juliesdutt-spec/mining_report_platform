@@ -243,6 +243,54 @@ for (const route of ROUTES) {
   }
 }
 
+// Paper. The app is a fixed-height shell — h-screen on the frame, a scroll
+// container for the page — which is right on a screen and wrong on paper:
+// before the print rules, the Data Explorer printed one A4 sheet holding nine
+// of sixteen rows, with four of nine columns cut off the right edge and
+// nothing on the sheet to say so.
+{
+  // A4 portrait inside the 14mm @page margin is about 182mm ≈ 688 CSS px.
+  const paper = await browser.newContext({ viewport: { width: 688, height: 900 } });
+  const sheet = await paper.newPage();
+  await signIn(sheet);
+  await sheet.emulateMedia({ media: "print" });
+  for (const route of ROUTES) {
+    await sheet.goto(`${BASE}/#/${route}`, { waitUntil: "networkidle" });
+    await sheet.waitForTimeout(1400);
+    const found = await sheet.evaluate(() => {
+      const problems = [];
+      const main = document.getElementById("main-content");
+      if (!main) return ["no main region"];
+      // A scroll container on paper is content that never prints.
+      if (main.scrollHeight > main.clientHeight + 2) {
+        problems.push(`main still scrolls on paper (${main.scrollHeight} of ${main.clientHeight} printed)`);
+      }
+      const gone = (sel) => {
+        const el = document.querySelector(sel);
+        return !el || getComputedStyle(el).display === "none";
+      };
+      if (!gone("#app-sidebar")) problems.push("the sidebar prints");
+      if (!gone("header")) problems.push("the header prints");
+      // Which screen, whose documents, and when.
+      const stamp = [...document.querySelectorAll("div")].find((d) =>
+        /DataForge · /.test(d.textContent || "") && d.children.length === 0);
+      if (!stamp) problems.push("nothing on the sheet says which screen it is");
+
+      const width = document.documentElement.clientWidth;
+      for (const el of main.querySelectorAll("table, pre, img")) {
+        const rect = el.getBoundingClientRect();
+        if (rect.width > 0 && rect.right > width + 2) {
+          problems.push(`${el.tagName.toLowerCase()} runs ${Math.round(rect.right - width)}px off the right edge`);
+          break;
+        }
+      }
+      return problems;
+    });
+    for (const problem of found) add("print", route, problem);
+  }
+  await paper.close();
+}
+
 // The navigation drawer covers the page on a phone, so it has to behave like
 // a dialog. It is an <aside> with a transform, not a Radix dialog, so none of
 // that comes for free: before the trap, Tab walked eleven controls on the page

@@ -327,6 +327,7 @@ export function DocumentsPage({
           {/* Index rail */}
           <div className="lg:col-span-3">
             <Input
+              data-print-hide
               placeholder="Filter documents…"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
