@@ -44,7 +44,13 @@
     --secondary-foreground: 222 38% 15%;
 
     --muted: 210 40% 96%;             /* slate-100 */
-    --muted-foreground: 215 16% 47%;  /* #64748B secondary text */
+    /* Was 47%, which measured 4.30:1 on the muted surfaces badges and code
+       chips use and 4.51:1 on the app canvas - either side of the 4.5:1 WCAG
+       AA needs for body text, so most secondary text on the light theme
+       failed. 44% clears it on card, canvas and muted alike with headroom,
+       and is still visibly secondary against the 15%-lightness foreground.
+       Dark mode measured clean and is unchanged. */
+    --muted-foreground: 215 16% 44%;  /* #5B6A7D secondary text */
 
     --accent: 210 40% 96%;            /* neutral hover accent */
     --accent-foreground: 222 38% 15%;

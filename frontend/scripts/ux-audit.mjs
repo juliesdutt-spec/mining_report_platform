@@ -6,8 +6,8 @@
  *
  * It checks the things that are cheap to get wrong and invisible in review:
  * table columns that can never fill, placeholder text left on screen, tap
- * targets too small for a finger, controls a screen reader cannot name, and
- * horizontal overflow.
+ * targets too small for a finger, controls a screen reader cannot name,
+ * horizontal overflow, and text below WCAG AA contrast in either theme.
  *
  * Three of its rules were wrong when first written, and the corrections are
  * the interesting part. A control is not unnamed just because its element has no
@@ -89,6 +89,53 @@ const UNNAMED = () =>
     })
     .map((el) => el.outerHTML.slice(0, 90).replace(/\s+/g, " "));
 
+
+/** WCAG AA contrast for every text node, computed against its effective background. */
+const LOW_CONTRAST = () => {
+  const parse = (c) => {
+    const m = c.match(/rgba?\(([\d.]+),\s*([\d.]+),\s*([\d.]+)(?:,\s*([\d.]+))?\)/);
+    return m ? { r: +m[1], g: +m[2], b: +m[3], a: m[4] === undefined ? 1 : +m[4] } : null;
+  };
+  const lum = ({ r, g, b }) => {
+    const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); };
+    return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b);
+  };
+  const ratio = (a, b) => { const [x, y] = [lum(a), lum(b)].sort((m, n) => n - m); return (x + 0.05) / (y + 0.05); };
+  const behind = (el) => {
+    let node = el;
+    while (node && node !== document.documentElement) {
+      const bg = parse(getComputedStyle(node).backgroundColor);
+      if (bg && bg.a > 0.5) return bg;
+      node = node.parentElement;
+    }
+    return { r: 255, g: 255, b: 255, a: 1 };
+  };
+
+  const out = [];
+  const seen = new Set();
+  for (const el of document.querySelectorAll("main *")) {
+    if (!el.offsetParent && getComputedStyle(el).position !== "fixed") continue;
+    const text = [...el.childNodes].filter((n) => n.nodeType === 3)
+      .map((n) => n.textContent.trim()).join(" ").trim();
+    if (text.length < 2) continue;
+
+    const cs = getComputedStyle(el);
+    const fg = parse(cs.color);
+    if (!fg || fg.a < 0.5) continue;
+    const size = parseFloat(cs.fontSize);
+    const weight = parseInt(cs.fontWeight, 10) || 400;
+    // WCAG counts 24px, or 18.66px bold, as large text.
+    const required = size >= 24 || (size >= 18.66 && weight >= 700) ? 3 : 4.5;
+    const r = ratio(fg, behind(el));
+    if (r >= required) continue;
+    const key = `${text.slice(0, 24)}|${Math.round(r * 10)}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(`${r.toFixed(2)}:1 (needs ${required}) ${Math.round(size)}px ${JSON.stringify(text.slice(0, 30))}`);
+  }
+  return out.slice(0, 6);
+};
+
 const desktop = await browser.newContext({ viewport: { width: 1440, height: 950 } });
 const page = await desktop.newPage();
 const consoleErrors = new Set();
@@ -137,6 +184,24 @@ for (const route of ROUTES) {
   if (await page.evaluate(() =>
     document.documentElement.scrollWidth > document.documentElement.clientWidth + 1)) {
     add("layout", route, "horizontal scroll at 1440px");
+  }
+
+  for (const failure of await page.evaluate(LOW_CONTRAST)) {
+    add("a11y", route, `text below WCAG AA: ${failure}`);
+  }
+}
+
+// The same sweep in dark mode: the two themes define their own tokens, so a
+// value that passes in one says nothing about the other.
+const darkCtx = await browser.newContext({ viewport: { width: 1440, height: 950 } });
+const darkPage = await darkCtx.newPage();
+await darkPage.addInitScript(() => localStorage.setItem("dataforge-theme", "dark"));
+await signIn(darkPage);
+for (const route of ROUTES) {
+  await darkPage.goto(`${BASE}/#/${route}`, { waitUntil: "networkidle" });
+  await darkPage.waitForTimeout(1200);
+  for (const failure of await darkPage.evaluate(LOW_CONTRAST)) {
+    add("a11y", `${route} (dark)`, `text below WCAG AA: ${failure}`);
   }
 }
 
