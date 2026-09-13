@@ -958,6 +958,71 @@ def list_validation_findings(
     return {"counts": counts, "findings": findings}
 
 
+@app.post("/admin/reindex")
+def reindex_corpus(
+    reset: bool = Query(False, description="Drop the index first, for an embedding model change."),
+    db: Session = Depends(get_db),
+    user: User = Depends(writing_user),
+):
+    """
+    Build the semantic index from the reports already in the database.
+
+    This exists because the index cannot be built from anywhere else. The
+    vector database is reachable only over the deployment's private network,
+    so `python -m vector_backfill` has to run inside the deployment — this is
+    that, over HTTP.
+
+    Behind writing_user rather than current_user: the demo account's password
+    is published on the sign-in page, and every chunk here costs an embedding
+    call against the project's quota.
+
+    Re-runnable. Each report's passages are replaced rather than appended, so
+    running it twice is a no-op rather than a duplicate index.
+    """
+    ok, reason = vector_store.available()
+    if not ok:
+        raise HTTPException(status_code=503, detail=f"Vector store unavailable: {reason}")
+
+    embeddings = ai_providers.embeddings_describe()
+    if not embeddings["available"]:
+        raise HTTPException(
+            status_code=503, detail=f"No embeddings available: {embeddings['reason']}"
+        )
+
+    if reset:
+        vector_store.reset()
+
+    reports = (
+        db.query(MiningReport)
+        .filter(MiningReport.status == "completed")
+        .order_by(MiningReport.id)
+        .all()
+    )
+
+    indexed_chunks = 0
+    indexed_reports = 0
+    failures = []
+    for report in reports:
+        written, error = retrieval.index_report(report)
+        if error:
+            # Reported per report rather than aborting: one document that
+            # cannot be embedded should not leave the other fourteen
+            # unsearchable.
+            failures.append({"report_id": report.id, "filename": report.filename, "error": error})
+        else:
+            indexed_chunks += written
+            indexed_reports += 1
+
+    return {
+        "reports_seen": len(reports),
+        "reports_indexed": indexed_reports,
+        "chunks_indexed": indexed_chunks,
+        "failures": failures,
+        "embedding_model": embeddings["model"],
+        "index": vector_store.stats(),
+    }
+
+
 @app.post("/validation/{finding_id}/resolve")
 def resolve_validation_finding(
     finding_id: str,

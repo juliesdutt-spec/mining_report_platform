@@ -343,7 +343,11 @@ why it is kept out of the database holding the only copy of anything.
 #    traffic never leaves Railway:
 VECTOR_DATABASE_URL=${{pgvector.DATABASE_URL}}
 
-# 3. Index the reports already in the database
+# 3. Index the reports already in the database.
+#    The vector database is reachable only over Railway's private network,
+#    so on a deployment this runs inside it rather than from your machine:
+curl -X POST "$BACKEND/admin/reindex" -H "Authorization: Bearer $TOKEN"
+#    Locally, where you can reach the database directly:
 python -m vector_backfill
 
 # 4. Confirm it is serving
