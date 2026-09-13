@@ -238,12 +238,24 @@ def available() -> tuple[bool, str | None]:
         return False, "psycopg2 is not installed."
     try:
         with _connect() as conn, conn.cursor() as cur:
-            cur.execute("SELECT 1 FROM pg_extension WHERE extname = 'vector'")
-            if cur.fetchone() is None:
+            # Two different things, and conflating them misdiagnoses the one
+            # case that matters. pg_extension lists extensions that have been
+            # CREATEd; pg_available_extensions lists what this image *can*
+            # create. A freshly provisioned pgvector database has the second
+            # and not the first — ensure_schema creates it on the first write
+            # — so checking only pg_extension told an operator who had done
+            # exactly the right thing to go and use the pgvector template.
+            cur.execute(
+                "SELECT"
+                " EXISTS(SELECT 1 FROM pg_extension WHERE extname = 'vector'),"
+                " EXISTS(SELECT 1 FROM pg_available_extensions WHERE name = 'vector')"
+            )
+            installed, installable = cur.fetchone()
+            if not installed and not installable:
                 return False, (
-                    "The vector extension is not installed on this database. "
-                    "Railway's standard Postgres image does not ship it — use "
-                    "the pgvector template."
+                    "This database does not ship the pgvector extension. "
+                    "Railway's standard Postgres image does not — use the "
+                    "pgvector template, or an image with pgvector built in."
                 )
     except Exception as exc:  # noqa: BLE001 - reported, never raised onward
         _UNAVAILABLE_REASON = str(exc)[:200]

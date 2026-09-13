@@ -155,6 +155,32 @@ class VectorStoreTests(unittest.TestCase):
         second = vector_store.search(self.vec(1.0), limit=5)
         self.assertEqual(first[0]["report_id"], second[0]["report_id"])
 
+    def test_a_database_that_can_create_the_extension_is_available(self):
+        """
+        A freshly provisioned pgvector database has the extension available
+        but not yet created — ensure_schema creates it on the first write.
+
+        Checking only pg_extension made that state indistinguishable from
+        Railway's standard image, so an operator who had provisioned exactly
+        the right database was told to go and use the pgvector template.
+        """
+        with vector_store._connect() as conn, conn.cursor() as cur:
+            cur.execute("DROP EXTENSION IF EXISTS vector CASCADE")
+        vector_store._SCHEMA_READY = False
+
+        with vector_store._connect() as conn, conn.cursor() as cur:
+            cur.execute("SELECT count(*) FROM pg_extension WHERE extname = 'vector'")
+            self.assertEqual(cur.fetchone()[0], 0, "the extension should be gone for this test")
+
+        ok, reason = vector_store.available()
+        self.assertTrue(ok, f"refused a usable database: {reason}")
+
+        # And the first write creates it rather than failing.
+        vector_store.index_report(
+            1, [{"page": 1, "content": "x"}], [self.vec(1.0)], model=self.MODEL
+        )
+        self.assertEqual(vector_store.stats()["chunks"], 1)
+
     def test_two_embedding_models_are_never_mixed(self):
         # Vectors from different models are not comparable, and a search
         # across both returns nonsense that looks exactly like a working one.
