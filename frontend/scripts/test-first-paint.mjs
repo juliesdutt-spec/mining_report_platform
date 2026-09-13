@@ -73,3 +73,27 @@ test("the charts library is not forced onto every page's chunk", () => {
   // scripts/bundle-audit.mjs walks the built output and proves it.
   assert.doesNotMatch(vite, /charts:\s*\['recharts'\]/);
 });
+
+test("with scripting off, the page says so instead of promising a load", () => {
+  // Measured before: JavaScript disabled left "Loading the indexed reports…"
+  // on screen permanently, and there was no <noscript> anywhere in the page.
+  assert.match(html, /<noscript>[\s\S]*needs JavaScript[\s\S]*<\/noscript>/);
+  // And the promise itself is withdrawn, rather than sitting above the
+  // explanation contradicting it.
+  const noscriptStyle = html.slice(html.indexOf("<noscript>\n      <style>"));
+  assert.match(noscriptStyle, /#app-boot-note \{\s*\n\s*display: none;/);
+});
+
+test("a bundle that never arrives stops claiming to be loading", () => {
+  // Blocking the script left the page saying "Loading…" at six seconds, and
+  // it would have at six hours.
+  const stall = html.slice(html.indexOf("setTimeout(function"));
+  assert.match(stall, /getElementById\("app-boot-note"\)/);
+  // React removes the boot screen, so a healthy load finds nothing to rewrite.
+  assert.match(stall, /if \(!note\) return;/);
+  assert.match(stall, /could not finish loading/);
+  // Well past the ~4.5s a 400 kbps connection needs, so reaching it means the
+  // request failed rather than that it is slow.
+  const delay = Number(/\}, (\d+)\);/.exec(stall)[1]);
+  assert.ok(delay >= 10000, `the stall message fires after ${delay}ms, too soon to be sure`);
+});

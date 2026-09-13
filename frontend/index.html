@@ -45,7 +45,19 @@
       :root.dark #app-boot .mark i {
         color: #ff8e3d; /* --brand, lifted for slate */
       }
+      #app-boot noscript {
+        max-width: 34ch;
+        text-align: center;
+      }
     </style>
+    <noscript>
+      <style>
+        /* Nothing is loading, so saying so is a promise nothing will keep. */
+        #app-boot-note {
+          display: none;
+        }
+      </style>
+    </noscript>
     <script>
       // No-FOUC theme bootstrap. DataForge is light-first; only opt into dark
       // when the viewer has explicitly saved that preference.
@@ -68,9 +80,26 @@
     <div id="root">
       <div id="app-boot">
         <div class="mark">Data<i>forge</i></div>
-        <div>Loading the indexed reports…</div>
+        <div id="app-boot-note">Loading the indexed reports…</div>
+        <noscript>
+          DataForge reads and reconciles mining reports in the browser, so it
+          needs JavaScript enabled. Turn it on for this site and reload.
+        </noscript>
       </div>
     </div>
+    <script>
+      // A bundle that never arrives would leave "Loading the indexed reports…"
+      // on screen for ever — measured: block the script and the page still
+      // says it six seconds later, and would at six hours. 12s is well past
+      // the ~4.5s a 400 kbps connection needs, so reaching this means the
+      // request failed rather than that it is slow.
+      setTimeout(function () {
+        var note = document.getElementById("app-boot-note");
+        if (!note) return; // React took over, as it should have
+        note.textContent =
+          "DataForge could not finish loading. Check the connection and reload the page.";
+      }, 12000);
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
