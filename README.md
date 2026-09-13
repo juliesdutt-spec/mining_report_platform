@@ -287,7 +287,10 @@ needs no migration step. The database starts empty: re-upload your PDFs.
 Checks the things that are cheap to get wrong and invisible in review: table
 columns that can never fill, placeholder text left on screen, tap targets too
 small for a finger, controls a screen reader cannot name, horizontal overflow
-at desktop and phone widths. Exits non-zero when it finds something.
+at desktop and phone widths, and text below WCAG AA contrast **in both
+themes** — the light and dark palettes define their own tokens, so a value
+that passes in one says nothing about the other. Exits non-zero when it finds
+something.
 
 Two of its rules were wrong when first written, and the corrections are worth
 knowing. A control is not unnamed just because its element has no text — a
