@@ -62,6 +62,65 @@ class ChunkPagesTests(unittest.TestCase):
         self.assertIn("कोयला", "".join(c["content"] for c in chunks))
 
 
+class AvailabilityCacheTests(unittest.TestCase):
+    """
+    /health calls available(), and Railway polls /health.
+
+    Without a cache each poll opened a connection to the vector database —
+    and while that database was unreachable, each poll blocked for the
+    connect timeout, so an outage of the *search index* could fail the
+    platform's healthcheck and restart the whole API. The index going down
+    must never take the API with it.
+    """
+
+    def setUp(self):
+        self._url = vector_store.VECTOR_DATABASE_URL
+        vector_store.forget_availability()
+
+    def tearDown(self):
+        vector_store.VECTOR_DATABASE_URL = self._url
+        vector_store.forget_availability()
+
+    def test_an_unreachable_database_is_probed_once_per_ttl(self):
+        vector_store.VECTOR_DATABASE_URL = "postgresql://nobody:nobody@127.0.0.1:5999/nope"
+        calls = []
+        real_connect = vector_store._connect
+
+        import contextlib
+
+        @contextlib.contextmanager
+        def counting():
+            calls.append(1)
+            with real_connect() as conn:
+                yield conn
+
+        vector_store._connect = counting
+        try:
+            for _ in range(5):
+                ok, reason = vector_store.available()
+                self.assertFalse(ok)
+                self.assertIn("Could not reach", reason)
+            self.assertEqual(len(calls), 1, "the probe was repeated inside its TTL")
+        finally:
+            vector_store._connect = real_connect
+
+    def test_forgetting_forces_a_fresh_probe(self):
+        # A write that succeeds proves the database is up; a verdict cached
+        # while it was being provisioned must not outlive that proof.
+        vector_store.VECTOR_DATABASE_URL = "postgresql://nobody:nobody@127.0.0.1:5999/nope"
+        first, _ = vector_store.available()
+        self.assertFalse(first)
+        vector_store.forget_availability()
+        self.assertIsNone(vector_store._availability_cache)
+
+    def test_an_unset_url_never_touches_the_cache(self):
+        vector_store.VECTOR_DATABASE_URL = ""
+        ok, reason = vector_store.available()
+        self.assertFalse(ok)
+        self.assertIn("not set", reason)
+        self.assertIsNone(vector_store._availability_cache)
+
+
 def _store_ready() -> bool:
     if not vector_store.configured():
         return False
