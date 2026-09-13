@@ -33,7 +33,10 @@ from database import init_db, get_db, MiningReport, QueryHistory, ValidationReso
 from auth import create_access_token, decode_access_token, verify_password
 from auth_seed import DEMO_ENABLED, DEMO_PASSWORD, DEMO_USERNAME, seed_users
 from rate_limit import limit_for, query_limiter
+import ai_providers
 import extraction_quality
+import retrieval
+import vector_store
 from document_processor import (
     extract_text_from_pdf, extract_pages_from_pdf, chunk_text, get_pdf_metadata
 )
@@ -238,8 +241,6 @@ def health_check():
     deterministic stand-ins, in which case `ai_mode_reason` says what is
     missing. No key, or any part of one, is ever returned here.
     """
-    import ai_providers
-
     described = ai_providers.describe()
     return {
         "status": "healthy",
@@ -249,6 +250,34 @@ def health_check():
         "ai_mode_reason": described["reason"],
         "ai_provider_requested": described["requested"],
         "ai_providers_available": described["available"],
+        # Whether semantic retrieval is actually serving questions, and what
+        # is in the index. Off is a normal state with a reason, not a fault:
+        # /query answers either way, from the field dump when this is off.
+        "retrieval": _retrieval_health(),
+    }
+
+
+def _retrieval_health() -> dict:
+    """
+    The search index's side of /health.
+
+    Probes rather than reports intent, because "VECTOR_DATABASE_URL is set"
+    and "questions are being answered from the index" are different claims
+    and only the second one matters to whoever is reading this.
+    """
+    embeddings = ai_providers.embeddings_describe()
+    try:
+        index = vector_store.stats()
+    except Exception as exc:  # noqa: BLE001 - health must not 500
+        index = {"available": False, "reason": str(exc)[:200], "chunks": 0, "reports": 0}
+    return {
+        "enabled": bool(index.get("available")) and embeddings["available"],
+        "index_reason": index.get("reason"),
+        "embeddings_reason": embeddings["reason"],
+        "embedding_provider": embeddings["provider"],
+        "embedding_model": embeddings["model"],
+        "indexed_chunks": index.get("chunks", 0),
+        "indexed_reports": index.get("reports", 0),
     }
 
 
@@ -347,13 +376,25 @@ async def upload_report(
         report.status = "completed"
         db.commit()
         db.refresh(report)
-        
+
+        # Add this document's pages to the semantic index, if one is
+        # configured. Deliberately after the commit and deliberately not
+        # fatal: a document that fails to index is still ingested, still
+        # extracted and still answerable from its extracted fields. Failing
+        # the upload because a secondary index was unreachable would lose the
+        # document over a feature that is meant to be an improvement.
+        indexed, index_error = retrieval.index_report(report)
+        if index_error:
+            print(f"[upload] report {report.id} not indexed for search: {index_error}")
+
         return {
             "id": report.id,
             "filename": report.filename,
             "status": report.status,
             "extracted_data": report.extracted_data,
             "word_cloud_available": wc_bytes is not None,
+            "indexed_chunks": indexed,
+            "index_note": index_error,
             "message": "Report processed successfully!"
         }
         
@@ -574,7 +615,15 @@ def delete_report(report_id: int, db: Session = Depends(get_db), user: User = De
     
     db.delete(report)
     db.commit()
-    
+
+    # Its passages have to go too. A deleted document that stays in the
+    # search index keeps being retrieved and quoted back as current, which is
+    # worse than it never having been searchable.
+    try:
+        vector_store.forget_report(report_id)
+    except Exception as exc:  # noqa: BLE001 - the document is already gone
+        print(f"[delete] report {report_id} left in the search index: {exc}")
+
     return {"message": f"Report {report_id} deleted successfully"}
 
 
@@ -714,10 +763,36 @@ def query_mining_reports(
             )
         
         reports_context = "\n---\n".join(context_parts)
-        
+
+        # Semantic retrieval, when a vector index is configured and reachable.
+        #
+        # The block above is every completed report's *extracted fields*, and
+        # ai_extractor cuts it at 6000 characters. Two consequences, both
+        # worse the larger the corpus gets: whatever falls past the cut is
+        # never seen, with nothing in the answer to say so; and the document
+        # body is not in the prompt at all, so a figure sitting in a paragraph
+        # nobody extracted cannot be answered from.
+        #
+        # Retrieval replaces that with the passages actually closest to the
+        # question, each labelled with the page it came from. It is an
+        # optimisation on a working feature, so any failure falls back to the
+        # prompt above rather than costing the asker their answer.
+        retrieved = retrieval.retrieve(question, organisation)
+        passages = retrieved["passages"]
+        if passages:
+            prompt_context = (
+                "Passages retrieved from the indexed documents, most relevant "
+                "first. Each is labelled with the document and page it was read "
+                "from.\n\n" + retrieved["context"]
+            )
+            retrieval_mode = "semantic"
+        else:
+            prompt_context = reports_context
+            retrieval_mode = "full-corpus"
+
         # Query AI. The detailed form also reports which provider answered, so
         # a silent fall back to mock output cannot pass for a real answer.
-        result = query_reports_detailed(question, reports_context)
+        result = query_reports_detailed(question, prompt_context)
         answer = result["answer"]
         
         # Store query history
@@ -746,6 +821,21 @@ def query_mining_reports(
             "answer_note": result["note"],
             "reports_used": len(reports),
             "report_ids": [r.id for r in reports],
+            # How the passages in the prompt were chosen. "full-corpus" means
+            # retrieval was off or unavailable and the answer was drawn from
+            # the truncated field dump, which is worth knowing rather than
+            # guessing at from the answer's quality.
+            "retrieval_mode": retrieval_mode,
+            "retrieval_note": retrieved["reason"],
+            "retrieved_passages": [
+                {
+                    "report_id": passage["report_id"],
+                    "filename": passage["filename"],
+                    "page": passage["page"],
+                    "similarity": passage["similarity"],
+                }
+                for passage in passages
+            ],
             "evidence": evidence,
             "sources": [
                 {"id": r.id, "filename": r.filename} for r in reports
