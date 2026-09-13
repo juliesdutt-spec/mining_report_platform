@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { Sidebar } from "./Sidebar";
 import { Header } from "./Header";
 import { CommandPalette } from "./CommandPalette";
@@ -37,6 +37,26 @@ export function AppShell({
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
+  // Radix restores focus to whatever opened a dialog, but this one is driven
+  // by state rather than a trigger element, so there was nothing to restore
+  // to: closing it dropped focus onto <body> and the next Tab started again
+  // from the top of the page. Remember where the caller was standing.
+  const focusBeforePalette = useRef<HTMLElement | null>(null);
+
+  const openCommandPalette = useCallback(() => {
+    focusBeforePalette.current = document.activeElement as HTMLElement | null;
+    setIsCommandPaletteOpen(true);
+  }, []);
+
+  const closeCommandPalette = useCallback(() => {
+    setIsCommandPaletteOpen(false);
+    // After the dialog has released focus, not before.
+    const previous = focusBeforePalette.current;
+    window.setTimeout(() => {
+      if (previous && document.contains(previous)) previous.focus();
+      else document.getElementById("main-content")?.focus();
+    }, 0);
+  }, []);
 
   // The same control means two things. Docked, it collapses the rail to icons;
   // as a drawer, it slides the whole sidebar in. Collapsing a drawer would
@@ -72,7 +92,8 @@ export function AppShell({
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
         e.preventDefault();
-        setIsCommandPaletteOpen((prev) => !prev);
+        if (isCommandPaletteOpen) closeCommandPalette();
+        else openCommandPalette();
       }
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "b") {
         e.preventDefault();
@@ -82,7 +103,10 @@ export function AppShell({
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, []);
+    // isCommandPaletteOpen is read inside the handler, so an empty dependency
+    // list would capture it as false forever and ⌘K could open the palette
+    // but never toggle it shut. The two callbacks are stable.
+  }, [isCommandPaletteOpen, openCommandPalette, closeCommandPalette]);
 
   return (
     <TooltipProvider delayDuration={200}>
@@ -96,6 +120,23 @@ export function AppShell({
             aria-hidden="true"
           />
         )}
+
+        {/* Nine navigation items and an organisation filter sat between the
+            top of every page and its content: sixteen presses of Tab before a
+            keyboard user reached what they came for, on every navigation.
+            Off-screen until focused, so it costs sighted users nothing. */}
+        <a
+          href="#main-content"
+          onClick={(event) => {
+            // The shell is a hash router, so a bare #main-content href would
+            // be read as a route and navigate away from the page.
+            event.preventDefault();
+            document.getElementById("main-content")?.focus();
+          }}
+          className="sr-only z-[60] focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:rounded-md focus:bg-primary focus:px-4 focus:py-2 focus:text-sm focus:font-medium focus:text-primary-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+        >
+          Skip to content
+        </a>
 
         <Sidebar
           currentTab={currentTab}
@@ -121,20 +162,20 @@ export function AppShell({
             isCollapsed={isCollapsed}
             onToggleSidebar={toggleSidebar}
             isMobileNavOpen={isMobileNavOpen}
-            onOpenCommandPalette={() => setIsCommandPaletteOpen(true)}
+            onOpenCommandPalette={openCommandPalette}
             selectedOrganisation={selectedOrganisation}
             onQuickUpload={onQuickUpload}
             backendStatus={backendStatus}
           />
 
-          <main className="flex-1 overflow-y-auto">
+          <main id="main-content" tabIndex={-1} className="flex-1 overflow-y-auto focus:outline-none">
             <div className="mx-auto max-w-[1400px] px-4 py-6 sm:px-6 sm:py-8 lg:px-8">{children}</div>
           </main>
         </div>
 
         <CommandPalette
           isOpen={isCommandPaletteOpen}
-          onClose={() => setIsCommandPaletteOpen(false)}
+          onClose={closeCommandPalette}
           onSelectTab={onSelectTab}
         />
 

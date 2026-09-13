@@ -9,13 +9,15 @@
  * targets too small for a finger, controls a screen reader cannot name, and
  * horizontal overflow.
  *
- * Two of its rules were wrong when first written, and the corrections are the
- * interesting part. A control is not unnamed just because its element has no
+ * Three of its rules were wrong when first written, and the corrections are
+ * the interesting part. A control is not unnamed just because its element has no
  * text — a `<label for>` names it, and checking only textContent reported
  * four perfectly accessible checkboxes as broken. And a 16px checkbox is not
  * unreachable when a 24px label beside it toggles the same state, which is
- * exactly the exemption WCAG 2.5.8 makes. An audit that reports those as
- * defects trains people to ignore it.
+ * exactly the exemption WCAG 2.5.8 makes. And a skip link is 1x1 until it
+ * is focused, which is the whole design — reporting it as an unreachable
+ * control flagged the very fix for the problem the audit had just found.
+ * An audit that reports those as defects trains people to ignore it.
  */
 import { chromium } from "playwright";
 
@@ -44,6 +46,15 @@ const SMALL_TARGETS = (min) => {
     const rect = el.getBoundingClientRect();
     if (!rect.width || !rect.height) return false;
     if (rect.height >= min && rect.width >= min) return false;
+
+    // Visually-hidden controls are keyboard affordances, not touch targets.
+    // A skip link is 1x1 until it is focused, at which point it becomes a
+    // full-size button — flagging it taught the audit to distrust itself.
+    const style = getComputedStyle(el);
+    const clipped = style.clip === "rect(0px, 0px, 0px, 0px)" ||
+                    style.clipPath === "inset(50%)" ||
+                    (rect.width <= 1 && rect.height <= 1);
+    if (clipped) return false;
 
     // WCAG 2.5.8 exempts a control when an equivalent one meets the size.
     // A labelled checkbox is the common case: the box is 16px, the label
