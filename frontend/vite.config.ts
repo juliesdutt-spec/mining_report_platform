@@ -11,18 +11,24 @@ export default defineConfig({
     },
   },
   build: {
-    // recharts alone is ~540 kB and cannot be split further, but it now sits in
-    // its own chunk that only the chart pages pull in. The threshold is raised
-    // so the build does not warn about a vendor chunk that is already isolated
-    // and lazily loaded — the app chunk itself is ~146 kB.
+    // recharts is ~540 kB and cannot be split further. It used to have its own
+    // manualChunk, which read like isolation and was the opposite: the chunk
+    // took recharts' shared transitive dependencies with it, so all nine page
+    // chunks imported it and whichever screen you opened first pulled the lot.
+    // Measured on a 400 kbps connection that was 151 kB over the wire and 6.2s
+    // of the critical path, on the sign-in screen. Left to Rollup it lands in
+    // the AnalyticsPage chunk, which is the only page that draws a chart and is
+    // already imported lazily. scripts/bundle-audit.mjs walks the built output
+    // and fails if it ever creeps back onto the first load.
     chunkSizeWarningLimit: 600,
     rollupOptions: {
       output: {
-        // Split the heavy, rarely-changing libraries out of the app chunk so a
-        // code change does not invalidate them in the browser cache.
+        // React is genuinely needed to render anything, so a chunk of its own
+        // means an app change does not invalidate it in the browser cache.
+        // Nothing else belongs here: a manualChunk pulls in everything the
+        // named module imports, which is how recharts ended up on every page.
         manualChunks: {
           react: ['react', 'react-dom'],
-          charts: ['recharts'],
         },
       },
     },
