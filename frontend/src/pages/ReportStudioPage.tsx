@@ -26,6 +26,7 @@ import { ApiError, dossierPath, saveFile } from "@/services/api";
 import { usePendingState } from "@/lib/usePendingState";
 import { fetchDocuments } from "@/services/documents";
 import { MiningDocument } from "@/types";
+import { StatusBadge } from "@/components/shared/StatusBadge";
 import { Skeleton } from "@/components/ui/skeleton";
 
 const SECTIONS = [
@@ -377,7 +378,14 @@ export function ReportStudioPage() {
                             <TableCell className="text-muted-foreground">
                               {doc.extractionMethod ?? "\u2014"}
                             </TableCell>
-                            <TableCell className="text-xs text-success">{doc.status}</TableCell>
+                            <TableCell>
+                              {/* Painted green whatever it said, so a document
+                                  whose extraction failed was listed in the
+                                  same colour as one that succeeded — in a
+                                  dossier whose own banner promises that
+                                  sections without supporting data say so. */}
+                              <StatusBadge status={doc.status} />
+                            </TableCell>
                           </TableRow>
                         ))}
 

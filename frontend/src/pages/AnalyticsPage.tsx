@@ -168,7 +168,17 @@ export function AnalyticsPage({ selectedOrganisation }: AnalyticsPageProps) {
                     <XAxis dataKey="location" stroke={colors["muted-foreground"]} fontSize={11} tickLine={false} axisLine={false} />
                     <YAxis stroke={colors["muted-foreground"]} fontSize={11} tickLine={false} axisLine={false} />
                     <Tooltip {...tooltipStyle(colors)} cursor={{ fill: colors.border, opacity: 0.3 }} />
-                    <Bar dataKey="documents" name="Documents" fill={colors.primary} radius={[3, 3, 0, 0]} />
+                    {/* Without a cap, recharts divides the plot area between
+                        however many categories there are: one location drew a
+                        510px block that reads as a filled panel rather than a
+                        bar, and two would draw half the chart each. */}
+                    <Bar
+                      dataKey="documents"
+                      name="Documents"
+                      fill={colors.primary}
+                      radius={[3, 3, 0, 0]}
+                      maxBarSize={56}
+                    />
                   </BarChart>
                 </ResponsiveContainer>
                 )}
