@@ -243,6 +243,55 @@ for (const route of ROUTES) {
   }
 }
 
+// The navigation drawer covers the page on a phone, so it has to behave like
+// a dialog. It is an <aside> with a transform, not a Radix dialog, so none of
+// that comes for free: before the trap, Tab walked eleven controls on the page
+// behind it.
+{
+  const describe = () =>
+    small.evaluate(() => {
+      const active = document.activeElement;
+      if (!active) return { label: "none", inSidebar: false };
+      return {
+        label: active.getAttribute("aria-label") ||
+          (active.textContent || "").replace(/\s+/g, " ").trim().slice(0, 24),
+        inSidebar: !!active.closest("#app-sidebar"),
+      };
+    });
+
+  await small.goto(`${BASE}/#/dashboard`, { waitUntil: "networkidle" });
+  await small.waitForTimeout(900);
+  const toggle = small.getByRole("button", { name: "Toggle sidebar" }).first();
+  await toggle.click();
+  await small.waitForTimeout(400);
+
+  const modal = await small.evaluate(() => {
+    const el = document.getElementById("app-sidebar");
+    return el?.getAttribute("role") === "dialog" && el?.getAttribute("aria-modal") === "true";
+  });
+  if (!modal) add("a11y", "shell", "the open navigation drawer is not announced as a modal dialog");
+
+  if (!(await describe()).inSidebar) {
+    add("a11y", "shell", "opening the navigation drawer leaves focus on the page behind it");
+  }
+
+  let escaped = 0;
+  for (let i = 0; i < 16; i += 1) {
+    await small.keyboard.press("Tab");
+    if (!(await describe()).inSidebar) escaped += 1;
+  }
+  if (escaped) {
+    add("a11y", "shell", `${escaped} of 16 tab stops left the open drawer for the page it covers`);
+  }
+
+  await small.keyboard.press("Escape");
+  await small.waitForTimeout(400);
+  const after = await describe();
+  if (after.label !== "Toggle sidebar") {
+    add("a11y", "shell", `closing the drawer put focus on "${after.label}" rather than back on its toggle`);
+  }
+}
+
 // WCAG 1.4.10 puts the number at 320px: below that a reader has to scroll in
 // two directions to read one line, which is what the criterion exists to stop.
 // 390px is the phone people actually hold; 320px is the promise.

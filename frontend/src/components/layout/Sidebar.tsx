@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useRef } from "react";
 import {
   BarChart3,
   Cloud,
@@ -18,6 +18,7 @@ import { organisationsIn, useCorpus } from "@/lib/corpus";
 import { cn } from "@/lib/utils";
 import { SessionUser } from "@/lib/session";
 import { TAB_TITLES } from "@/lib/tabs";
+import { useFocusTrap } from "@/lib/useFocusTrap";
 import { Wordmark, WordmarkGlyph } from "@/components/brand/Wordmark";
 import { Separator } from "@/components/ui/separator";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -82,10 +83,22 @@ export function Sidebar({
   const { documents, isLoading } = useCorpus();
   const organisations = organisationsIn(documents);
 
+  // As a drawer this covers the page, so it has to behave like one: focus
+  // moves in when it opens, Tab stays inside it while it is over the content,
+  // and closing hands focus back to the control that opened it. Docked from
+  // `md` up it is ordinary page furniture and traps nothing.
+  const drawerRef = useRef<HTMLElement>(null);
+  useFocusTrap(isMobileOpen, drawerRef, onCloseMobile);
+
   return (
     <aside
       id="app-sidebar"
+      ref={drawerRef}
       aria-label="Primary"
+      // Only while it is a drawer over the page. A docked sidebar announced as
+      // a modal would be a lie about the rest of the screen.
+      role={isMobileOpen ? "dialog" : undefined}
+      aria-modal={isMobileOpen ? true : undefined}
       className={cn(
         // Docked in the layout from `md` up. Below that it is a drawer over the
         // content: 256px of a 390px phone left roughly 130px for the page,
