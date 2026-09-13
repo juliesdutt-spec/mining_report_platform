@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { Section, FieldLabel } from "@/components/shared/Section";
+import { Markdown } from "@/components/shared/Markdown";
 import { SourceCitation } from "@/components/shared/SourceCitation";
 import { ConfidenceMeter } from "@/components/shared/ConfidenceMeter";
 import { QueryResult, EvidenceSnippet, OrganisationFilter } from "@/types";
@@ -166,9 +167,7 @@ export function AskPage({ onInspectEvidence, selectedOrganisation }: AskPageProp
             <h2 className="text-lg font-semibold leading-snug tracking-tight text-foreground">
               {activeResult.question}
             </h2>
-            <p className="mt-3 max-w-3xl whitespace-pre-wrap text-sm leading-relaxed text-foreground">
-              {activeResult.answer}
-            </p>
+            <Markdown text={activeResult.answer} className="mt-3 max-w-3xl" />
             <div className="mt-4 flex flex-wrap items-center gap-2">
               {activeResult.evidence.map((ev) => (
                 <SourceCitation
