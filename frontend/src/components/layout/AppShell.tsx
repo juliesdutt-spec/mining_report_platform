@@ -8,6 +8,7 @@ import { NavigationTab, OrganisationFilter, EvidenceSnippet } from "@/types";
 import { checkBackendHealth } from "@/services/api";
 import { DESKTOP_QUERY, useMediaQuery } from "@/lib/useMediaQuery";
 import { SessionUser } from "@/lib/session";
+import { TAB_TITLES, documentTitleFor } from "@/lib/tabs";
 
 interface AppShellProps {
   currentTab: NavigationTab;
@@ -74,6 +75,19 @@ export function AppShell({
   useEffect(() => {
     if (isDesktop) setIsMobileNavOpen(false);
   }, [isDesktop]);
+
+  // Arriving on a new screen.
+  //
+  // <main> is the scroll container and React keeps that same node across every
+  // route change, so its scroll offset survived the navigation: leaving a
+  // scrolled Dashboard opened Documents 829px down, past its heading and its
+  // upload area, in the middle of a table. Nothing told the browser tab or a
+  // screen reader that the screen had changed either — every route shared one
+  // title, so nine bookmarks and nine history entries all read the same.
+  useEffect(() => {
+    document.getElementById("main-content")?.scrollTo({ top: 0 });
+    document.title = documentTitleFor(currentTab);
+  }, [currentTab]);
   const [backendStatus, setBackendStatus] = useState({
     isOnline: false,
     statusText: "Checking…",
@@ -167,6 +181,14 @@ export function AppShell({
             onQuickUpload={onQuickUpload}
             backendStatus={backendStatus}
           />
+
+          {/* A hash change swaps the whole screen without a page load, which
+              a screen reader has no way to notice. The region is mounted for
+              the life of the shell so that changing its text is what gets
+              announced. */}
+          <div role="status" aria-live="polite" className="sr-only">
+            {TAB_TITLES[currentTab]}
+          </div>
 
           <main id="main-content" tabIndex={-1} className="flex-1 overflow-y-auto focus:outline-none">
             <div className="mx-auto max-w-[1400px] px-4 py-6 sm:px-6 sm:py-8 lg:px-8">{children}</div>
