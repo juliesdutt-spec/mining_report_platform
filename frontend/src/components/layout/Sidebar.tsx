@@ -17,6 +17,7 @@ import { NavigationTab, OrganisationFilter } from "@/types";
 import { organisationsIn, useCorpus } from "@/lib/corpus";
 import { cn } from "@/lib/utils";
 import { SessionUser } from "@/lib/session";
+import { TAB_TITLES } from "@/lib/tabs";
 import { Wordmark, WordmarkGlyph } from "@/components/brand/Wordmark";
 import { Separator } from "@/components/ui/separator";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -43,15 +44,15 @@ interface NavItem {
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { id: "documents", label: "Documents", icon: FileText },
-  { id: "ask", label: "Ask DataForge", icon: Sparkles },
-  { id: "analytics", label: "Analytics", icon: BarChart3 },
-  { id: "topics", label: "Topic Intelligence", icon: Cloud },
-  { id: "reports", label: "Report Studio", icon: FileSpreadsheet },
-  { id: "explorer", label: "Data Explorer", icon: Database },
-  { id: "validation", label: "Validation", icon: ShieldCheck },
-  { id: "settings", label: "Settings", icon: Settings },
+  { id: "dashboard", label: TAB_TITLES.dashboard, icon: LayoutDashboard },
+  { id: "documents", label: TAB_TITLES.documents, icon: FileText },
+  { id: "ask", label: TAB_TITLES.ask, icon: Sparkles },
+  { id: "analytics", label: TAB_TITLES.analytics, icon: BarChart3 },
+  { id: "topics", label: TAB_TITLES.topics, icon: Cloud },
+  { id: "reports", label: TAB_TITLES.reports, icon: FileSpreadsheet },
+  { id: "explorer", label: TAB_TITLES.explorer, icon: Database },
+  { id: "validation", label: TAB_TITLES.validation, icon: ShieldCheck },
+  { id: "settings", label: TAB_TITLES.settings, icon: Settings },
 ];
 
 /** Up to two initials from a display name, falling back to the username. */

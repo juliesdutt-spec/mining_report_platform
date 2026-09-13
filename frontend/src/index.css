@@ -9,6 +9,38 @@
   double-storey 'a' and 'g' draw a different mark. `swap` over `block` so a
   failed load costs a flash rather than invisible text.
 */
+/* Inter and Geist Mono, self-hosted.
+   ------------------------------------------------------------------
+   Every word and every figure in the app is set in these two, and both
+   were fetched from Google at runtime through a render-blocking
+   stylesheet: nothing painted until a third party answered. Vendored as
+   variable fonts, one file each, covering the whole 100-900 range the UI
+   uses — 71 kB together, against eight static files and a stylesheet
+   before. Same unicode-range Google serves for its latin subset, so a
+   Devanagari or Telugu summary falls through to a system face exactly as
+   it did. */
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("/fonts/inter-latin-variable.woff2") format("woff2-variations");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
+    U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193,
+    U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: "Geist Mono";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("/fonts/geist-mono-latin-variable.woff2") format("woff2-variations");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
+    U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193,
+    U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
 @font-face {
   font-family: "Poppins";
   font-style: normal;
@@ -158,4 +190,40 @@
 }
 ::-webkit-scrollbar-thumb:hover {
   background: hsl(var(--muted-foreground) / 0.5);
+}
+
+/* Reduced motion.
+   ------------------------------------------------------------------
+   Nothing in the app honoured prefers-reduced-motion: dialogs zoomed,
+   the evidence sheet slid in from the edge, and skeletons pulsed
+   regardless of the setting. Motion that travels is the part that
+   causes trouble, so it goes; a frozen spinner would read as a hung
+   request, so loading indicators keep a slow fade instead of being
+   switched off along with everything else. */
+@keyframes df-loading-fade {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-delay: 0ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    transition-delay: 0ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .animate-spin,
+  .animate-pulse {
+    animation: df-loading-fade 1.8s ease-in-out infinite !important;
+  }
 }

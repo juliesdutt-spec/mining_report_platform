@@ -4,6 +4,7 @@ import { NavigationTab, OrganisationFilter } from "@/types";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { ThemeToggle } from "@/components/shared/ThemeToggle";
+import { TAB_TITLES } from "@/lib/tabs";
 
 interface HeaderProps {
   currentTab: NavigationTab;
@@ -16,18 +17,6 @@ interface HeaderProps {
   /** Drawer state, so the toggle can report what it will do on a phone. */
   isMobileNavOpen: boolean;
 }
-
-const TAB_TITLES: Record<NavigationTab, string> = {
-  dashboard: "Dashboard",
-  documents: "Documents",
-  ask: "Ask DataForge",
-  analytics: "Analytics",
-  topics: "Topic Intelligence",
-  reports: "Report Studio",
-  explorer: "Data Explorer",
-  validation: "Validation",
-  settings: "Settings",
-};
 
 export function Header({
   currentTab,

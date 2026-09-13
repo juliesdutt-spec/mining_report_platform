@@ -20,6 +20,8 @@
  * An audit that reports those as defects trains people to ignore it.
  */
 import { chromium } from "playwright";
+import { existsSync, readdirSync } from "node:fs";
+import { join } from "node:path";
 
 const BASE = process.env.UX_AUDIT_URL || "http://127.0.0.1:5173";
 const ROUTES = ["dashboard", "documents", "ask", "analytics", "topics",
@@ -29,9 +31,30 @@ const MIN_TAP = 24;
 const findings = [];
 const add = (severity, page, what) => findings.push({ severity, page, what });
 
-const browser = await chromium.launch({
-  executablePath: process.env.CHROMIUM_PATH || undefined,
-});
+// The browser Playwright downloads and the one already on the machine are
+// pinned to different revisions, so leaving the path to Playwright made the
+// audit fail to start rather than report anything.
+function resolveChromium() {
+  if (process.env.CHROMIUM_PATH) return process.env.CHROMIUM_PATH;
+  const roots = ["/opt/pw-browsers"];
+  for (const root of roots) {
+    let entries = [];
+    try {
+      entries = readdirSync(root);
+    } catch {
+      continue;
+    }
+    for (const dir of entries.filter((d) => d.startsWith("chromium")).sort().reverse()) {
+      for (const rel of ["chrome-linux/chrome", "chrome-linux/headless_shell"]) {
+        const candidate = join(root, dir, rel);
+        if (existsSync(candidate)) return candidate;
+      }
+    }
+  }
+  return undefined; // let Playwright use its own download
+}
+
+const browser = await chromium.launch({ executablePath: resolveChromium() });
 
 async function signIn(page) {
   await page.goto(BASE, { waitUntil: "networkidle" });
@@ -217,6 +240,21 @@ for (const route of ROUTES) {
   }
   for (const target of await small.evaluate(SMALL_TARGETS, MIN_TAP)) {
     add("a11y", route, `tap target under ${MIN_TAP}px: ${target}`);
+  }
+}
+
+// WCAG 1.4.10 puts the number at 320px: below that a reader has to scroll in
+// two directions to read one line, which is what the criterion exists to stop.
+// 390px is the phone people actually hold; 320px is the promise.
+const narrow = await browser.newContext({ viewport: { width: 320, height: 800 } });
+const tiny = await narrow.newPage();
+await signIn(tiny);
+for (const route of ROUTES) {
+  await tiny.goto(`${BASE}/#/${route}`, { waitUntil: "networkidle" });
+  await tiny.waitForTimeout(1100);
+  if (await tiny.evaluate(() =>
+    document.documentElement.scrollWidth > document.documentElement.clientWidth + 1)) {
+    add("layout", route, "horizontal scroll at 320px (WCAG 1.4.10 reflow)");
   }
 }
 
