@@ -138,6 +138,10 @@ const LOW_CONTRAST = () => {
   const seen = new Set();
   for (const el of document.querySelectorAll("main *")) {
     if (!el.offsetParent && getComputedStyle(el).position !== "fixed") continue;
+    // WCAG 1.4.3 exempts text that is part of a logo or brand name. The
+    // wordmark declares itself with data-logotype so the exemption is narrow:
+    // it covers the mark and nothing else that happens to be the same colour.
+    if (el.closest("[data-logotype]")) continue;
     const text = [...el.childNodes].filter((n) => n.nodeType === 3)
       .map((n) => n.textContent.trim()).join(" ").trim();
     if (text.length < 2) continue;
@@ -240,6 +244,47 @@ for (const route of ROUTES) {
   }
   for (const target of await small.evaluate(SMALL_TARGETS, MIN_TAP)) {
     add("a11y", route, `tap target under ${MIN_TAP}px: ${target}`);
+  }
+}
+
+// The sign-in screen.
+//
+// Every pass in this file began by signing in, so the one page every visitor
+// sees first — and the only one an evaluator sees before deciding whether the
+// deployment works — had never been checked at all. Its brand panel is dark in
+// both themes and the form is not, so contrast there is worth knowing rather
+// than assuming.
+{
+  for (const [label, viewport] of [
+    ["sign-in", { width: 1440, height: 950 }],
+    ["sign-in 390px", { width: 390, height: 844 }],
+  ]) {
+    for (const theme of ["light", "dark"]) {
+      const ctx = await browser.newContext({ viewport });
+      const entry = await ctx.newPage();
+      await entry.goto(BASE, { waitUntil: "domcontentloaded" });
+      if (theme === "dark") {
+        await entry.evaluate(() => localStorage.setItem("dataforge-theme", "dark"));
+        await entry.reload({ waitUntil: "networkidle" });
+      }
+      await entry.waitForTimeout(1800);
+      const where = `${label} ${theme}`;
+
+      for (const finding of await entry.evaluate(LOW_CONTRAST)) add("a11y", where, finding);
+      for (const target of await entry.evaluate(SMALL_TARGETS, MIN_TAP)) {
+        add("a11y", where, `tap target under ${MIN_TAP}px: ${target}`);
+      }
+      if (await entry.evaluate(() =>
+        document.documentElement.scrollWidth > document.documentElement.clientWidth + 1)) {
+        add("layout", where, "horizontal scroll");
+      }
+      // The demo account is the only way in for someone who was never issued
+      // credentials, so its absence is a broken deployment, not a tidy one.
+      if (!(await entry.getByRole("button", { name: /sign in as demo/i }).count())) {
+        add("content", where, "no demo sign-in offered");
+      }
+      await ctx.close();
+    }
   }
 }
 

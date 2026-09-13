@@ -17,6 +17,13 @@ import { cn } from "@/lib/utils";
 interface WordmarkProps {
   /** Height of the mark. Type scales with it; nothing else needs tuning. */
   size?: "sm" | "md" | "lg" | "xl";
+  /**
+   * "auto" follows the theme, which is right everywhere the mark sits on the
+   * app's own canvas. "light" is for a ground that is dark in both themes —
+   * the sign-in backdrop — where `text-foreground` would put a near-black
+   * "Data" on near-black strata.
+   */
+  tone?: "auto" | "light";
   className?: string;
 }
 
@@ -27,16 +34,22 @@ const SIZES: Record<NonNullable<WordmarkProps["size"]>, string> = {
   xl: "text-4xl sm:text-5xl",
 };
 
-export function Wordmark({ size = "md", className }: WordmarkProps) {
+export function Wordmark({ size = "md", tone = "auto", className }: WordmarkProps) {
   return (
     <span
+      // WCAG 1.4.3 exempts text that is part of a logo or brand name from the
+      // contrast minimum. The orange half is 2.51:1 on the light canvas and
+      // will stay there, because it is the mark. The audit reads this
+      // attribute so the exemption is declared rather than assumed — and so
+      // it applies here and nowhere else.
+      data-logotype="DataForge"
       className={cn(
         "font-brand font-semibold leading-none tracking-[-0.02em] whitespace-nowrap",
         SIZES[size],
         className
       )}
     >
-      <span className="text-foreground">Data</span>
+      <span className={tone === "light" ? "text-white" : "text-foreground"}>Data</span>
       {/* A hair narrower than a word space, which is how the mark is drawn. */}
       <span className="inline-block w-[0.18em]" aria-hidden="true" />
       <span className="text-brand">forge</span>
@@ -53,6 +66,7 @@ export function WordmarkGlyph({ className }: { className?: string }) {
     <span
       role="img"
       aria-label="DataForge"
+      data-logotype="DataForge"
       className={cn(
         "font-brand text-base font-semibold leading-none tracking-[-0.03em]",
         className
