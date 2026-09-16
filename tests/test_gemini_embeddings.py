@@ -15,6 +15,7 @@ The first is a document longer than the batch ceiling. The second is a model
 name that was correct when it was written and has since been retired - which
 is an argument against ever hardcoding one.
 """
+import json
 import os
 import sys
 import unittest
@@ -24,6 +25,16 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import ai_providers
 from ai_providers import GeminiProvider, ProviderError
+
+
+def _no_pacing():
+    """Neutralise the per-minute pacer.
+
+    It is real and deliberate - 250 chunks against a 100/minute quota really
+    does take two and a half minutes - but a test suite that waits out a live
+    quota is a test suite nobody runs.
+    """
+    return mock.patch.object(ai_providers, "_embed_pacer", ai_providers._RequestPacer(0))
 
 
 def _models(*names_with_embed):
@@ -61,7 +72,8 @@ class EmbedBatchingTests(unittest.TestCase):
             posts.append(payload["requests"])
             return _embeddings(len(payload["requests"]))
 
-        with mock.patch.object(ai_providers, "_post_json", fake_post), \
+        with _no_pacing(), \
+             mock.patch.object(ai_providers, "_post_json", fake_post), \
              mock.patch.object(ai_providers, "GEMINI_EMBED_MODEL", "pinned-model"):
             vectors = self.provider.embed([f"chunk {i}" for i in range(250)])
 
@@ -81,7 +93,8 @@ class EmbedBatchingTests(unittest.TestCase):
                 ]
             }
 
-        with mock.patch.object(ai_providers, "_post_json", fake_post), \
+        with _no_pacing(), \
+             mock.patch.object(ai_providers, "_post_json", fake_post), \
              mock.patch.object(ai_providers, "GEMINI_EMBED_MODEL", "pinned-model"):
             vectors = self.provider.embed([f"chunk {i}" for i in range(150)])
 
@@ -89,7 +102,8 @@ class EmbedBatchingTests(unittest.TestCase):
 
     def test_a_short_slice_is_still_refused(self):
         """Slicing must not weaken the guard against a misaligned write."""
-        with mock.patch.object(ai_providers, "_post_json",
+        with _no_pacing(), \
+             mock.patch.object(ai_providers, "_post_json",
                                lambda url, payload, headers=None: _embeddings(3)), \
              mock.patch.object(ai_providers, "GEMINI_EMBED_MODEL", "pinned-model"):
             with self.assertRaises(ProviderError):
@@ -142,7 +156,8 @@ class EmbedModelResolutionTests(unittest.TestCase):
             urls.append(url)
             return _embeddings(len(payload["requests"]))
 
-        with mock.patch.object(ai_providers, "_get_json", lambda url, headers=None: listed), \
+        with _no_pacing(), \
+             mock.patch.object(ai_providers, "_get_json", lambda url, headers=None: listed), \
              mock.patch.object(ai_providers, "_post_json", fake_post), \
              mock.patch.object(ai_providers, "GEMINI_EMBED_MODEL", ""):
             self.provider.embed(["one"])
@@ -158,7 +173,8 @@ class EmbedModelResolutionTests(unittest.TestCase):
             calls.append(url)
             return listed
 
-        with mock.patch.object(ai_providers, "_get_json", counting_get), \
+        with _no_pacing(), \
+             mock.patch.object(ai_providers, "_get_json", counting_get), \
              mock.patch.object(ai_providers, "_post_json",
                                lambda url, payload, headers=None: _embeddings(len(payload["requests"]))), \
              mock.patch.object(ai_providers, "GEMINI_EMBED_MODEL", ""):
@@ -196,3 +212,148 @@ class HealthMustNotCallTheApiTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class QuotaRefusalTests(unittest.TestCase):
+    """
+    HTTP 429, which is what a free-tier key returns for an ordinary corpus.
+
+    "Quota exceeded for metric: embed_content_free_tier_requests, limit: 100"
+    is not a broken request - it is the provider saying "not yet". Treating it
+    as fatal meant a corpus could never be indexed on the free tier at all.
+    """
+
+    def setUp(self):
+        GeminiProvider._resolved_embed_model = None
+        self.provider = GeminiProvider()
+
+    def tearDown(self):
+        GeminiProvider._resolved_embed_model = None
+
+    @staticmethod
+    def _quota_error(retry_after=None):
+        return ProviderError("HTTP 429 ... quota exceeded", status=429,
+                             retry_after=retry_after)
+
+    def test_a_quota_refusal_is_waited_out_and_retried(self):
+        attempts = []
+        slept = []
+
+        def flaky(url, payload, headers=None):
+            attempts.append(1)
+            if len(attempts) == 1:
+                raise self._quota_error(retry_after=27.0)
+            return _embeddings(len(payload["requests"]))
+
+        with _no_pacing(), \
+             mock.patch.object(ai_providers, "_post_json", flaky), \
+             mock.patch.object(ai_providers.time, "sleep", slept.append), \
+             mock.patch.object(ai_providers, "GEMINI_EMBED_MODEL", "pinned-model"):
+            vectors = self.provider.embed(["one", "two"])
+
+        self.assertEqual(len(vectors), 2)
+        self.assertEqual(len(attempts), 2, "should have retried once")
+        self.assertEqual(slept, [27.0], "the server's own RetryInfo, not a guess")
+
+    def test_a_broken_request_is_not_retried(self):
+        """A 400 will fail identically however long you wait."""
+        attempts = []
+
+        def broken(url, payload, headers=None):
+            attempts.append(1)
+            raise ProviderError("HTTP 400 ... at most 100 requests", status=400)
+
+        with _no_pacing(), \
+             mock.patch.object(ai_providers, "_post_json", broken), \
+             mock.patch.object(ai_providers.time, "sleep", lambda s: None), \
+             mock.patch.object(ai_providers, "GEMINI_EMBED_MODEL", "pinned-model"):
+            with self.assertRaises(ProviderError):
+                self.provider.embed(["one"])
+
+        self.assertEqual(len(attempts), 1, "a 400 must not be retried")
+
+    def test_giving_up_reports_the_provider_reason(self):
+        with _no_pacing(), \
+             mock.patch.object(ai_providers, "_post_json",
+                               lambda *a, **k: (_ for _ in ()).throw(self._quota_error(1.0))), \
+             mock.patch.object(ai_providers.time, "sleep", lambda s: None), \
+             mock.patch.object(ai_providers, "GEMINI_EMBED_MODEL", "pinned-model"):
+            with self.assertRaises(ProviderError) as caught:
+                self.provider.embed(["one"])
+        self.assertIn("429", str(caught.exception))
+
+    def test_retry_delay_is_read_from_the_error_body(self):
+        body = json.dumps({
+            "error": {
+                "code": 429,
+                "details": [
+                    {"@type": "type.googleapis.com/google.rpc.RetryInfo",
+                     "retryDelay": "27s"}
+                ],
+            }
+        })
+        self.assertEqual(ai_providers._retry_after_seconds(body), 27.0)
+
+    def test_a_body_without_retry_info_yields_nothing_to_wait_for(self):
+        self.assertIsNone(ai_providers._retry_after_seconds("not json at all"))
+
+
+class PacerTests(unittest.TestCase):
+    """
+    The pacer sleeps against a real clock, so these drive a fake one - mocking
+    only sleep turns the wait into a busy-loop that still takes a full minute.
+    """
+
+    def _fake_clock(self):
+        now = [1000.0]
+        slept = []
+
+        def monotonic():
+            return now[0]
+
+        def sleep(seconds):
+            slept.append(seconds)
+            now[0] += seconds
+            if len(slept) > 50:
+                raise AssertionError("pacer did not settle")
+
+        return now, slept, monotonic, sleep
+
+    def test_the_quota_counts_entries_not_http_calls(self):
+        """
+        The metric is embed_content_requests: a batch of 100 is 100 against it,
+        which is why one full batch used to spend the entire minute.
+        """
+        pacer = ai_providers._RequestPacer(100)
+        _, slept, monotonic, sleep = self._fake_clock()
+
+        with mock.patch.object(ai_providers.time, "monotonic", monotonic), \
+             mock.patch.object(ai_providers.time, "sleep", sleep):
+            pacer.take(100)   # fills the minute
+            pacer.take(1)     # must wait rather than sail past the ceiling
+
+        self.assertTrue(slept, "a second batch should have been made to wait")
+        self.assertGreater(sum(slept), 59, "should wait out the rolling minute")
+
+    def test_a_batch_within_the_allowance_is_not_delayed(self):
+        pacer = ai_providers._RequestPacer(100)
+        _, slept, monotonic, sleep = self._fake_clock()
+        with mock.patch.object(ai_providers.time, "monotonic", monotonic), \
+             mock.patch.object(ai_providers.time, "sleep", sleep):
+            pacer.take(40)
+            pacer.take(40)
+        self.assertEqual(slept, [], "80 of 100 should pass straight through")
+
+    def test_a_batch_larger_than_the_whole_allowance_still_goes(self):
+        """Otherwise a single oversized slice would block for ever."""
+        pacer = ai_providers._RequestPacer(10)
+        _, _, monotonic, sleep = self._fake_clock()
+        with mock.patch.object(ai_providers.time, "monotonic", monotonic), \
+             mock.patch.object(ai_providers.time, "sleep", sleep):
+            pacer.take(25)
+
+    def test_pacing_off_never_waits(self):
+        pacer = ai_providers._RequestPacer(0)
+        with mock.patch.object(ai_providers.time, "sleep",
+                               lambda s: self.fail("must not sleep when disabled")):
+            pacer.take(10_000)
