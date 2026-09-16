@@ -1,0 +1,17 @@
+{
+  "document": "samples/corpus/EN-04_Talcher_MCL_FY2023-24.pdf",
+  "language": "en",
+  "note": "Hand-read from the PDF. Only fields the document actually states are listed; a field absent here is not scored, because a missing label is not evidence of a wrong extraction.",
+  "expected": {
+    "mine_name": "Talcher Opencast Mine",
+    "location": "Angul, Odisha, India",
+    "district": "Angul",
+    "state": "Odisha",
+    "company_name": "Mahanadi Coalfields Limited (MCL)",
+    "mineral_type": "Non-Coking Coal",
+    "extraction_method": "Opencast",
+    "quantity_extracted": "38.4 million tonnes",
+    "reserve_estimate": "512 million tonnes",
+    "report_date": "30-05-2024"
+  }
+}

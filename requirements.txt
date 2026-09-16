@@ -18,6 +18,10 @@ pypdf==5.0.1
 # catches ImportError and falls back to text extraction, so a host without
 # the tesseract binary still serves every other feature.
 pytesseract>=0.3.10
+# Rasterises PDF pages for OCR. The alternative, pdf2image, shells out to
+# poppler's pdftoppm and so needs an apt package as well; PyMuPDF ships
+# manylinux wheels and needs nothing on the host.
+pymupdf==1.24.10
 Pillow==10.4.0
 
 # AI / LLM

@@ -93,50 +93,68 @@ def extract_pages_from_pdf(pdf_bytes: bytes) -> List[str]:
     extract_text_from_pdf joins pages into one string, which loses the page a
     passage came from. Keeping the per-page list lets evidence cite a real page
     number instead of guessing one. Returns [] when the PDF yields no text
-    (for example a scanned document handled by OCR, which is not paginated).
+    (for example an unreadable document, or one with no OCR available).
     """
     try:
         reader = PdfReader(io.BytesIO(pdf_bytes))
         pages = [(page.extract_text() or "").strip() for page in reader.pages]
-        return pages if any(pages) else []
+        if any(pages):
+            return pages
     except Exception:
+        pass
+    # Nothing in the text layer: the document is a scan, so read it the same
+    # way extract_text_from_pdf does, but keep the page boundaries.
+    ocr_pages = _ocr_pages(pdf_bytes)
+    return ocr_pages if any(ocr_pages) else []
+
+
+#: Rasterisation resolution for OCR. 200 dpi is where Devanagari conjuncts and
+#: Telugu vowel signs stop being guessed at; below about 150 they degrade fast.
+OCR_DPI = int(os.getenv("OCR_DPI", "200"))
+
+
+def _ocr_pages(pdf_bytes: bytes) -> List[str]:
+    """
+    Read a scanned PDF page by page, by rasterising it and running tesseract.
+
+    Rendering is done with PyMuPDF rather than pdf2image: pdf2image shells out
+    to poppler's pdftoppm, so it needs a system package on top of the Python
+    one. This function used to import it inside a bare `except ImportError:
+    pass`, and since pdf2image was never in requirements.txt that import always
+    raised - so OCR silently did nothing and every scanned document came back
+    as "Could not extract text from this document." The failure is logged now
+    rather than swallowed.
+
+    Returns one string per page, so a passage OCR'd out of a scan can still
+    cite the page it came from.
+    """
+    if not OCR_AVAILABLE:
         return []
+    try:
+        import pymupdf
+    except ImportError:
+        print("[WARN] pymupdf is not installed; scanned PDFs cannot be rasterised for OCR.")
+        return []
+
+    lang = _available_ocr_languages()
+    pages: List[str] = []
+    doc = None
+    try:
+        doc = pymupdf.open(stream=pdf_bytes, filetype="pdf")
+        for page in doc:
+            image = Image.open(io.BytesIO(page.get_pixmap(dpi=OCR_DPI).tobytes("png")))
+            pages.append(pytesseract.image_to_string(image, lang=lang).strip())
+    except Exception as exc:  # noqa: BLE001 - a bad scan must not fail the upload
+        print(f"[WARN] OCR failed after {len(pages)} page(s): {exc}")
+    finally:
+        if doc is not None:
+            doc.close()
+    return pages
 
 
 def _ocr_pdf(pdf_bytes: bytes) -> str:
-    """
-    Fallback OCR extraction for scanned PDFs.
-    Converts PDF pages to images, then runs pytesseract.
-    """
-    try:
-        import subprocess
-        import tempfile
-        
-        # Write PDF to temp file for processing
-        with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
-            tmp.write(pdf_bytes)
-            tmp_path = tmp.name
-        
-        text_parts = []
-        
-        # Try using pdf2image if available, otherwise skip
-        try:
-            from pdf2image import convert_from_bytes
-            images = convert_from_bytes(pdf_bytes, dpi=200)
-            lang = _available_ocr_languages()
-            for img in images:
-                page_text = pytesseract.image_to_string(img, lang=lang)
-                text_parts.append(page_text)
-        except ImportError:
-            # Direct image OCR not available without pdf2image
-            pass
-        finally:
-            os.unlink(tmp_path)
-        
-        return "\n\n".join(text_parts).strip()
-        
-    except Exception:
-        return ""
+    """Fallback OCR extraction for scanned PDFs, as one string."""
+    return "\n\n".join(page for page in _ocr_pages(pdf_bytes) if page).strip()
 
 
 def _fallback_extraction(pdf_bytes: bytes) -> str:

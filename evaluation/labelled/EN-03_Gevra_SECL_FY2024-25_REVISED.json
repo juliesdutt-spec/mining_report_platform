@@ -1,0 +1,17 @@
+{
+  "document": "samples/corpus/EN-03_Gevra_SECL_FY2024-25_REVISED.pdf",
+  "language": "en",
+  "note": "Hand-read from the PDF. Only fields the document actually states are listed; a field absent here is not scored, because a missing label is not evidence of a wrong extraction. The revised return for the same mine and year as EN-02. Extraction must read 49.8, not the 52.5 in the earlier document, or the conflict detector has nothing true to work from.",
+  "expected": {
+    "mine_name": "Gevra Opencast Mine",
+    "location": "Korba, Chhattisgarh, India",
+    "district": "Korba",
+    "state": "Chhattisgarh",
+    "company_name": "South Eastern Coalfields Limited (SECL)",
+    "mineral_type": "Non-Coking Coal",
+    "extraction_method": "Opencast",
+    "quantity_extracted": "49.8 million tonnes",
+    "reserve_estimate": "780 million tonnes",
+    "report_date": "11-06-2025"
+  }
+}

@@ -126,7 +126,7 @@ function NavButton({
         isCollapsed && "justify-center px-0",
         isActive
           ? "bg-primary/10 font-medium text-primary"
-          : "text-muted-foreground hover:bg-accent hover:text-foreground"
+          : "text-nav-foreground hover:bg-accent hover:text-foreground"
       )}
     >
       {/* A rail reads as "you are here" at a glance, where a tint alone has to
@@ -296,7 +296,7 @@ export function Sidebar({
                               "mx-auto flex h-8 w-8 items-center justify-center rounded-md text-[10px] font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                               isSelected
                                 ? "bg-primary/10 text-primary"
-                                : "text-muted-foreground hover:bg-accent hover:text-foreground"
+                                : "text-nav-foreground hover:bg-accent hover:text-foreground"
                             )}
                           >
                             {abbreviate(org.name)}
@@ -333,7 +333,7 @@ export function Sidebar({
                           "flex w-full items-center gap-1.5 rounded px-1.5 py-1 text-left text-[13px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                           isSelected
                             ? "font-medium text-foreground"
-                            : "text-muted-foreground hover:bg-accent hover:text-foreground"
+                            : "text-nav-foreground hover:bg-accent hover:text-foreground"
                         )}
                       >
                         <Check

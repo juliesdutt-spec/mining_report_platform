@@ -18,8 +18,9 @@ from fastapi.testclient import TestClient
 import ai_providers
 import vector_store
 from backend.api import app
-from database import SessionLocal, User
+from database import SessionLocal, User, init_db
 import auth as auth_mod
+import auth_seed
 
 
 class ReindexEndpointTests(unittest.TestCase):
@@ -28,14 +29,37 @@ class ReindexEndpointTests(unittest.TestCase):
     def setUp(self):
         self._available = vector_store.available
         self._describe = ai_providers.embeddings_describe
+
+        # Both accounts are created per test, not once for the class, and the
+        # schema is ensured here too.
+        #
+        # Two things made this necessary. These tests used to just query a
+        # `users` table and pass, because a developer machine has a
+        # mining_reports.db lying around from running the app - so the suite
+        # was green locally and failed the moment CI ran it on a clean
+        # checkout. And another test module rebinds the database module onto a
+        # temporary file, so anything seeded once in setUpClass can belong to a
+        # database that is no longer the live one by the time a test runs.
+        # init_db only creates what is missing, so this is cheap.
+        init_db()
+        self._ensure_user("reindex-writer", "reindex-pass", readonly=False)
+        # The demo account is normally created by seeding at application
+        # startup, which does not happen in a bare test process. Without it the
+        # one test that checks a published credential cannot spend the
+        # embedding quota simply skipped itself - green, and protecting
+        # nothing, which is exactly where it could least afford to be trusted.
+        self._ensure_user(auth_seed.DEMO_USERNAME, auth_seed.DEMO_PASSWORD, readonly=True)
+
+    @staticmethod
+    def _ensure_user(username: str, password: str, *, readonly: bool) -> None:
         db = SessionLocal()
         try:
-            if not db.query(User).filter(User.username == "reindex-writer").first():
+            if not db.query(User).filter(User.username == username).first():
                 db.add(User(
-                    username="reindex-writer",
-                    password_hash=auth_mod.hash_password("reindex-pass"),
-                    display_name="Reindex Writer",
-                    is_readonly=False,
+                    username=username,
+                    password_hash=auth_mod.hash_password(password),
+                    display_name=username,
+                    is_readonly=readonly,
                 ))
                 db.commit()
         finally:
@@ -59,10 +83,14 @@ class ReindexEndpointTests(unittest.TestCase):
         # The demo password is printed on the sign-in page, and every chunk
         # here costs an embedding call against the project's quota.
         res = self.client.post(
-            "/auth/login", json={"username": "demo", "password": "dataforge-demo"}
+            "/auth/login",
+            json={"username": auth_seed.DEMO_USERNAME, "password": auth_seed.DEMO_PASSWORD},
         )
-        if res.status_code != 200:
-            self.skipTest("no demo account configured in this environment")
+        self.assertEqual(
+            res.status_code, 200,
+            "the demo account has to exist for this test to assert anything; "
+            "setUpClass seeds it rather than letting the test skip.",
+        )
         token = res.json()["access_token"]
         out = self.client.post("/admin/reindex", headers={"Authorization": f"Bearer {token}"})
         self.assertEqual(out.status_code, 403)

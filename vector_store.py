@@ -42,6 +42,7 @@ import json
 import logging
 import os
 import re
+import time
 from contextlib import contextmanager
 from typing import Any, Iterator, Sequence
 
@@ -64,6 +65,18 @@ OVERFETCH = 4
 
 _SCHEMA_READY = False
 _UNAVAILABLE_REASON: str | None = None
+
+# How long an availability probe is trusted for.
+#
+# /health calls this, and Railway polls /health. Without a cache every poll
+# opened a connection to the vector database — and worse, while that database
+# was unreachable each poll blocked for the connect timeout below, so an
+# outage of the *search index* could fail the platform's healthcheck and
+# restart the whole API. The index being down must never take the API with
+# it.
+AVAILABILITY_TTL_SECONDS = float(os.getenv("VECTOR_AVAILABILITY_TTL", "30") or 30)
+CONNECT_TIMEOUT_SECONDS = int(os.getenv("VECTOR_CONNECT_TIMEOUT", "5") or 5)
+_availability_cache: tuple[float, bool, str | None] | None = None
 
 
 class VectorStoreError(RuntimeError):
@@ -128,7 +141,7 @@ def configured() -> bool:
 def _connect() -> Iterator[Any]:
     import psycopg2  # imported here so the module loads without the driver
 
-    conn = psycopg2.connect(VECTOR_DATABASE_URL, connect_timeout=10)
+    conn = psycopg2.connect(VECTOR_DATABASE_URL, connect_timeout=CONNECT_TIMEOUT_SECONDS)
     try:
         yield conn
         conn.commit()
@@ -221,6 +234,25 @@ def ensure_schema(dimension: int, model: str) -> None:
     _SCHEMA_READY = True
 
 
+def _remember(ok: bool, reason: str | None) -> tuple[bool, str | None]:
+    """Record a probe verdict so the next caller inside the TTL is free."""
+    global _availability_cache
+    _availability_cache = (time.monotonic(), ok, reason)
+    return ok, reason
+
+
+def forget_availability() -> None:
+    """
+    Drop the cached verdict.
+
+    Called after a write succeeds against the database, so a probe that
+    failed while the index was being provisioned does not keep /health
+    reporting it down for another TTL once it plainly works.
+    """
+    global _availability_cache
+    _availability_cache = None
+
+
 def available() -> tuple[bool, str | None]:
     """
     Whether a search can actually be served, and why not when it cannot.
@@ -229,13 +261,19 @@ def available() -> tuple[bool, str | None]:
     database without the extension, are both ordinary states here and both
     have to read as "retrieval is off", never as "no results found".
     """
-    global _UNAVAILABLE_REASON
+    global _UNAVAILABLE_REASON, _availability_cache
     if not configured():
         return False, "VECTOR_DATABASE_URL is not set."
+
+    now = time.monotonic()
+    if _availability_cache is not None:
+        checked_at, ok, reason = _availability_cache
+        if now - checked_at < AVAILABILITY_TTL_SECONDS:
+            return ok, reason
     try:
         import psycopg2  # noqa: F401
     except ImportError:
-        return False, "psycopg2 is not installed."
+        return _remember(False, "psycopg2 is not installed.")
     try:
         with _connect() as conn, conn.cursor() as cur:
             # Two different things, and conflating them misdiagnoses the one
@@ -252,15 +290,15 @@ def available() -> tuple[bool, str | None]:
             )
             installed, installable = cur.fetchone()
             if not installed and not installable:
-                return False, (
+                return _remember(False, (
                     "This database does not ship the pgvector extension. "
                     "Railway's standard Postgres image does not — use the "
                     "pgvector template, or an image with pgvector built in."
-                )
+                ))
     except Exception as exc:  # noqa: BLE001 - reported, never raised onward
         _UNAVAILABLE_REASON = str(exc)[:200]
-        return False, f"Could not reach the vector database: {_UNAVAILABLE_REASON}"
-    return True, None
+        return _remember(False, f"Could not reach the vector database: {_UNAVAILABLE_REASON}")
+    return _remember(True, None)
 
 
 # --------------------------------------------------------------- writing ---
@@ -309,6 +347,7 @@ def index_report(
                     _as_vector(vector),
                 ),
             )
+    forget_availability()
     return len(chunks)
 
 
