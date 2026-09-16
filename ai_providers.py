@@ -24,16 +24,52 @@ out of any error text before it can reach a response body or a console.
 """
 import json
 import os
+import threading
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from typing import Any
 
 # Populates os.environ from .env before any getenv below runs.
 import utils.env  # noqa: F401
 
 
 class ProviderError(RuntimeError):
-    """A provider was asked for a completion and could not produce one."""
+    """A provider was asked for a completion and could not produce one.
+
+    `status` and `retry_after` are set for an HTTP failure that carried them,
+    so a caller can tell a quota pause (429, retry in 27s) from a broken
+    request (400) instead of treating every failure as fatal.
+    """
+
+    def __init__(self, message: str, *, status: int | None = None,
+                 retry_after: float | None = None) -> None:
+        super().__init__(message)
+        self.status = status
+        self.retry_after = retry_after
+
+
+def _retry_after_seconds(body: str, headers: Any = None) -> float | None:
+    """How long the server asked us to wait, if it said.
+
+    Google returns a google.rpc.RetryInfo in the error details ("retryDelay":
+    "27s"); other services use the Retry-After header. Guessing a backoff when
+    the server has already named one just means retrying too early.
+    """
+    try:
+        details = (json.loads(body).get("error") or {}).get("details") or []
+        for detail in details:
+            delay = str(detail.get("retryDelay", "")).strip()
+            if delay.endswith("s") and delay[:-1].replace(".", "", 1).isdigit():
+                return float(delay[:-1])
+    except Exception:  # noqa: BLE001 - a body that is not JSON is not an error here
+        pass
+    try:
+        value = headers.get("Retry-After") if headers else None
+        return float(value) if value else None
+    except (TypeError, ValueError):
+        return None
 
 
 # ---------------------------------------------------------------- config ---
@@ -75,6 +111,15 @@ GEMINI_EMBED_CANDIDATES = ("gemini-embedding-001", "text-embedding-004")
 #: is scale-invariant, so a reduced, unnormalised vector still ranks correctly.
 #: Set to 0 to send no preference and take the model's native width.
 GEMINI_EMBED_DIMENSIONS = int(_env("GEMINI_EMBED_DIMENSIONS", "768") or 0)
+
+#: Embedding requests allowed per minute. The free tier reports
+#: "embed_content_free_tier_requests, limit: 100", and the metric counts each
+#: entry in a batch, not each HTTP call - so a full batch of 100 spends the
+#: whole minute's allowance in one go. Raise this on a paid plan.
+GEMINI_EMBED_RPM = int(_env("GEMINI_EMBED_RPM", "100") or 0)
+
+#: How many times a quota refusal is waited out before giving up on a slice.
+GEMINI_EMBED_RETRIES = int(_env("GEMINI_EMBED_RETRIES", "4") or 0)
 
 #: Gemini refuses a batchEmbedContents request carrying more than this many
 #: entries ("at most 100 requests can be in one batch"). A mining report
@@ -135,9 +180,11 @@ def _get_json(url: str, headers: dict | None = None) -> dict:
         with urllib.request.urlopen(request, timeout=HTTP_TIMEOUT) as response:
             return json.loads(response.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
-        body = exc.read().decode("utf-8", "replace")[:400]
+        body = exc.read().decode("utf-8", "replace")
         raise ProviderError(
-            _redact(f"HTTP {exc.code} from {_origin(url)}: {body}")
+            _redact(f"HTTP {exc.code} from {_origin(url)}: {body[:400]}"),
+            status=exc.code,
+            retry_after=_retry_after_seconds(body, exc.headers),
         ) from None
     except urllib.error.URLError as exc:
         raise ProviderError(
@@ -158,9 +205,11 @@ def _post_json(url: str, payload: dict, headers: dict | None = None) -> dict:
         with urllib.request.urlopen(request, timeout=HTTP_TIMEOUT) as response:
             return json.loads(response.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
-        body = exc.read().decode("utf-8", "replace")[:400]
+        body = exc.read().decode("utf-8", "replace")
         raise ProviderError(
-            _redact(f"HTTP {exc.code} from {_origin(url)}: {body}")
+            _redact(f"HTTP {exc.code} from {_origin(url)}: {body[:400]}"),
+            status=exc.code,
+            retry_after=_retry_after_seconds(body, exc.headers),
         ) from None
     except urllib.error.URLError as exc:
         raise ProviderError(
@@ -266,6 +315,37 @@ class ClaudeProvider(Provider):
         return str(blocks[0].get("text", "")).strip()
 
 
+class _RequestPacer:
+    """Keeps a rolling count so a burst cannot outrun a per-minute quota.
+
+    Counting requests rather than HTTP calls, because the quota does: a batch
+    of 100 is 100 requests to the meter. Without this the first batch spends
+    the entire minute and everything after it is refused - which is exactly
+    what a fresh corpus looked like.
+    """
+
+    def __init__(self, per_minute: int) -> None:
+        self.per_minute = per_minute
+        self._spent: list[float] = []
+        self._lock = threading.Lock()
+
+    def take(self, count: int) -> None:
+        if self.per_minute <= 0:
+            return
+        while True:
+            with self._lock:
+                now = time.monotonic()
+                self._spent = [t for t in self._spent if now - t < 60.0]
+                if len(self._spent) + count <= self.per_minute or not self._spent:
+                    self._spent.extend([now] * count)
+                    return
+                wait = 60.0 - (now - self._spent[0]) + 0.05
+            time.sleep(max(wait, 0.05))
+
+
+_embed_pacer = _RequestPacer(GEMINI_EMBED_RPM)
+
+
 class GeminiProvider(Provider):
     """Google's Gemini API. The key travels in a header, never in the URL."""
 
@@ -357,6 +437,29 @@ class GeminiProvider(Provider):
         type(self)._resolved_embed_model = self._resolved_embed_model
         return self._resolved_embed_model
 
+    def _embed_slice(self, model: str, payload: dict, count: int) -> dict:
+        """Send one slice, waiting out a quota refusal rather than failing on it.
+
+        A 429 is not a broken request: it is the provider saying "not yet", and
+        on the free tier it is the ordinary case for a corpus of any size. It
+        carries a RetryInfo saying how long to wait, which is worth more than
+        any backoff guessed here.
+        """
+        url = f"{self.endpoint}/{model}:batchEmbedContents"
+        for attempt in range(GEMINI_EMBED_RETRIES + 1):
+            _embed_pacer.take(count)
+            try:
+                return _post_json(url, payload, {"x-goog-api-key": GEMINI_API_KEY})
+            except ProviderError as exc:
+                last = attempt == GEMINI_EMBED_RETRIES
+                if exc.status != 429 or last:
+                    raise
+                # The server's own figure first; otherwise back off, capped so a
+                # long wait cannot outlive the request that is waiting on it.
+                delay = exc.retry_after if exc.retry_after else min(2 ** attempt * 5, 60)
+                time.sleep(delay)
+        raise ProviderError("Unreachable: embed retry loop fell through.")
+
     def embed(self, texts: list[str]) -> list[list[float]]:
         if not texts:
             return []
@@ -373,16 +476,13 @@ class GeminiProvider(Provider):
             request = {"model": qualified, "content": {"parts": [{"text": ""}]}}
             if GEMINI_EMBED_DIMENSIONS:
                 request["outputDimensionality"] = GEMINI_EMBED_DIMENSIONS
-            data = _post_json(
-                f"{self.endpoint}/{model}:batchEmbedContents",
-                {
-                    "requests": [
-                        {**request, "content": {"parts": [{"text": text}]}}
-                        for text in slice_
-                    ]
-                },
-                {"x-goog-api-key": GEMINI_API_KEY},
-            )
+            payload = {
+                "requests": [
+                    {**request, "content": {"parts": [{"text": text}]}}
+                    for text in slice_
+                ]
+            }
+            data = self._embed_slice(model, payload, len(slice_))
             batch = [
                 [float(v) for v in (item or {}).get("values") or []]
                 for item in data.get("embeddings") or []

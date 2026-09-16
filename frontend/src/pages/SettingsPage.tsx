@@ -257,7 +257,7 @@ export function SettingsPage({ user }: { user: SessionUser | null }) {
                 {user?.readonly
                   ? "Read-only account — sign in with a writing account to build the index."
                   : indexing
-                    ? "Embedding every stored report. This can take a minute or two."
+                    ? "Embedding every stored report. A free-tier key is paced at about 100 passages a minute, so a large corpus takes a while."
                     : "Re-runnable: a report already indexed is replaced, not duplicated."}
               </span>
             </div>
