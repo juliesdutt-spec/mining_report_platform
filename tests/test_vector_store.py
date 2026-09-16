@@ -261,3 +261,65 @@ class VectorStoreTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+@unittest.skipUnless(
+    os.getenv("VECTOR_DATABASE_URL"),
+    "needs VECTOR_DATABASE_URL pointing at a Postgres with pgvector",
+)
+class ModelChangeTests(unittest.TestCase):
+    """
+    What happens when the embedding provider changes model underneath us.
+
+    Not hypothetical: Gemini retired text-embedding-004, the replacement has a
+    different vector width, and the first thing an operator saw was a refusal
+    to rebuild an index that was empty.
+    """
+
+    def setUp(self):
+        vector_store.reset()
+        vector_store._SCHEMA_READY = False
+
+    def tearDown(self):
+        vector_store.reset()
+        vector_store._SCHEMA_READY = False
+
+    def _meta(self):
+        with vector_store._connect() as conn, conn.cursor() as cur:
+            cur.execute("SELECT model, dimension FROM vector_index_meta WHERE id")
+            return cur.fetchone()
+
+    def test_an_empty_index_adopts_a_new_model(self):
+        vector_store.ensure_schema(768, "text-embedding-004")
+        vector_store._SCHEMA_READY = False
+        vector_store.ensure_schema(768, "gemini-embedding-001")
+        self.assertEqual(self._meta(), ("gemini-embedding-001", 768))
+
+    def test_an_index_with_passages_in_it_is_never_dropped(self):
+        vector_store.ensure_schema(768, "gemini-embedding-001")
+        vector_store.index_report(
+            report_id=1,
+            chunks=[{"page": 1, "chunk_index": 0, "content": "coal 52.5 Mt"}],
+            embeddings=[[0.1] * 768],
+            model="gemini-embedding-001",
+            organisation="SECL",
+            filename="gevra.pdf",
+        )
+        vector_store._SCHEMA_READY = False
+        with self.assertRaises(vector_store.VectorStoreError) as caught:
+            vector_store.ensure_schema(768, "text-embedding-004")
+        self.assertIn("1 passages", str(caught.exception))
+        self.assertEqual(vector_store.stats()["chunks"], 1, "rows must survive")
+
+    def test_a_vector_too_wide_to_index_is_refused_by_name(self):
+        """
+        pgvector caps an HNSW index at 2000 dimensions, and gemini-embedding-001
+        returns 3072 by default. Its own error names neither the model nor the
+        setting that fixes it.
+        """
+        with self.assertRaises(vector_store.VectorStoreError) as caught:
+            vector_store.ensure_schema(3072, "gemini-embedding-001")
+        message = str(caught.exception)
+        self.assertIn("3072", message)
+        self.assertIn("2000", message)
+        self.assertIn("GEMINI_EMBED_DIMENSIONS", message)
