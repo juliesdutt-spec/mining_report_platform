@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { ArrowRight, FileText, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { shortenDocumentName } from "@/lib/documentName";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Table,
@@ -249,13 +250,26 @@ export function DashboardPage({
               {!isLoadingDocs && filteredDocs.map((doc) => (
                 <TableRow key={doc.id}>
                   <TableCell>
-                    <div className="font-medium text-foreground">{doc.filename}</div>
+                    <div className="flex items-start gap-2">
+                      <FileText className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                      <div className="min-w-0">
+                        {/* Machine-named uploads arrive as one long unbreakable
+                            token; rendered raw it pushes the other columns off
+                            the screen. The full name stays in the title. */}
+                        <div
+                          className="font-medium text-foreground"
+                          title={doc.filename}
+                        >
+                          {shortenDocumentName(doc.filename)}
+                        </div>
                     <div className="mt-0.5 text-xs text-muted-foreground">
                       {/* pageCount is not modelled server-side, so it is
                           usually undefined - rendering the unit regardless
                           left "PDF · pp." on every row. */}
                       {doc.fileType}
                       {doc.pageCount !== undefined && ` · ${doc.pageCount} pp.`}
+                        </div>
+                      </div>
                     </div>
                   </TableCell>
                   <TableCell className="font-mono text-xs text-muted-foreground">

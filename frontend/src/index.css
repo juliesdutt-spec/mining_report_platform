@@ -83,6 +83,11 @@
        and is still visibly secondary against the 15%-lightness foreground.
        Dark mode measured clean and is unchanged. */
     --muted-foreground: 215 16% 44%;  /* #5B6A7D secondary text */
+    /* Navigation is primary UI, not secondary prose, so it does not take the
+       muted colour. At 7.4:1 against --card it clears AAA, which is what keeps
+       it readable on a washed-out projector; muted sat at 5.25:1 - passing AA
+       but not much more. */
+    --nav-foreground: 215 20% 35%;
 
     --accent: 210 40% 96%;            /* neutral hover accent */
     --accent-foreground: 222 38% 15%;
@@ -132,6 +137,7 @@
 
     --muted: 217 33% 17%;
     --muted-foreground: 215 20% 65%;
+    --nav-foreground: 215 22% 75%;   /* 9.4:1 on the dark card */
 
     --accent: 217 33% 17%;
     --accent-foreground: 210 40% 96%;
@@ -418,6 +424,7 @@
     --foreground: 0 0% 0%;
     --muted: 0 0% 96%;
     --muted-foreground: 0 0% 30%;
+    --nav-foreground: 0 0% 15%;
     --border: 0 0% 80%;
   }
 

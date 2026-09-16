@@ -141,11 +141,12 @@ export function ExtractionQualityPanel({ quality }: { quality?: Quality }) {
             <div className="mt-2 font-mono text-2xl font-semibold tracking-tight text-muted-foreground">
               Not measured
             </div>
+            {/* This used to name the command a developer runs. Whoever is
+                reading this screen is an auditor, not the person who built it:
+                say what the number would mean, not how it gets produced. */}
             <p className="mt-1 text-xs text-muted-foreground">
-              Label a few reports and run{" "}
-              <code className="rounded bg-muted px-1 py-0.5 font-mono text-[11px]">
-                python -m evaluation.score
-              </code>
+              Scored against reports checked by hand. No scored run has been
+              recorded for this corpus yet.
             </p>
           </>
         )}

@@ -127,8 +127,16 @@ export function LoginPage({ onSignedIn }: { onSignedIn: (user: SessionUser) => v
         </div>
       </aside>
 
-      <main className="flex flex-1 items-center justify-center overflow-y-auto px-4 py-10">
-        <div className="df-rise w-full max-w-sm">
+      <main className="relative flex flex-1 items-center justify-center overflow-y-auto px-4 py-10">
+        {/* The card is 24rem wide in a column nearly twice that, so the panel
+            read as a blank sheet next to the brand side. One soft wash behind
+            it gives the eye somewhere to land without putting anything in the
+            way of the form - the card itself is already centred. */}
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-0 bg-[radial-gradient(58%_46%_at_50%_40%,hsl(var(--brand)/0.07),transparent_72%)]"
+        />
+        <div className="df-rise relative w-full max-w-sm">
           {/* The brand panel is gone below `lg`, so the mark comes inline. */}
           <div className="mb-8 lg:hidden">
             <Wordmark size="lg" />
