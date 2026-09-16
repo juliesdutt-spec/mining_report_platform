@@ -164,6 +164,11 @@ def _as_vector(values: Sequence[float]) -> str:
     return "[" + ",".join(repr(float(v)) for v in values) + "]"
 
 
+#: pgvector's ceiling for an HNSW index. A wider column can be stored but not
+#: indexed, which would turn every search into a sequential scan.
+HNSW_MAX_DIMENSIONS = 2000
+
+
 def ensure_schema(dimension: int, model: str) -> None:
     """
     Create the extension, table and index, once per process.
@@ -176,6 +181,15 @@ def ensure_schema(dimension: int, model: str) -> None:
     global _SCHEMA_READY
     if _SCHEMA_READY:
         return
+
+    # pgvector builds no HNSW index above this width, and the error it raises
+    # names neither the model nor the setting that would fix it.
+    if dimension > HNSW_MAX_DIMENSIONS:
+        raise VectorStoreError(
+            f"{model} produces {dimension}-dimensional vectors, and pgvector "
+            f"cannot build an HNSW index above {HNSW_MAX_DIMENSIONS}. Ask the "
+            "provider for a narrower vector - GEMINI_EMBED_DIMENSIONS=768, say."
+        )
 
     with _connect() as conn, conn.cursor() as cur:
         cur.execute("CREATE EXTENSION IF NOT EXISTS vector")
@@ -193,12 +207,32 @@ def ensure_schema(dimension: int, model: str) -> None:
         cur.execute("SELECT model, dimension FROM vector_index_meta WHERE id")
         row = cur.fetchone()
         if row and (row[0] != model or row[1] != dimension):
-            raise VectorStoreError(
-                f"This index was built with {row[0]} at {row[1]} dimensions, and "
-                f"the configured model is now {model} at {dimension}. Vectors "
-                "from two models are not comparable — rebuild the index with "
-                "`python -m vector_backfill --reset` before searching again."
-            )
+            # An empty index carrying a stale marker is not data worth
+            # protecting, and refusing it is a dead end: the operator is told
+            # to rebuild an index that has nothing in it. This happens for real
+            # whenever the provider retires an embedding model, since the
+            # replacement rarely has the same dimension.
+            cur.execute("SELECT to_regclass('report_chunks')")
+            table_exists = cur.fetchone()[0] is not None
+            existing = 0
+            if table_exists:
+                cur.execute("SELECT count(*) FROM report_chunks")
+                existing = cur.fetchone()[0]
+
+            if existing:
+                raise VectorStoreError(
+                    f"This index holds {existing} passages built with {row[0]} at "
+                    f"{row[1]} dimensions, and the configured model is now {model} "
+                    f"at {dimension}. Vectors from two models are not comparable — "
+                    "rebuild the index from Settings, or run "
+                    "`python -m vector_backfill --reset`, before searching again."
+                )
+
+            if table_exists:
+                cur.execute("DROP TABLE report_chunks")
+            cur.execute("DELETE FROM vector_index_meta WHERE id")
+            row = None
+
         if not row:
             cur.execute(
                 "INSERT INTO vector_index_meta (model, dimension) VALUES (%s, %s)",

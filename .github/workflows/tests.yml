@@ -22,6 +22,28 @@ jobs:
         # silently fell back to compiling it from source - green here, and a
         # build that would not finish there.
         python-version: ["3.11", "3.13"]
+
+    # A real pgvector, because the vector-store tests skip without one - and a
+    # skipped test protects nothing. This suite has now been bitten three times
+    # by tests that reported green while asserting nothing.
+    services:
+      pgvector:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: dataforge
+          POSTGRES_PASSWORD: dataforge
+          POSTGRES_DB: dataforge_vectors
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U dataforge"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      VECTOR_DATABASE_URL: postgresql://dataforge:dataforge@127.0.0.1:5432/dataforge_vectors
+
     steps:
       - uses: actions/checkout@v4
 
@@ -48,14 +70,15 @@ jobs:
       - name: Run the suite
         run: python -m pytest tests/ -q
 
-      # A green run that skipped the OCR tests would report exactly what the
-      # original bug looked like: everything passing, scanned PDFs unreadable.
-      - name: The OCR tests must actually run
+      # A green run that skipped these would report exactly what the original
+      # bugs looked like: everything passing, scanned PDFs unreadable and the
+      # search index untested.
+      - name: The OCR and vector-store tests must actually run
         run: |
           set -o pipefail
-          python -m pytest tests/test_ocr.py -q -rs | tee ocr.log
-          if grep -q "skipped" ocr.log; then
-            echo "::error::OCR tests skipped - tesseract or pymupdf is missing from this runner."
+          python -m pytest tests/test_ocr.py tests/test_vector_store.py -q -rs | tee guard.log
+          if grep -q "skipped" guard.log; then
+            echo "::error::Tests skipped - tesseract, pymupdf or pgvector is missing from this runner."
             exit 1
           fi
 

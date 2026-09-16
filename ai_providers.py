@@ -57,7 +57,29 @@ GEMINI_MODEL = _env("GEMINI_MODEL", "gemini-3.6-flash")
 # baked into the pgvector column, so changing this model means rebuilding the
 # index — vector_store records which model wrote each row so that a change is
 # caught rather than silently mixing two incompatible vector spaces.
-GEMINI_EMBED_MODEL = _env("GEMINI_EMBED_MODEL", "text-embedding-004")
+#: Empty by default: Google retires embedding models and renames them, and a
+#: name hardcoded here becomes a 404 the day that happens - which is exactly
+#: how this broke. Set it to pin a specific model; leave it unset and the
+#: provider asks the API which models it actually serves.
+GEMINI_EMBED_MODEL = _env("GEMINI_EMBED_MODEL", "")
+
+#: Preference order when GEMINI_EMBED_MODEL is unset. Only ever chosen from
+#: models the API reports as supporting embedContent, so a retired name here
+#: is skipped rather than attempted.
+GEMINI_EMBED_CANDIDATES = ("gemini-embedding-001", "text-embedding-004")
+
+#: Vector width to ask for. gemini-embedding-001 returns 3072 by default, and
+#: pgvector refuses to build an HNSW index on a column wider than 2000
+#: ("column cannot have more than 2000 dimensions for hnsw index"), so the
+#: default here is a width the index can actually be built on. Cosine distance
+#: is scale-invariant, so a reduced, unnormalised vector still ranks correctly.
+#: Set to 0 to send no preference and take the model's native width.
+GEMINI_EMBED_DIMENSIONS = int(_env("GEMINI_EMBED_DIMENSIONS", "768") or 0)
+
+#: Gemini refuses a batchEmbedContents request carrying more than this many
+#: entries ("at most 100 requests can be in one batch"). A mining report
+#: chunks well past that, so a document is embedded in slices.
+GEMINI_EMBED_BATCH = max(1, int(_env("GEMINI_EMBED_BATCH", "100") or 100))
 # Overridable for regional endpoints and corporate proxies.
 GEMINI_BASE_URL = _env(
     "GEMINI_BASE_URL", "https://generativelanguage.googleapis.com/v1beta"
@@ -102,6 +124,26 @@ def _origin(url: str) -> str:
 
 
 # ------------------------------------------------------------- transport ---
+
+def _get_json(url: str, headers: dict | None = None) -> dict:
+    """GET JSON, with the same redaction and error shape as _post_json."""
+    request = urllib.request.Request(url, method="GET")
+    for key, value in (headers or {}).items():
+        request.add_header(key, value)
+
+    try:
+        with urllib.request.urlopen(request, timeout=HTTP_TIMEOUT) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        body = exc.read().decode("utf-8", "replace")[:400]
+        raise ProviderError(
+            _redact(f"HTTP {exc.code} from {_origin(url)}: {body}")
+        ) from None
+    except urllib.error.URLError as exc:
+        raise ProviderError(
+            _redact(f"Could not reach {_origin(url)}: {exc.reason}")
+        ) from None
+
 
 def _post_json(url: str, payload: dict, headers: dict | None = None) -> dict:
     """POST JSON, return parsed JSON, raise ProviderError with a safe message."""
@@ -265,35 +307,95 @@ class GeminiProvider(Provider):
         return text
 
 
-    # Gemini batches embeddings, so a whole document goes in one request
-    # instead of one per chunk — which is the difference between a backfill
-    # that takes a minute and one that takes an hour on a free-tier quota.
-    embed_model = GEMINI_EMBED_MODEL
+    # Gemini batches embeddings, so a slice of a document goes in one request
+    # instead of one per chunk - the difference between a backfill that takes a
+    # minute and one that takes an hour on a free-tier quota.
+    embed_model = GEMINI_EMBED_MODEL or GEMINI_EMBED_CANDIDATES[0]
+
+    #: Resolved lazily and remembered. Never resolved from embeddings_describe:
+    #: that is on /health, which Railway polls, and a network call per poll is
+    #: how a health check turns into an outage.
+    _resolved_embed_model: str | None = None
+
+    def _embeddable_models(self) -> list[str]:
+        """Model names this key can actually call embedContent on."""
+        data = _get_json(f"{GEMINI_BASE_URL}/models", {"x-goog-api-key": GEMINI_API_KEY})
+        names = []
+        for model in data.get("models") or []:
+            methods = model.get("supportedGenerationMethods") or []
+            if "embedContent" in methods:
+                # The API returns "models/gemini-embedding-001"; callers here
+                # work with the bare name.
+                names.append(str(model.get("name", "")).removeprefix("models/"))
+        return [n for n in names if n]
+
+    def resolve_embed_model(self) -> str:
+        """
+        The embedding model to use, asked of the API rather than assumed.
+
+        A pinned GEMINI_EMBED_MODEL is honoured as given - if an operator names
+        a model, a silent substitution would be worse than the error.
+        """
+        if GEMINI_EMBED_MODEL:
+            return GEMINI_EMBED_MODEL
+        if self._resolved_embed_model:
+            return self._resolved_embed_model
+
+        available = self._embeddable_models()
+        if not available:
+            raise ProviderError(
+                "This Gemini key serves no model that supports embedContent. "
+                "Set GEMINI_EMBED_MODEL if you know the name to use."
+            )
+        for candidate in GEMINI_EMBED_CANDIDATES:
+            if candidate in available:
+                self._resolved_embed_model = candidate
+                break
+        else:
+            self._resolved_embed_model = available[0]
+
+        type(self)._resolved_embed_model = self._resolved_embed_model
+        return self._resolved_embed_model
 
     def embed(self, texts: list[str]) -> list[list[float]]:
         if not texts:
             return []
-        qualified = f"models/{self.embed_model}"
-        data = _post_json(
-            f"{self.endpoint}/{self.embed_model}:batchEmbedContents",
-            {
-                "requests": [
-                    {"model": qualified, "content": {"parts": [{"text": text}]}}
-                    for text in texts
-                ]
-            },
-            {"x-goog-api-key": GEMINI_API_KEY},
-        )
-        vectors = [
-            [float(v) for v in (item or {}).get("values") or []]
-            for item in data.get("embeddings") or []
-        ]
-        if len(vectors) != len(texts) or any(not v for v in vectors):
-            # A short or ragged batch would otherwise be written to the index
-            # misaligned, pairing each chunk with its neighbour's vector.
-            raise ProviderError(
-                f"Gemini returned {len(vectors)} embeddings for {len(texts)} inputs."
+
+        model = self.resolve_embed_model()
+        qualified = f"models/{model}"
+        vectors: list[list[float]] = []
+
+        # Sliced rather than sent whole: over the batch ceiling Gemini rejects
+        # the request outright, so one long document used to fail completely
+        # while a short one beside it succeeded.
+        for start in range(0, len(texts), GEMINI_EMBED_BATCH):
+            slice_ = texts[start:start + GEMINI_EMBED_BATCH]
+            request = {"model": qualified, "content": {"parts": [{"text": ""}]}}
+            if GEMINI_EMBED_DIMENSIONS:
+                request["outputDimensionality"] = GEMINI_EMBED_DIMENSIONS
+            data = _post_json(
+                f"{self.endpoint}/{model}:batchEmbedContents",
+                {
+                    "requests": [
+                        {**request, "content": {"parts": [{"text": text}]}}
+                        for text in slice_
+                    ]
+                },
+                {"x-goog-api-key": GEMINI_API_KEY},
             )
+            batch = [
+                [float(v) for v in (item or {}).get("values") or []]
+                for item in data.get("embeddings") or []
+            ]
+            if len(batch) != len(slice_) or any(not v for v in batch):
+                # A short or ragged batch would otherwise be written to the
+                # index misaligned, pairing each chunk with its neighbour's
+                # vector - a search that looks like it works and is not.
+                raise ProviderError(
+                    f"Gemini returned {len(batch)} embeddings for {len(slice_)} inputs."
+                )
+            vectors.extend(batch)
+
         return vectors
 
 
@@ -509,10 +611,13 @@ def embeddings_describe() -> dict:
             "model": None,
             "reason": f"{ACTIVE_PROVIDER.name} has no embeddings API.",
         }
+    # Deliberately the configured or already-resolved name, never a fresh
+    # lookup: this runs on /health, which the platform polls.
+    resolved = getattr(ACTIVE_PROVIDER, "_resolved_embed_model", None)
     return {
         "available": True,
         "provider": ACTIVE_PROVIDER.name,
-        "model": ACTIVE_PROVIDER.embed_model,
+        "model": resolved or ACTIVE_PROVIDER.embed_model,
         "reason": None,
     }
 
