@@ -19,9 +19,14 @@ pypdf==5.0.1
 # the tesseract binary still serves every other feature.
 pytesseract>=0.3.10
 # Rasterises PDF pages for OCR. The alternative, pdf2image, shells out to
-# poppler's pdftoppm and so needs an apt package as well; PyMuPDF ships
-# manylinux wheels and needs nothing on the host.
-pymupdf==1.24.10
+# poppler's pdftoppm and so needs an apt package as well.
+#
+# Not below 1.24.14: up to 1.24.13 the Linux wheels are tagged per interpreter
+# (cp38 ... cp312) with no abi3 wheel, so on the deployment's Python 3.13 pip
+# finds no wheel and falls back to building MuPDF from a 47 MB source tarball.
+# 1.24.14 onwards ships a single cp39-abi3 wheel, which covers every CPython
+# from 3.9 up.
+pymupdf==1.24.14
 Pillow==10.4.0
 
 # AI / LLM

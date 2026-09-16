@@ -12,14 +12,22 @@ concurrency:
 
 jobs:
   backend:
-    name: backend (pytest)
+    name: backend (pytest, py${{ matrix.python-version }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 3.13 is what Railway's builder actually uses. Testing only 3.11 let a
+        # dependency pin through that had no wheel for 3.13, so the deployment
+        # silently fell back to compiling it from source - green here, and a
+        # build that would not finish there.
+        python-version: ["3.11", "3.13"]
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: ${{ matrix.python-version }}
           cache: pip
           cache-dependency-path: |
             requirements.txt
