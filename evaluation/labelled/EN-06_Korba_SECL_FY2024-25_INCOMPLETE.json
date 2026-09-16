@@ -1,0 +1,15 @@
+{
+  "document": "samples/corpus/EN-06_Korba_SECL_FY2024-25_INCOMPLETE.pdf",
+  "language": "en",
+  "note": "Hand-read from the PDF. Only fields the document actually states are listed; a field absent here is not scored, because a missing label is not evidence of a wrong extraction. An interim return that states outright that production and reserve figures are unavailable. Neither is labelled, so neither is scored - but an extraction that invents a figure for them should be caught by eye when reviewing a run.",
+  "expected": {
+    "mine_name": "Kusmunda Opencast Mine",
+    "location": "Korba, Chhattisgarh, India",
+    "district": "Korba",
+    "state": "Chhattisgarh",
+    "company_name": "South Eastern Coalfields Limited (SECL)",
+    "mineral_type": "Non-Coking Coal",
+    "extraction_method": "Opencast",
+    "report_date": "09-01-2025"
+  }
+}

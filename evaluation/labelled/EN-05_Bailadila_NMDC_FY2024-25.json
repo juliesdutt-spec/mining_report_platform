@@ -1,0 +1,17 @@
+{
+  "document": "samples/corpus/EN-05_Bailadila_NMDC_FY2024-25.pdf",
+  "language": "en",
+  "note": "Hand-read from the PDF. Only fields the document actually states are listed; a field absent here is not scored, because a missing label is not evidence of a wrong extraction. The document's Mineral field reads 'Iron Ore (Haematite)'. Labelled as the mineral type the extraction schema asks for; the haematite qualifier is a sub-classification, not the type.",
+  "expected": {
+    "mine_name": "Bailadila Deposit 14/11C",
+    "location": "Dantewada, Chhattisgarh, India",
+    "district": "Dantewada",
+    "state": "Chhattisgarh",
+    "company_name": "NMDC Limited",
+    "mineral_type": "Iron Ore",
+    "extraction_method": "Opencast",
+    "quantity_extracted": "12.8 million tonnes",
+    "reserve_estimate": "210 million tonnes",
+    "report_date": "22-05-2025"
+  }
+}

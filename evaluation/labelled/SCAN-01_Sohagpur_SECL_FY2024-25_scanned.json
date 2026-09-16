@@ -1,0 +1,17 @@
+{
+  "document": "samples/corpus/SCAN-01_Sohagpur_SECL_FY2024-25_scanned.pdf",
+  "language": "en",
+  "note": "Hand-read from the PDF. Only fields the document actually states are listed; a field absent here is not scored, because a missing label is not evidence of a wrong extraction. No text layer: every value here has to come through OCR. Scoring this against the digital documents is how OCR accuracy becomes a number rather than an impression.",
+  "expected": {
+    "mine_name": "Amlai Underground Mine",
+    "location": "Shahdol, Madhya Pradesh, India",
+    "district": "Shahdol",
+    "state": "Madhya Pradesh",
+    "company_name": "South Eastern Coalfields Limited (SECL)",
+    "mineral_type": "Non-Coking Coal",
+    "extraction_method": "Underground",
+    "quantity_extracted": "6,20,000 MT",
+    "reserve_estimate": "74 million tonnes",
+    "report_date": "02-05-2025"
+  }
+}

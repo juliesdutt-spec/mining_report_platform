@@ -1,0 +1,77 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# A second push to a PR makes the first run pointless; don't pay for it.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: backend (pytest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+
+      # Without the language data the OCR tests skip, and a skipped test
+      # cannot catch the regression it exists for. These are the same packages
+      # the deployment installs via RAILPACK_DEPLOY_APT_PACKAGES.
+      - name: Install tesseract with Hindi and Telugu language data
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq \
+            tesseract-ocr tesseract-ocr-eng tesseract-ocr-hin tesseract-ocr-tel
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Run the suite
+        run: python -m pytest tests/ -q
+
+      # A green run that skipped the OCR tests would report exactly what the
+      # original bug looked like: everything passing, scanned PDFs unreadable.
+      - name: The OCR tests must actually run
+        run: |
+          set -o pipefail
+          python -m pytest tests/test_ocr.py -q -rs | tee ocr.log
+          if grep -q "skipped" ocr.log; then
+            echo "::error::OCR tests skipped - tesseract or pymupdf is missing from this runner."
+            exit 1
+          fi
+
+  frontend:
+    name: frontend (build + node --test)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      # `npm run build` is `tsc && vite build`, so this typechecks too.
+      - name: Typecheck and build
+        run: npm run build
+
+      - name: Run the suite
+        run: npm test
