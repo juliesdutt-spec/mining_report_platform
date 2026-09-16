@@ -132,6 +132,56 @@ export interface AiStatus {
   ai_providers_available: string[];
 }
 
+/** The semantic index's side of GET /health. Never includes a key. */
+export interface RetrievalStatus {
+  /** True only when the index is reachable AND embeddings are available. */
+  enabled: boolean;
+  /** Why the index cannot be used, in an operator's terms. Null when it can. */
+  index_reason: string | null;
+  /** Why embeddings cannot be produced. Null when they can. */
+  embeddings_reason: string | null;
+  embedding_provider: string | null;
+  embedding_model: string | null;
+  indexed_chunks: number;
+  indexed_reports: number;
+}
+
+/** What POST /admin/reindex reports once it has walked the corpus. */
+export interface ReindexResult {
+  reports_seen: number;
+  reports_indexed: number;
+  chunks_indexed: number;
+  failures: { report_id: number; filename: string; error: string }[];
+  embedding_model: string | null;
+  index: { available: boolean; reason: string | null; chunks: number; reports: number };
+}
+
+/** Current state of the semantic index. Returns null when unreachable. */
+export async function fetchRetrievalStatus(): Promise<RetrievalStatus | null> {
+  try {
+    const health = await apiFetch<{ retrieval?: RetrievalStatus }>('/health', undefined, 8000);
+    return health.retrieval ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Build the semantic index from the reports already stored.
+ *
+ * The vector database is reachable only over the deployment's private network,
+ * so this cannot be run from a laptop: it has to happen inside the deployment,
+ * which is what this endpoint is for. Errors are thrown rather than swallowed -
+ * the caller is a person who pressed a button and is owed the reason.
+ *
+ * Generous timeout: every passage costs an embedding call, so a corpus of any
+ * size takes longer than a normal request. Re-runnable - each report's passages
+ * are replaced rather than appended.
+ */
+export async function rebuildSearchIndex(): Promise<ReindexResult> {
+  return apiFetch<ReindexResult>('/admin/reindex', { method: 'POST' }, 600000);
+}
+
 /**
  * Read the active AI provider.
  *

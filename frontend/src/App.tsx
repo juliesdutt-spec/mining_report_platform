@@ -199,7 +199,7 @@ export function App() {
       )}
 
       {currentTab === "settings" && (
-        <SettingsPage />
+        <SettingsPage user={user} />
       )}
       </Suspense>
       </ErrorBoundary>
