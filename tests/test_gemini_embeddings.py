@@ -357,3 +357,84 @@ class PacerTests(unittest.TestCase):
         with mock.patch.object(ai_providers.time, "sleep",
                                lambda s: self.fail("must not sleep when disabled")):
             pacer.take(10_000)
+
+
+class GenerationIsPacedAndRetriedLikeEmbedding(unittest.TestCase):
+    """
+    The generation path had neither, and the gap only shows under a loop.
+
+    A single upload never approaches the free tier's generation ceiling, so
+    nothing noticed. Scoring the 13-document evaluation corpus did: four 503s
+    and seven 429s in seconds, 11 of 13 documents silently answered with mock
+    fields. `generate_content_free_tier_requests, limit: 5` is twenty times
+    tighter than the embedding limit this code already respected.
+    """
+
+    def _gemini(self):
+        with mock.patch.object(ai_providers, "GEMINI_API_KEY", "placeholder"):
+            return ai_providers.GeminiProvider()
+
+    def _quiet(self):
+        """No real waiting, and no real pacing, or the suite waits out a quota."""
+        return (
+            mock.patch.object(ai_providers, "_complete_pacer",
+                              ai_providers._RequestPacer(0)),
+            mock.patch.object(ai_providers.time, "sleep", lambda _s: None),
+        )
+
+    def test_the_free_tier_generation_ceiling_is_the_default(self):
+        # Quoted from the API's own refusal, not guessed.
+        self.assertEqual(ai_providers.GEMINI_RPM, 5)
+
+    def test_a_quota_refusal_is_waited_out_rather_than_faked(self):
+        pacer, sleep = self._quiet()
+        answered = {"candidates": [{"content": {"parts": [{"text": "ok"}]}}]}
+        calls = []
+
+        def _post(url, payload, headers):
+            calls.append(url)
+            if len(calls) < 3:
+                raise ai_providers.ProviderError("HTTP 429", status=429, retry_after=1)
+            return answered
+
+        with pacer, sleep, mock.patch.object(ai_providers, "_post_json", _post):
+            self.assertEqual(self._gemini().complete("q"), "ok")
+        self.assertEqual(len(calls), 3, "it should retry rather than give up")
+
+    def test_a_demand_spike_is_retried_too(self):
+        """503 is the server saying later, not no."""
+        pacer, sleep = self._quiet()
+        answered = {"candidates": [{"content": {"parts": [{"text": "ok"}]}}]}
+        calls = []
+
+        def _post(url, payload, headers):
+            calls.append(url)
+            if len(calls) < 2:
+                raise ai_providers.ProviderError("HTTP 503", status=503)
+            return answered
+
+        with pacer, sleep, mock.patch.object(ai_providers, "_post_json", _post):
+            self.assertEqual(self._gemini().complete("q"), "ok")
+        self.assertEqual(len(calls), 2)
+
+    def test_a_real_failure_is_still_raised(self):
+        """A 400 fails identically however long you wait; retrying wastes quota."""
+        pacer, sleep = self._quiet()
+
+        def _post(url, payload, headers):
+            raise ai_providers.ProviderError("HTTP 400 bad request", status=400)
+
+        with pacer, sleep, mock.patch.object(ai_providers, "_post_json", _post):
+            with self.assertRaises(ai_providers.ProviderError):
+                self._gemini().complete("q")
+
+    def test_generation_is_paced_separately_from_embedding(self):
+        """
+        Five a minute and a hundred a minute are different budgets.
+
+        Sharing one pacer would either throttle embeddings twentyfold or let
+        generation run twenty times over its limit.
+        """
+        self.assertIsNot(ai_providers._complete_pacer, ai_providers._embed_pacer)
+        self.assertEqual(ai_providers._complete_pacer.per_minute, ai_providers.GEMINI_RPM)
+        self.assertEqual(ai_providers._embed_pacer.per_minute, ai_providers.GEMINI_EMBED_RPM)

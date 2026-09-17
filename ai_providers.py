@@ -121,6 +121,22 @@ GEMINI_EMBED_RPM = int(_env("GEMINI_EMBED_RPM", "100") or 0)
 #: How many times a quota refusal is waited out before giving up on a slice.
 GEMINI_EMBED_RETRIES = int(_env("GEMINI_EMBED_RETRIES", "4") or 0)
 
+#: Generation requests allowed per minute. The free tier reports
+#: "generate_content_free_tier_requests, limit: 5", which is a far tighter
+#: ceiling than the embedding one and easy to miss, because a single upload
+#: never approaches it. Anything that loops over documents does: scoring the
+#: 13-document evaluation corpus put 11 of them into mock fallback inside a
+#: few seconds, because this path had no pacing at all while embeddings did.
+#: Raise it on a paid plan; 0 turns pacing off.
+GEMINI_RPM = int(_env("GEMINI_RPM", "5") or 0)
+
+#: How many times a refused or overloaded generation call is retried. 503
+#: ("this model is currently experiencing high demand") is counted with 429
+#: here: both are the server asking for later rather than saying no, and
+#: treating a temporary spike as a hard failure silently substitutes mock
+#: output for a document.
+GEMINI_COMPLETE_RETRIES = int(_env("GEMINI_COMPLETE_RETRIES", "4") or 0)
+
 #: Gemini refuses a batchEmbedContents request carrying more than this many
 #: entries ("at most 100 requests can be in one batch"). A mining report
 #: chunks well past that, so a document is embedded in slices.
@@ -344,6 +360,7 @@ class _RequestPacer:
 
 
 _embed_pacer = _RequestPacer(GEMINI_EMBED_RPM)
+_complete_pacer = _RequestPacer(GEMINI_RPM)
 
 
 class GeminiProvider(Provider):
@@ -362,14 +379,7 @@ class GeminiProvider(Provider):
         return "GEMINI_API_KEY is not set."
 
     def complete(self, prompt: str, max_tokens: int = 1000) -> str:
-        data = _post_json(
-            f"{self.endpoint}/{self.model}:generateContent",
-            {
-                "contents": [{"parts": [{"text": prompt}]}],
-                "generationConfig": {"maxOutputTokens": max_tokens},
-            },
-            {"x-goog-api-key": GEMINI_API_KEY},
-        )
+        data = self._generate(prompt, max_tokens)
 
         candidates = data.get("candidates") or []
         if not candidates:
@@ -386,6 +396,38 @@ class GeminiProvider(Provider):
             raise ProviderError("Gemini returned an empty response.")
         return text
 
+
+    def _generate(self, prompt: str, max_tokens: int) -> dict:
+        """
+        One generation call, paced and retried.
+
+        The embedding path has had both for a while; this one had neither, and
+        the difference only shows when something loops over documents. Scoring
+        the evaluation corpus produced four 503s and seven 429s in a row - 11
+        of 13 documents silently answered with mock fields, because a failed
+        call falls back rather than raising. A measurement built on that is
+        part fiction, which is why the scorer refuses it.
+        """
+        for attempt in range(max(GEMINI_COMPLETE_RETRIES, 0) + 1):
+            last = attempt == max(GEMINI_COMPLETE_RETRIES, 0)
+            _complete_pacer.take(1)
+            try:
+                return _post_json(
+                    f"{self.endpoint}/{self.model}:generateContent",
+                    {
+                        "contents": [{"parts": [{"text": prompt}]}],
+                        "generationConfig": {"maxOutputTokens": max_tokens},
+                    },
+                    {"x-goog-api-key": GEMINI_API_KEY},
+                )
+            except ProviderError as exc:
+                # 429 is the quota, 503 is a demand spike. Both mean "later",
+                # and neither is a reason to hand back invented fields.
+                if exc.status not in (429, 503) or last:
+                    raise
+                delay = exc.retry_after if exc.retry_after else min(2 ** attempt * 5, 60)
+                time.sleep(delay)
+        raise ProviderError("Unreachable: generation retry loop fell through.")
 
     # Gemini batches embeddings, so a slice of a document goes in one request
     # instead of one per chunk - the difference between a backfill that takes a

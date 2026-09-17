@@ -14,6 +14,13 @@ This scores extraction against documents a person has read by hand.
     python -m evaluation.score --json             # and record it for the dashboard
     python -m evaluation.score --json mine.json   # write it somewhere of your own
 
+**Budget about three minutes for the 13-document corpus.** Gemini's free tier
+allows five generation calls a minute, so the scorer paces itself to that and
+one document per call means the run is mostly waiting. That is the correct
+behaviour: the alternative is what happened the first time this was run
+against a real key — four 503s, seven 429s, and 11 of 13 documents silently
+answered with mock fields. `GEMINI_RPM` raises the pace on a paid plan.
+
 It calls the configured AI provider, so set a key first. Without one the
 extractor falls back to mock output and the score is meaningless — the
 scorer refuses to run in that state rather than reporting a fake number.
