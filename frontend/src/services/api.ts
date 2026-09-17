@@ -151,6 +151,8 @@ export interface ReindexResult {
   reports_seen: number;
   reports_indexed: number;
   chunks_indexed: number;
+  /** Reports still without passages after this call. Zero means done. */
+  remaining: number;
   failures: { report_id: number; filename: string; error: string }[];
   embedding_model: string | null;
   index: { available: boolean; reason: string | null; chunks: number; reports: number };
@@ -235,8 +237,56 @@ export async function fetchSystemStatus(): Promise<SystemStatus> {
  * size takes longer than a normal request. Re-runnable - each report's passages
  * are replaced rather than appended.
  */
-export async function rebuildSearchIndex(): Promise<ReindexResult> {
-  return apiFetch<ReindexResult>('/admin/reindex', { method: 'POST' }, 600000);
+export async function rebuildSearchIndex(
+  limit = REINDEX_BATCH,
+): Promise<ReindexResult> {
+  return apiFetch<ReindexResult>(
+    `/admin/reindex?limit=${limit}`,
+    { method: 'POST' },
+    REINDEX_TIMEOUT_MS
+  );
+}
+
+/**
+ * Reports per call. The edge closes any request at five minutes, so the whole
+ * corpus in one POST is not an option however long the browser is willing to
+ * wait - production proved it: 300,011ms and a 499, with the page still
+ * showing a spinner. Four reports is a few seconds of embedding even when the
+ * provider is pacing us.
+ */
+const REINDEX_BATCH = 4;
+
+/** Comfortably over one batch, comfortably under the edge's five minutes. */
+const REINDEX_TIMEOUT_MS = 120000;
+
+/**
+ * Index the whole corpus, a batch at a time, reporting progress as it goes.
+ *
+ * Stops when nothing is left, and also when a call indexes nothing at all: a
+ * report that cannot be embedded stays pending for ever, and looping on it
+ * would too.
+ */
+export async function rebuildSearchIndexFully(
+  onProgress?: (done: number, remaining: number) => void
+): Promise<ReindexResult> {
+  let total: ReindexResult | null = null;
+  let done = 0;
+
+  for (;;) {
+    const batch = await rebuildSearchIndex();
+    done += batch.reports_indexed;
+    total = total
+      ? {
+          ...batch,
+          reports_indexed: total.reports_indexed + batch.reports_indexed,
+          chunks_indexed: total.chunks_indexed + batch.chunks_indexed,
+          failures: [...total.failures, ...batch.failures],
+        }
+      : batch;
+
+    onProgress?.(done, batch.remaining);
+    if (batch.remaining <= 0 || batch.reports_indexed === 0) return total;
+  }
 }
 
 /**

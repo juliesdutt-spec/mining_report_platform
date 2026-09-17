@@ -7,7 +7,7 @@ import {
   RetrievalStatus,
   fetchAiStatus,
   fetchRetrievalStatus,
-  rebuildSearchIndex,
+  rebuildSearchIndexFully,
 } from "@/services/api";
 import { SessionUser } from "@/lib/session";
 import { Button } from "@/components/ui/button";
@@ -46,6 +46,9 @@ export function SettingsPage({ user }: { user: SessionUser | null }) {
   const [retrieval, setRetrieval] = useState<RetrievalStatus | null>(null);
   const [retrievalLoading, setRetrievalLoading] = useState(true);
   const [indexing, setIndexing] = useState(false);
+  // Batched, so there is real progress to show rather than a spinner that
+  // cannot distinguish working from hung.
+  const [indexProgress, setIndexProgress] = useState<{ done: number; remaining: number } | null>(null);
   const [indexResult, setIndexResult] = useState<ReindexResult | null>(null);
   const [indexError, setIndexError] = useState<string | null>(null);
   const [ai, setAi] = useState<AiStatus | null>(null);
@@ -85,8 +88,11 @@ export function SettingsPage({ user }: { user: SessionUser | null }) {
     setIndexing(true);
     setIndexError(null);
     setIndexResult(null);
+    setIndexProgress(null);
     try {
-      const result = await rebuildSearchIndex();
+      const result = await rebuildSearchIndexFully((done, remaining) =>
+        setIndexProgress({ done, remaining })
+      );
       setIndexResult(result);
       // Re-read rather than trusting the write: what /health reports is what
       // the rest of the platform will actually answer from.
@@ -97,6 +103,7 @@ export function SettingsPage({ user }: { user: SessionUser | null }) {
       );
     } finally {
       setIndexing(false);
+      setIndexProgress(null);
     }
   };
 
@@ -250,7 +257,11 @@ export function SettingsPage({ user }: { user: SessionUser | null }) {
                 ) : (
                   <Database className="h-3.5 w-3.5" />
                 )}
-                {indexing ? "Building index…" : "Build search index"}
+                {indexing
+                  ? indexProgress
+                    ? `Indexing… ${indexProgress.done} done, ${indexProgress.remaining} to go`
+                    : "Building index…"
+                  : "Build search index"}
               </Button>
 
               <span className="text-xs text-muted-foreground">
