@@ -93,12 +93,45 @@ export function AppShell({
     statusText: "Checking…",
   });
 
+  // Polls while the tab is in front, and stops while it is not. A hidden tab
+  // has nobody reading the status pill, and four requests a minute to a single
+  // replica in Amsterdam is not free - it was still polling in tabs left open
+  // for hours. Browsers clamp a background timer to roughly one minute rather
+  // than stopping it, so this cannot be left to them.
+  //
+  // Coming back to the tab refreshes immediately rather than waiting out the
+  // interval: a stale "Backend Offline" on the screen you just switched to is
+  // worse than the request it saved.
   useEffect(() => {
-    checkBackendHealth().then(setBackendStatus);
-    const interval = setInterval(() => {
-      checkBackendHealth().then(setBackendStatus);
-    }, 15000);
-    return () => clearInterval(interval);
+    let interval: ReturnType<typeof setInterval> | undefined;
+
+    const poll = () => checkBackendHealth().then(setBackendStatus);
+
+    const start = () => {
+      if (interval !== undefined) return;
+      interval = setInterval(poll, 15000);
+    };
+    const stop = () => {
+      clearInterval(interval);
+      interval = undefined;
+    };
+
+    const onVisibility = () => {
+      if (document.hidden) {
+        stop();
+      } else {
+        poll();
+        start();
+      }
+    };
+
+    poll();
+    if (!document.hidden) start();
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      stop();
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
   }, []);
 
   // ⌘K opens the palette, ⌘B collapses the sidebar.

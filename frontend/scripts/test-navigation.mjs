@@ -58,3 +58,17 @@ test("the new screen is announced politely, from a region that is always mounted
   assert.match(shell, /role="status" aria-live="polite" className="sr-only"/);
   assert.match(shell, /\{TAB_TITLES\[currentTab\]\}/);
 });
+
+test("the health poll stops while nobody is looking at it", () => {
+  // Four requests a minute to a single replica in Amsterdam, per tab, for a
+  // status pill nobody can see. Browsers clamp a background timer to about a
+  // minute rather than stopping it, so the page has to stop it itself.
+  assert.match(shell, /document\.addEventListener\("visibilitychange"/);
+  assert.match(shell, /if \(document\.hidden\) \{\s*\n\s*stop\(\);/);
+  // And it must come back without waiting out the interval: a stale
+  // "Backend Offline" on the tab you just switched to is worse than the
+  // request it saved.
+  assert.match(shell, /\} else \{\s*\n\s*poll\(\);\s*\n\s*start\(\);/);
+  // The listener is removed with the component, or every remount adds another.
+  assert.match(shell, /removeEventListener\("visibilitychange", onVisibility\)/);
+});

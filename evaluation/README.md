@@ -9,13 +9,38 @@ This scores extraction against documents a person has read by hand.
 
 ## Running it
 
-    python -m evaluation.score                      # every labelled document
-    python -m evaluation.score --language hi        # only Hindi ones
-    python -m evaluation.score --json report.json   # machine-readable
+    python -m evaluation.score                    # every labelled document
+    python -m evaluation.score --language hi      # only Hindi ones
+    python -m evaluation.score --json             # and record it for the dashboard
+    python -m evaluation.score --json mine.json   # write it somewhere of your own
 
 It calls the configured AI provider, so set a key first. Without one the
 extractor falls back to mock output and the score is meaningless — the
 scorer refuses to run in that state rather than reporting a fake number.
+
+## Getting the number onto the dashboard
+
+The Extraction accuracy card reads one file: `evaluation/latest.json`. That is
+where `--json` writes when you give it no path, and nowhere else will do —
+`--json report.json` scores extraction and shows nobody.
+
+Three steps, in full:
+
+    1. set GEMINI_API_KEY in .env          # a free key is enough
+    2. python -m evaluation.score --json   # a few minutes; one call per document
+    3. git commit evaluation/latest.json   # and deploy
+
+The third step is not optional for the deployed dashboard. The backend runs
+from the repository and has no writable volume, so a run recorded on a laptop
+reaches production by being committed, the same way code does. That is also
+what makes the figure auditable: the run that produced it is in the history,
+next to the labels it scored against.
+
+**A `--language` run cannot be recorded as the corpus figure.** The dashboard
+presents that file as the accuracy of every document, so a Hindi-only score
+saved there would be a number nobody measured. The scorer refuses, before
+calling the provider rather than after spending the quota, and tells you to
+pass an explicit path if you want to keep the run for yourself.
 
 ## Adding a document
 
