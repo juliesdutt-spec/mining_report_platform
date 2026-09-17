@@ -50,6 +50,26 @@ saved there would be a number nobody measured. The scorer refuses, before
 calling the provider rather than after spending the quota, and tells you to
 pass an explicit path if you want to keep the run for yourself.
 
+## Before you label: what does the pipeline make of it?
+
+Everything scored so far is a fixture this project generated, and fixtures are
+clean in ways real departmental reporting is not. Run this over real PDFs
+first — **it needs no API key**, because it exercises the document-processing
+half, which is the half that either survives a real scan or does not:
+
+    python -m evaluation.inspect_documents ~/Downloads/cmpdi
+    python -m evaluation.inspect_documents ~/Downloads/cmpdi --labels
+
+It reports, per document, the page count, whether there is a usable text layer
+or OCR has to carry it, how much text comes out, which scripts appear, how many
+passages it will index to, and whether the upload ceiling would refuse it. A
+document that comes back with almost no text is one to look at by eye before
+trusting anything downstream of it.
+
+`--labels` then writes a blank skeleton per document into `labelled/`, with
+every field the scorer knows about left empty. Fill in what the document
+states, delete the rest, and score.
+
 ## Adding a document
 
 Put the PDF anywhere in the repository, then add a label file beside the
