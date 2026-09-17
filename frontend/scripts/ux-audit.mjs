@@ -318,6 +318,41 @@ for (const route of ROUTES) {
         document.documentElement.scrollWidth > document.documentElement.clientWidth + 1)) {
         add("layout", where, "horizontal scroll");
       }
+      // Content past the fold that nothing can scroll to. `body` is
+      // overflow-hidden for the app shell, so a page built with min-h-screen
+      // simply grows underneath the viewport with no scroller - the terms
+      // were readable to "What you may upload" and stopped dead. Only the
+      // horizontal case was checked before, which is why this shipped.
+      const unreachable = await page.evaluate(() => {
+        const html = document.documentElement;
+        const hidden = (el) => getComputedStyle(el).overflowY === "hidden";
+
+        // Overflow is not the same as the ability to scroll. This app sets
+        // overflow-hidden on body for the shell, so the viewport can have
+        // content past its bottom edge and no way to reach it - checking
+        // scrollHeight alone reports that as scrollable and misses the bug.
+        const viewportScrolls =
+          !hidden(html) && !hidden(document.body) &&
+          html.scrollHeight > html.clientHeight + 1;
+        const somethingScrolls = [...document.querySelectorAll("*")].some((el) => {
+          const overflowY = getComputedStyle(el).overflowY;
+          return /(auto|scroll|overlay)/.test(overflowY) &&
+            el.scrollHeight > el.clientHeight + 1;
+        });
+        if (viewportScrolls || somethingScrolls) return false;
+
+        const bottom = Math.max(
+          0,
+          ...[...document.querySelectorAll("body *")]
+            .filter((el) => el.textContent?.trim())
+            .map((el) => el.getBoundingClientRect().bottom)
+        );
+        return bottom > html.clientHeight + 8 ? Math.round(bottom - html.clientHeight) : false;
+      });
+      if (unreachable) {
+        add("layout", where, `${unreachable}px of content below the fold and nothing scrolls`);
+      }
+
       // A legal page with no heading is a wall of grey, and a 404 with no way
       // out is a dead end - both are the failure these pages exist to avoid.
       if (!(await page.locator("h1").count())) add("content", where, "no heading");

@@ -143,3 +143,18 @@ test("the ceiling has one source, and it is the server", () => {
   // An unreachable backend must not invent a limit error for a network fault.
   assert.match(api, /Number\.POSITIVE_INFINITY/);
 });
+
+test("the page owns a scroller, because body cannot be one here", () => {
+  // `body` is overflow-hidden for the app shell. A legal page built with
+  // min-h-screen grows underneath the viewport with nothing able to scroll
+  // it, and everything past the fold is simply unreachable - the terms were
+  // readable to "What you may upload" and stopped dead on the deployed site.
+  assert.match(legal, /className="h-screen overflow-y-auto bg-background"/);
+  assert.doesNotMatch(legal, /min-h-screen overflow-y-auto/);
+
+  // And the audit has to be able to see it. Checking scrollHeight alone
+  // reports overflow-hidden content as scrollable, which is why this shipped.
+  const audit = read("./ux-audit.mjs");
+  assert.match(audit, /below the fold and nothing scrolls/);
+  assert.match(audit, /overflowY === "hidden"/);
+});
