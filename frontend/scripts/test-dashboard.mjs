@@ -86,3 +86,42 @@ test("nothing on the dashboard appears out of nowhere", () => {
   assert.doesNotMatch(dashboard, /grid grid-cols-2 gap-6 border-y border-border py-4/);
   assert.match(dashboard, /value=\{stats \? stats\.total_reports\.toLocaleString\("en-IN"\) : <StatSkeleton \/>\}/);
 });
+
+test("monospace is kept for figures and identifiers, not for names", () => {
+  // Geist Mono earns its place on a tonnage, a page number, a snake_case
+  // field name — a fixed advance lines digits up and says "read from the
+  // document, unaltered". Spent on a company's name it says the opposite:
+  // "Coal India Limited (CIL)" set as code reads as a database key.
+  const organisation = dashboard.slice(
+    dashboard.indexOf("{doc.organisation") - 260,
+    dashboard.indexOf("{doc.organisation")
+  );
+  assert.doesNotMatch(organisation, /font-mono/, "organisation is a name, not a figure");
+
+  // The columns that are figures keep it, and keep tabular figures with it.
+  const quantity = dashboard.slice(
+    dashboard.indexOf("{doc.quantityExtracted") - 200,
+    dashboard.indexOf("{doc.quantityExtracted")
+  );
+  assert.match(quantity, /font-mono[^"]*tabular-nums/);
+
+  // So does the field name, which really is snake_case off the backend.
+  const field = dashboard.slice(
+    dashboard.indexOf("{alert.fieldName") - 160,
+    dashboard.indexOf("{alert.fieldName")
+  );
+  assert.match(field, /font-mono/);
+});
+
+test("the sentence standing in for a measurement is not set as one", () => {
+  // "Not measured" occupied the slot a percentage occupies, at the same size,
+  // in the face this platform reserves for measured figures. That is how an
+  // absence of evidence starts looking like a reading.
+  const quality = readFileSync(
+    new URL("../src/components/shared/ExtractionQuality.tsx", import.meta.url), "utf8"
+  );
+  const notMeasured = quality.slice(quality.indexOf("Not measured") - 200, quality.indexOf("Not measured"));
+  assert.doesNotMatch(notMeasured, /font-mono/);
+  // The real percentage beside it keeps mono, or this proves nothing.
+  assert.match(quality, /font-mono text-2xl[^>]*>\s*\n?\s*\{Math\.round\(measured\.accuracy/);
+});

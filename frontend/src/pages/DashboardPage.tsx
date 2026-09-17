@@ -272,7 +272,19 @@ export function DashboardPage({
                       </div>
                     </div>
                   </TableCell>
-                  <TableCell className="font-mono text-xs text-muted-foreground">
+                  {/* Not monospace. Geist Mono is for figures and for machine
+                      identifiers - a tonnage, a page number, a snake_case field
+                      name - where a fixed advance makes digits line up and
+                      signals "this came out of a document, unaltered". "Coal
+                      India Limited (CIL)" is a company's name. Set in mono it
+                      reads as a database key, which is the opposite of what
+                      this column is telling an auditor.
+
+                      And at the row's size, not a step below it: Organisation
+                      and Mine are both names, side by side, and two sizes for
+                      the same kind of thing reads as an oversight once the
+                      typeface no longer explains the difference. */}
+                  <TableCell className="text-muted-foreground">
                     {doc.organisation ?? "—"}
                   </TableCell>
                   <TableCell className="text-muted-foreground">{doc.mineName ?? "—"}</TableCell>

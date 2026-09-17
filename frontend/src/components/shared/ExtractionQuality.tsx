@@ -138,7 +138,13 @@ export function ExtractionQualityPanel({ quality }: { quality?: Quality }) {
           </>
         ) : (
           <>
-            <div className="mt-2 font-mono text-2xl font-semibold tracking-tight text-muted-foreground">
+            {/* Same size as the percentage it stands in for, so the two cells
+                keep their baseline - but not the same typeface. Mono is the
+                platform's signal for a measured figure, and this is the
+                sentence that says there is no measurement. Setting it in the
+                face reserved for numbers is how "unmeasured" starts looking
+                like a reading. */}
+            <div className="mt-2 text-2xl font-semibold tracking-tight text-muted-foreground">
               Not measured
             </div>
             {/* This used to name the command a developer runs. Whoever is
