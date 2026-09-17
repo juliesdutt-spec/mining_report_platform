@@ -623,6 +623,7 @@ sign-in. Both are correct.
 | AI call timeout | 90 s | `AI_TIMEOUT_SECONDS` |
 | OCR resolution | 200 DPI, `eng+hin+tel` | `OCR_DPI` |
 | Embedding pace | 100 passages/minute | `GEMINI_EMBED_RPM`, the free tier's own ceiling |
+| Generation pace | 5 requests/minute | `GEMINI_RPM`, the free tier's own ceiling — twenty times tighter, and the one that bites anything looping over documents |
 | Vector width | 768 dimensions | `GEMINI_EMBED_DIMENSIONS`, under pgvector's 2,000 HNSW cap |
 
 The upload ceiling is reported on `/health` as `max_upload_mb`, and the
