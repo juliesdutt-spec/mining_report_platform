@@ -281,12 +281,18 @@ def _retrieval_health() -> dict:
     }
 
 
-#: Largest upload accepted, in bytes. The body is read into memory to be
-#: parsed, so without a ceiling a single large request can exhaust the
+#: Largest upload accepted, in bytes. An accepted body is held in memory to
+#: be parsed, so without a ceiling a single large request can exhaust the
 #: container: uncapped, a 60 MB file was accepted in testing and nothing
-#: stopped a much larger one. Generous for a mining report; override with
-#: MAX_UPLOAD_MB where genuinely bigger documents are expected.
-MAX_UPLOAD_BYTES = int(os.getenv("MAX_UPLOAD_MB", "25")) * 1024 * 1024
+#: stopped a much larger one.
+#:
+#: 50 MB comfortably covers a scanned annual report. Raising it further is a
+#: one-line change but not a free one: a scan of that size is hundreds of
+#: pages, and OCR renders every one of them at OCR_DPI before any text
+#: exists. Past roughly this size the binding constraint stops being the
+#: ceiling and becomes one container doing that work synchronously, which
+#: wants a job queue rather than a bigger number here.
+MAX_UPLOAD_BYTES = int(os.getenv("MAX_UPLOAD_MB", "50")) * 1024 * 1024
 
 #: Read granularity while enforcing that ceiling.
 _UPLOAD_CHUNK = 1024 * 1024

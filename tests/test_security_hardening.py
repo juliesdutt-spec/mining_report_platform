@@ -35,6 +35,10 @@ class SecurityHardeningTests(unittest.TestCase):
         os.environ["AUTH_SECRET"] = "test-secret-not-a-real-one"
         os.environ["AUTH_USERS"] = "tester:test-password:Test User"
         os.environ["DEMO_ACCOUNT"] = "off"
+        # Small on purpose: the oversized-upload case allocates the ceiling
+        # plus a kilobyte, and there is nothing to learn from doing that at
+        # the production figure.
+        os.environ["MAX_UPLOAD_MB"] = "2"
 
         import sys
         sys.path.insert(0, str(PROJECT_ROOT))

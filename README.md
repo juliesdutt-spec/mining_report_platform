@@ -352,7 +352,7 @@ python -m vector_backfill
 
 # 4. Confirm it is serving
 curl -s $BACKEND/health | jq .retrieval
-# {"enabled": true, "embedding_model": "text-embedding-004",
+# {"enabled": true, "embedding_model": "gemini-embedding-001",
 #  "indexed_chunks": 24, "indexed_reports": 6, ...}
 ```
 
@@ -368,15 +368,31 @@ python -m vector_backfill
 ### Embeddings
 
 Vectors come from the **same provider that answers questions**, so no second
-account is needed — Gemini in production, via its free-tier
-`text-embedding-004`. Ollama works locally with `nomic-embed-text`. Anthropic
-publishes no embeddings API, so with `AI_PROVIDER=claude` retrieval reports
-itself off and `/query` uses the field dump.
+account is needed — Gemini in production, on its free tier. Ollama works
+locally with `nomic-embed-text`. Anthropic publishes no embeddings API, so
+with `AI_PROVIDER=claude` retrieval reports itself off and `/query` uses the
+field dump.
+
+**The model is discovered, not hardcoded.** `text-embedding-004` was correct
+when this was written and has since been retired; a pinned name is a
+deployment that stops working on Google's schedule, not yours. The provider
+asks ListModels which models support `embedContent` and takes the first it
+prefers, once per process. `GEMINI_EMBED_MODEL` still pins one if you want
+that.
+
+Two ceilings worth knowing before you change any of this. Gemini's free tier
+allows 100 embedded passages a minute and refuses a batch larger than 100
+entries, so indexing paces itself and slices accordingly. And pgvector builds
+no HNSW index above 2,000 dimensions, while the current model returns 3,072 —
+hence `GEMINI_EMBED_DIMENSIONS`, which asks the API for a width the index can
+actually be built on.
 
 | variable | default | what it does |
 |---|---|---|
 | `VECTOR_DATABASE_URL` | *unset* | Postgres with pgvector. Unset means retrieval is off. |
-| `GEMINI_EMBED_MODEL` | `text-embedding-004` | 768 dimensions |
+| `GEMINI_EMBED_MODEL` | *discovered* | pins a model instead of asking ListModels |
+| `GEMINI_EMBED_DIMENSIONS` | `768` | must stay at or below pgvector's 2,000-dimension HNSW ceiling |
+| `GEMINI_EMBED_RPM` | `100` | free-tier pace, in passages per minute; `0` disables pacing |
 | `OLLAMA_EMBED_MODEL` | `nomic-embed-text` | for local use |
 | `VECTOR_TOP_K` | `8` | passages retrieved per question |
 | `VECTOR_CHUNK_CHARS` | `1200` | characters per chunk |
@@ -416,14 +432,27 @@ corrupts a conflict report.
 Equivalence reuses `validation_engine`'s own comparison, so the score
 describes the system that ships rather than a stricter one it never applies.
 
+**Capacity is measured, not estimated.** `python -m benchmarks.measure_capacity`
+reports how many passages a document yields (1.48 per page over the test
+corpus) and, pointed at a Postgres with pgvector, what a passage costs on
+disk and how long a lookup takes. The storage figure is the one worth running
+yourself: with the HNSW index built a passage costs 9,678 bytes, nearly half
+of it the index, which is not something the schema tells you.
+
 **The scorer refuses to run against mock extraction.** Without a provider key
 the extractor returns stand-ins, and scoring those would produce a fabricated
 accuracy figure — worse than having none. See `evaluation/README.md` for how
 to add documents.
 
-The repository ships one labelled English document. **A real figure needs
-real reports**, and until they are added the honest statement remains that
-accuracy is unmeasured.
+The repository ships 13 labelled documents — 124 hand-read fields across
+English, Hindi and Telugu, including a deliberate conflict pair, a negative
+control from a different year, a report with fields genuinely absent, and two
+scans with no text layer at all.
+
+That is enough to catch a regression and not enough to quote an accuracy
+figure from: **a real figure needs real reports**, and a percentage drawn
+from 13 fixtures would describe the fixtures. Until departmental documents
+are added, the honest statement remains that accuracy is unmeasured.
 
 ---
 
@@ -583,6 +612,32 @@ sign-in. Both are correct.
 
 ---
 
+## 📐 Operating limits
+
+| Limit | Value | Set by |
+|---|---|---|
+| Upload size | 50 MB per file | `MAX_UPLOAD_MB` |
+| Accepted format | PDF only | code |
+| Queries per account | 60 per hour | `QUERY_RATE_LIMIT` |
+| Queries for the demo account | 15 per hour | `QUERY_RATE_LIMIT_DEMO` |
+| AI call timeout | 90 s | `AI_TIMEOUT_SECONDS` |
+| OCR resolution | 200 DPI, `eng+hin+tel` | `OCR_DPI` |
+| Embedding pace | 100 passages/minute | `GEMINI_EMBED_RPM`, the free tier's own ceiling |
+| Vector width | 768 dimensions | `GEMINI_EMBED_DIMENSIONS`, under pgvector's 2,000 HNSW cap |
+
+PDF is the only accepted format because every answer cites the page it came
+from, and a `.docx` has no pages until something renders it. Converting to
+PDF first and reusing this pipeline is the cheap route if that is wanted; a
+second extraction path that guesses page numbers is not.
+
+Raising `MAX_UPLOAD_MB` much past 50 buys less than it looks: an accepted
+body is held in memory, and a scan that size is hundreds of pages that OCR
+renders one at a time before any text exists. Past roughly there the
+constraint is one container doing that work synchronously, which wants a job
+queue rather than a larger number.
+
+---
+
 ## ✅ What is real, and what is not
 
 Everything below is computed from uploaded documents:
@@ -653,16 +708,22 @@ disagree about the same mine, is what makes the demo land.
 
 ## 🛠️ Tech Stack
 
+What is deployed today, which is not what the first version of this table
+said — the Streamlit app in `app.py` still runs and is still useful for
+poking at the backend, but it is no longer the interface.
+
 | Component | Technology | Why |
 |-----------|-----------|-----|
-| Frontend | Streamlit | Pure Python, zero JS, fast development |
+| Frontend | React 19 + TypeScript + Vite | The shipped interface, deployed to Vercel |
 | Backend | FastAPI | Async, auto-docs, fast performance |
 | AI/LLM | Gemini / OpenRouter / Ollama / Claude | Swappable in `.env`; free options first |
-| Document Processing | pypdf + pytesseract | PDF extraction + OCR |
-| Database | SQLite | Zero setup, perfect for MVP |
-| Report Generation | fpdf2 | Python PDF generation |
+| Document Processing | pypdf + PyMuPDF + pytesseract | Text layer first, rendered pages and OCR when there is none |
+| Database | PostgreSQL (SQLite locally) | SQLAlchemy over both; Railway in production |
+| Semantic search | pgvector, HNSW, cosine | A second Postgres, private-network only |
+| Report Generation | fpdf2 + uharfbuzz | Devanagari and Telugu need real text shaping |
 | Word Cloud | wordcloud + matplotlib | Text visualization |
-| Deployment | Streamlit Cloud | One-click, free tier |
+| Deployment | Railway (API) + Vercel (frontend) | Free tiers; see the limits this imposes below |
+| Secondary UI | Streamlit | `app.py`, kept for local inspection |
 
 ---
 
@@ -670,21 +731,34 @@ disagree about the same mine, is what makes the demo land.
 
 ```
 mining_report_platform/
-├── app.py                    # Streamlit frontend
+├── frontend/                 # React + TypeScript interface (the shipped UI)
 ├── backend/
 │   ├── __init__.py
-│   └── api.py               # FastAPI backend
-├── database.py               # SQLite + SQLAlchemy models
-├── document_processor.py     # PDF text extraction + OCR
+│   └── api.py                # FastAPI backend
+├── app.py                    # Streamlit UI, kept for local inspection
+├── database.py               # SQLAlchemy models, Postgres or SQLite
+├── auth.py, auth_seed.py     # Accounts, sessions, the read-only demo user
+├── rate_limit.py             # Per-account ceilings on the paid endpoints
+├── document_processor.py     # Text extraction, page rendering, OCR
 ├── ai_providers.py           # Gemini / OpenRouter / Ollama / Claude transports
 ├── ai_extractor.py           # Prompts, parsing and mock fallbacks
-├── report_generator.py       # PDF report generation
+├── vector_store.py           # pgvector schema, chunking, search
+├── vector_backfill.py        # Index existing reports from the command line
+├── retrieval.py              # Picks semantic or full-corpus, and says which
+├── validation_engine.py      # Cross-document conflicts and checks
+├── evidence_locator.py       # Finds the passage a claim came from
+├── extraction_quality.py     # Per-field confidence shown in the UI
+├── report_generator.py       # PDF generation, Devanagari and Telugu included
 ├── wordcloud_generator.py    # Word cloud & topics
-├── create_sample_pdf.py      # Sample PDF generator
+├── doctor.py                 # Diagnoses a misconfigured environment
 ├── start.py                  # Unified startup script
+├── tests/                    # 314 backend tests
+├── samples/                  # Test corpus generator and 13 fixture PDFs
+├── evaluation/               # Labelled fields and the accuracy scorer
+├── benchmarks/               # Capacity and latency measurement
+├── assets/, utils/, reports/ # Fonts, helpers, generated output
 ├── requirements.txt          # Dependencies
 ├── .env.example              # Environment config
-├── reports/                  # Generated reports & word clouds
 └── README.md                 # This file
 ```
 
@@ -692,13 +766,16 @@ mining_report_platform/
 
 ## ⚠️ Risks & Mitigations
 
-| Risk | Mitigation |
-|------|------------|
-| Provider rate limits | Free tiers are capped; swap `AI_PROVIDER` or run Ollama locally |
-| OCR accuracy | pytesseract + model validation |
-| Database schema changes | Start with SQLite, SQLAlchemy handles migrations |
-| Deployment issues | Demo locally on laptop; backup mobile hotspot |
-| PDF parsing edge cases | Test with 10+ different mining report formats early |
+| Risk | What was done about it |
+|------|------------------------|
+| Provider rate limits | Indexing paces against the free tier's 100/minute and honours Google's own `RetryInfo` on a 429; `AI_PROVIDER` swaps provider, Ollama runs with no external calls at all |
+| An embedding model is retired | The name is discovered from ListModels rather than hardcoded — this one already happened |
+| OCR silently returning nothing | It did, for months, because the import failed into a bare `except`. Now PyMuPDF renders the pages, and CI fails the build if the OCR tests are skipped rather than run |
+| Accuracy is asserted, not measured | `evaluation/` scores 124 hand-read fields; the scorer refuses to run against mock extraction |
+| Capacity is guessed | `benchmarks/` measures it against a real pgvector |
+| A public demo credential | The demo account is read-only and separately rate-limited; `/admin/reindex` returns 403 to it, by test |
+| Deployment issues | Both tiers deploy from git; the frontend degrades to a named reason rather than a blank page when the API is cold |
+| PDF parsing edge cases | 13 fixtures across three scripts, including two with no text layer, a conflict pair and a negative control |
 
 ---
 
