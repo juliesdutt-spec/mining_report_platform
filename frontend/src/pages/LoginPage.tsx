@@ -15,6 +15,7 @@ import {
 import { SessionUser } from "@/lib/session";
 import { cn } from "@/lib/utils";
 import { StatusTone, statusRows } from "@/lib/systemStatus";
+import { PRIVACY_HREF, TERMS_HREF } from "@/lib/publicRoute";
 
 /**
  * The sign-in screen.
@@ -323,6 +324,28 @@ export function LoginPage({ onSignedIn }: { onSignedIn: (user: SessionUser) => v
               ))}
             </dl>
           </section>
+
+          {/* Reachable without an account, which is the only way a data
+              handling statement is worth anything. */}
+          <footer className="mt-7 flex flex-wrap items-center gap-x-4 border-t border-border pt-3 text-[0.6875rem] text-muted-foreground">
+            {/* py-1 rather than bare text: at 11px these links are 17px tall,
+                under the 24px WCAG 2.5.8 asks of a pointer target. The audit
+                caught it the first time they were added. The negative margin
+                keeps the footer the height it looks like it should be. */}
+            <a
+              className="-my-1 py-1 transition-colors hover:text-foreground"
+              href={PRIVACY_HREF}
+            >
+              Privacy &amp; data handling
+            </a>
+            <a
+              className="-my-1 py-1 transition-colors hover:text-foreground"
+              href={TERMS_HREF}
+            >
+              Terms of use
+            </a>
+            <span className="ml-auto">Prototype · not an official CMPDI system</span>
+          </footer>
         </div>
       </main>
     </div>

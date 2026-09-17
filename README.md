@@ -625,6 +625,11 @@ sign-in. Both are correct.
 | Embedding pace | 100 passages/minute | `GEMINI_EMBED_RPM`, the free tier's own ceiling |
 | Vector width | 768 dimensions | `GEMINI_EMBED_DIMENSIONS`, under pgvector's 2,000 HNSW cap |
 
+The upload ceiling is reported on `/health` as `max_upload_mb`, and the
+browser reads it from there to refuse an oversized file before sending it.
+One source, because two copies of a limit drift and the copy that drifts is
+the one that makes someone wait out a 200 MB upload to be told no.
+
 PDF is the only accepted format because every answer cites the page it came
 from, and a `.docx` has no pages until something renders it. Converting to
 PDF first and reusing this pipeline is the cheap route if that is wanted; a

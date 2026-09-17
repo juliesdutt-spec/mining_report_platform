@@ -288,6 +288,47 @@ for (const route of ROUTES) {
   }
 }
 
+// The screens outside the sign-in wall.
+//
+// The privacy policy, the terms, and the page for an address that is not one.
+// They are the only long-form prose in the product and the only screens a
+// crawler or a curious evaluator can reach without an account, so they are
+// audited on the same terms as everything else rather than trusted because
+// they are "just text".
+{
+  for (const [label, url, viewport] of [
+    ["privacy", `${BASE}/#/privacy`, { width: 1280, height: 1000 }],
+    ["privacy 390px", `${BASE}/#/privacy`, { width: 390, height: 844 }],
+    ["terms", `${BASE}/#/terms`, { width: 1280, height: 1000 }],
+    ["not-found", `${BASE}/no/such/page`, { width: 1280, height: 1000 }],
+  ]) {
+    for (const theme of ["light", "dark"]) {
+      const ctx = await browser.newContext({ viewport });
+      const page = await ctx.newPage();
+      await page.goto(url, { waitUntil: "domcontentloaded" });
+      if (theme === "dark") {
+        await page.evaluate(() => localStorage.setItem("dataforge-theme", "dark"));
+        await page.reload({ waitUntil: "networkidle" });
+      }
+      await page.waitForTimeout(1200);
+      const where = `${label} ${theme}`;
+
+      for (const finding of await page.evaluate(LOW_CONTRAST)) add("a11y", where, finding);
+      if (await page.evaluate(() =>
+        document.documentElement.scrollWidth > document.documentElement.clientWidth + 1)) {
+        add("layout", where, "horizontal scroll");
+      }
+      // A legal page with no heading is a wall of grey, and a 404 with no way
+      // out is a dead end - both are the failure these pages exist to avoid.
+      if (!(await page.locator("h1").count())) add("content", where, "no heading");
+      if (!(await page.getByRole("link", { name: /DataForge/i }).count())) {
+        add("content", where, "no way back into the app");
+      }
+      await ctx.close();
+    }
+  }
+}
+
 // Text that spills out of the box drawn around it.
 //
 // The Validation page put a disputed value in each of two side-by-side panes
