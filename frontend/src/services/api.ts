@@ -167,6 +167,36 @@ export async function fetchRetrievalStatus(): Promise<RetrievalStatus | null> {
 }
 
 /**
+ * Everything the sign-in screen's status panel reports, from one /health call.
+ *
+ * It exists so that panel states what the backend says rather than a row of
+ * reassuring green dots: a status display that cannot go amber is decoration.
+ * /health needs no session, which is what makes this usable before sign-in.
+ *
+ * Never throws - an unreachable backend is a status, and it is the one the
+ * panel most needs to show.
+ */
+export interface SystemStatus {
+  /** Whether /health answered at all. */
+  online: boolean;
+  ai: AiStatus | null;
+  retrieval: RetrievalStatus | null;
+}
+
+export async function fetchSystemStatus(): Promise<SystemStatus> {
+  try {
+    const health = await apiFetch<AiStatus & { retrieval?: RetrievalStatus }>(
+      '/health',
+      undefined,
+      6000
+    );
+    return { online: true, ai: health, retrieval: health.retrieval ?? null };
+  } catch {
+    return { online: false, ai: null, retrieval: null };
+  }
+}
+
+/**
  * Build the semantic index from the reports already stored.
  *
  * The vector database is reachable only over the deployment's private network,
