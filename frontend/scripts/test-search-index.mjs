@@ -37,14 +37,32 @@ test("Settings is actually given the user to make that decision with", () => {
   assert.match(app, /<SettingsPage user=\{user\}\s*\/>/);
 });
 
-test("the reindex request is allowed far longer than a normal call", () => {
-  // Every passage is an embedding call. At the 30s default the request aborts
-  // part-way through a corpus, which looks like a failure while the server is
-  // still writing rows.
-  const call = api.match(/rebuildSearchIndex[\s\S]{0,320}?apiFetch<ReindexResult>\([^)]*\)/);
-  assert.ok(call, "rebuildSearchIndex should call apiFetch");
-  const timeout = Number(call[0].match(/,\s*(\d{5,})\s*\)/)?.[1]);
-  assert.ok(timeout >= 300000, `timeout should be minutes, got ${timeout}`);
+test("one reindex call is given longer than a normal request, and less than the edge", () => {
+  // Every passage is an embedding call, so 30s is far too short. But the
+  // opposite mistake is the one that actually shipped: a 600s timeout on a
+  // single call that indexed the whole corpus. The platform's edge closes any
+  // request at five minutes, so that timeout was never reachable - production
+  // returned 499 after 300,011ms while the page sat on a spinner. The fix is
+  // batching, and this pins the window a batch gets.
+  const timeout = Number(api.match(/REINDEX_TIMEOUT_MS = (\d+)/)?.[1]);
+  assert.ok(timeout > 30000, `a batch needs longer than a normal call, got ${timeout}`);
+  assert.ok(timeout < 300000, `at or past the edge's five minutes is the original bug, got ${timeout}`);
+});
+
+test("the whole corpus is indexed in batches, and the loop can end", () => {
+  // Bounded per call, so no single request can run into the edge's limit.
+  assert.match(api, /REINDEX_BATCH = \d+/);
+  assert.match(api, /\/admin\/reindex\?limit=/);
+  // Stops when finished - and also when a call indexes nothing, because a
+  // report that cannot be embedded stays pending for ever and the loop would
+  // spend the embedding quota on it until the tab closed.
+  assert.match(api, /batch\.remaining <= 0 \|\| batch\.reports_indexed === 0/);
+});
+
+test("progress is shown, because a spinner cannot say working from hung", () => {
+  assert.match(settings, /rebuildSearchIndexFully\(/);
+  assert.match(settings, /indexProgress/);
+  assert.match(settings, /done, \$\{indexProgress\.remaining\} to go/);
 });
 
 test("the index state is re-read from the backend, not inferred from the write", () => {

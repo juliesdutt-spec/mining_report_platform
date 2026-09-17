@@ -472,6 +472,26 @@ def search(
     return list(seen.values())[:limit]
 
 
+def indexed_report_ids() -> set[int]:
+    """
+    Which reports already have passages in the index.
+
+    Exists so a rebuild can be done in batches and resume where it stopped.
+    The platform's edge closes any request at five minutes, so a corpus that
+    takes longer than that to embed cannot be indexed in one call - and the
+    only reason batching is safe is that this makes it skip what is done.
+    """
+    ok, _reason = available()
+    if not ok:
+        return set()
+    with _connect() as conn, conn.cursor() as cur:
+        cur.execute("SELECT to_regclass('public.report_chunks')")
+        if cur.fetchone()[0] is None:
+            return set()
+        cur.execute("SELECT DISTINCT report_id FROM report_chunks")
+        return {int(row[0]) for row in cur.fetchall()}
+
+
 def stats() -> dict:
     """What is actually indexed, for /health and the Settings screen."""
     ok, reason = available()

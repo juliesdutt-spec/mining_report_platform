@@ -9,7 +9,9 @@ What is worth pinning is who may run it and what it does when it cannot.
 """
 import os
 import sys
+import re
 import unittest
+from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -21,6 +23,9 @@ from backend.api import app
 from database import SessionLocal, User, init_db
 import auth as auth_mod
 import auth_seed
+
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 
 class ReindexEndpointTests(unittest.TestCase):
@@ -114,6 +119,75 @@ class ReindexEndpointTests(unittest.TestCase):
         out = self.client.post("/admin/reindex", headers=self.writer_headers())
         self.assertEqual(out.status_code, 503)
         self.assertIn("no embeddings API", out.json()["detail"])
+
+
+class IndexingIsBatchedBecauseTheEdgeClosesLongRequests(unittest.TestCase):
+    """
+    One synchronous rebuild cannot index a corpus of any size.
+
+    Railway's edge closes a request at five minutes. Production proved it:
+    POST /admin/reindex ran 300,011ms and came back 499 "client has closed the
+    request", with the browser still sitting on a spinner and the index still
+    empty. Nothing in the response could say so, because there was no response.
+
+    So the endpoint indexes a bounded batch and says what is left, and the
+    caller loops. These pin the two things that makes safe.
+    """
+
+    def test_the_endpoint_accepts_a_batch_size_and_reports_what_is_left(self):
+        import inspect
+
+        from backend.api import reindex_corpus
+
+        signature = inspect.signature(reindex_corpus)
+        self.assertIn("limit", signature.parameters)
+        source = inspect.getsource(reindex_corpus)
+        self.assertIn('"remaining"', source, "a caller cannot loop without this")
+        # Bounded by the batch, and resuming rather than restarting.
+        self.assertIn("pending[:limit]", source)
+        self.assertIn("indexed_report_ids()", source)
+
+    def test_a_reset_treats_every_report_as_pending(self):
+        """It has just emptied the index, so "already indexed" is a lie."""
+        import inspect
+
+        from backend.api import reindex_corpus
+
+        self.assertIn(
+            "set() if reset else vector_store.indexed_report_ids()",
+            inspect.getsource(reindex_corpus),
+        )
+
+    def test_the_client_stops_when_a_batch_indexes_nothing(self):
+        """
+        A report that cannot be embedded stays pending for ever.
+
+        Looping on `remaining > 0` alone would spend the embedding quota on it
+        until the tab is closed, so the loop also stops when a call makes no
+        progress at all.
+        """
+        api = (PROJECT_ROOT / "frontend" / "src" / "services" / "api.ts").read_text()
+        self.assertIn("batch.remaining <= 0 || batch.reports_indexed === 0", api)
+
+    def test_one_call_is_given_far_less_than_the_edge_allows(self):
+        api = (PROJECT_ROOT / "frontend" / "src" / "services" / "api.ts").read_text()
+        match = re.search(r"REINDEX_TIMEOUT_MS = (\d+)", api)
+        self.assertIsNotNone(match, "the batch call needs its own timeout")
+        self.assertLess(
+            int(match.group(1)), 300000,
+            "a per-batch timeout at or above the edge's five minutes is the bug again",
+        )
+
+
+class IndexedReportIdsMakesResumingPossible(unittest.TestCase):
+    def test_it_is_empty_rather_than_raising_when_the_index_is_unreachable(self):
+        """Called on the way into a rebuild; it must not be the thing that fails."""
+        original = vector_store.available
+        vector_store.available = lambda: (False, "VECTOR_DATABASE_URL is not set.")
+        try:
+            self.assertEqual(vector_store.indexed_report_ids(), set())
+        finally:
+            vector_store.available = original
 
 
 if __name__ == "__main__":

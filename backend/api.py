@@ -972,6 +972,11 @@ def list_validation_findings(
 @app.post("/admin/reindex")
 def reindex_corpus(
     reset: bool = Query(False, description="Drop the index first, for an embedding model change."),
+    limit: int = Query(
+        0, ge=0,
+        description="Index at most this many reports, so one call finishes well "
+                    "inside the edge's request timeout. 0 means every remaining report.",
+    ),
     db: Session = Depends(get_db),
     user: User = Depends(writing_user),
 ):
@@ -989,6 +994,16 @@ def reindex_corpus(
 
     Re-runnable. Each report's passages are replaced rather than appended, so
     running it twice is a no-op rather than a duplicate index.
+
+    **Indexes in batches, and the caller is expected to call it again.** The
+    platform's edge closes any request at five minutes: a single synchronous
+    rebuild of a corpus that embeds for longer than that is killed mid-way
+    with the client told nothing, which is exactly what happened in
+    production - 300,011ms and a 499, while the browser sat on a spinner.
+    Passing `limit` bounds one call; `remaining` says how many reports still
+    have no passages. A caller loops while `remaining` is above zero AND the
+    last call indexed something, because a report that cannot be embedded
+    stays pending for ever and would otherwise loop for ever with it.
     """
     ok, reason = vector_store.available()
     if not ok:
@@ -1010,10 +1025,17 @@ def reindex_corpus(
         .all()
     )
 
+    # A reset has just emptied the index, so everything is pending by
+    # definition; otherwise skip what already has passages, which is what
+    # makes a batched rebuild resume rather than restart.
+    already_indexed = set() if reset else vector_store.indexed_report_ids()
+    pending = [report for report in reports if report.id not in already_indexed]
+    batch = pending[:limit] if limit else pending
+
     indexed_chunks = 0
     indexed_reports = 0
     failures = []
-    for report in reports:
+    for report in batch:
         written, error = retrieval.index_report(report)
         if error:
             # Reported per report rather than aborting: one document that
@@ -1024,10 +1046,20 @@ def reindex_corpus(
             indexed_chunks += written
             indexed_reports += 1
 
+    # Logged because the alternative is silence: a batch that spends minutes
+    # waiting out the provider's rate limit looks identical, from outside, to
+    # one that has hung.
+    print(
+        f"reindex: {indexed_reports}/{len(batch)} report(s) indexed, "
+        f"{indexed_chunks} passage(s), {len(pending) - indexed_reports} remaining"
+    )
+
     return {
         "reports_seen": len(reports),
         "reports_indexed": indexed_reports,
         "chunks_indexed": indexed_chunks,
+        # What is still unindexed after this call. Zero means done.
+        "remaining": len(pending) - indexed_reports,
         "failures": failures,
         "embedding_model": embeddings["model"],
         "index": vector_store.stats(),
