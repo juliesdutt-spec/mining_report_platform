@@ -25,7 +25,13 @@ function Frame({ title, kicker, children }: {
   children: React.ReactNode;
 }) {
   return (
-    <div className="min-h-screen overflow-y-auto bg-background">
+    // h-screen, not min-h-screen. `body` is overflow-hidden for the app
+    // shell, so a container that merely grows past the viewport has nothing
+    // able to scroll it and everything below the fold is unreachable - which
+    // is exactly what happened here: the terms were readable down to "What
+    // you may upload" and no further. A fixed height makes this element's own
+    // overflow-y the scroller.
+    <div className="h-screen overflow-y-auto bg-background">
       <div className="mx-auto w-full max-w-[46rem] px-6 py-12 sm:py-16">
         <header className="border-b border-border pb-8">
           <a

@@ -170,12 +170,57 @@ page.on("pageerror", (e) => consoleErrors.add(String(e).slice(0, 140)));
 
 await signIn(page);
 
+/**
+ * Content rendered past the bottom of the viewport that nothing can scroll to.
+ *
+ * `body` is overflow-hidden for the app shell, so "there is overflow" and
+ * "the page scrolls" are different questions here - and the first version of
+ * this check asked the wrong one, reading the very condition that defines the
+ * bug as proof of health. It reported clean on a terms page with 910px of
+ * unreachable text on it.
+ */
+const UNREACHABLE = () => {
+  const html = document.documentElement;
+  const hidden = (el) => getComputedStyle(el).overflowY === "hidden";
+
+  // Overflow is not the same as the ability to scroll. This app sets
+  // overflow-hidden on body for the shell, so the viewport can hold content
+  // past its bottom edge with no way to reach it - and checking scrollHeight
+  // alone reports exactly that as scrollable, which is how a terms page with
+  // 910px of unreachable text passed this audit clean.
+  const viewportScrolls =
+    !hidden(html) && !hidden(document.body) &&
+    html.scrollHeight > html.clientHeight + 1;
+  const somethingScrolls = [...document.querySelectorAll("*")].some((el) => {
+    const overflowY = getComputedStyle(el).overflowY;
+    return /(auto|scroll|overlay)/.test(overflowY) &&
+      el.scrollHeight > el.clientHeight + 1;
+  });
+  if (viewportScrolls || somethingScrolls) return false;
+
+  const bottom = Math.max(
+    0,
+    ...[...document.querySelectorAll("body *")]
+      .filter((el) => el.textContent?.trim())
+      .map((el) => el.getBoundingClientRect().bottom)
+  );
+  return bottom > html.clientHeight + 8 ? Math.round(bottom - html.clientHeight) : false;
+};
+
 for (const route of ROUTES) {
   await page.goto(`${BASE}/#/${route}`, { waitUntil: "networkidle" });
   await page.waitForTimeout(1300);
 
   for (const html of await page.evaluate(UNNAMED)) {
     add("a11y", route, `control with no accessible name: ${html}`);
+  }
+
+  // The same check the public pages get. The app shell has a real scroll
+  // container, so these should never trip it - which is exactly why it is
+  // worth asserting rather than assuming, on every screen.
+  const stranded = await page.evaluate(UNREACHABLE);
+  if (stranded) {
+    add("layout", route, `${stranded}px of content below the fold and nothing scrolls`);
   }
 
   const deadColumns = await page.evaluate(() => {
@@ -318,6 +363,16 @@ for (const route of ROUTES) {
         document.documentElement.scrollWidth > document.documentElement.clientWidth + 1)) {
         add("layout", where, "horizontal scroll");
       }
+      // Content past the fold that nothing can scroll to. `body` is
+      // overflow-hidden for the app shell, so a page built with min-h-screen
+      // simply grows underneath the viewport with no scroller - the terms
+      // were readable to "What you may upload" and stopped dead. Only the
+      // horizontal case was checked before, which is why this shipped.
+      const unreachable = await page.evaluate(UNREACHABLE);
+      if (unreachable) {
+        add("layout", where, `${unreachable}px of content below the fold and nothing scrolls`);
+      }
+
       // A legal page with no heading is a wall of grey, and a 404 with no way
       // out is a dead end - both are the failure these pages exist to avoid.
       if (!(await page.locator("h1").count())) add("content", where, "no heading");
