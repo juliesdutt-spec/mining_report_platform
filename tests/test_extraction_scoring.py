@@ -194,5 +194,76 @@ class AMidRunFallbackCannotBeScored(unittest.TestCase):
         self.assertEqual(result["documents"][0]["source"], "gemini")
 
 
+class InspectingRealDocumentsNeedsNoKey(unittest.TestCase):
+    """
+    The step before labelling: what does the pipeline make of this PDF?
+
+    Everything scored so far is a fixture this project generated, which is
+    clean in ways real departmental reporting is not. The point of this tool
+    is that it runs without a provider - it exercises the document-processing
+    half, which is the half that either survives a real scan or does not.
+    """
+
+    ROOT = Path(__file__).resolve().parent.parent
+
+    def test_it_separates_a_text_layer_from_a_scan(self):
+        from evaluation.inspect_documents import _describe
+
+        text_layer = _describe(self.ROOT / "samples/corpus/EN-01_Jharia_BCCL_FY2024-25.pdf")
+        scanned = _describe(self.ROOT / "samples/corpus/SCAN-01_Sohagpur_SECL_FY2024-25_scanned.pdf")
+
+        self.assertTrue(text_layer["text_layer"])
+        self.assertFalse(scanned["text_layer"], "a rendered scan has no usable text layer")
+        # And it still gets text out of the scan, via OCR.
+        self.assertGreater(scanned["chars"], 500)
+        self.assertTrue(any("OCR carries" in n for n in scanned["notes"]))
+
+    def test_it_names_the_scripts_it_found(self):
+        from evaluation.inspect_documents import _describe
+
+        hindi = _describe(self.ROOT / "samples/corpus/HI-01_Jayant_NCL_FY2024-25.pdf")
+        telugu = _describe(self.ROOT / "samples/corpus/TE-01_Ramagundam_SCCL_FY2024-25.pdf")
+        self.assertIn("Devanagari", hindi["script"])
+        self.assertIn("Telugu", telugu["script"])
+
+    def test_it_flags_a_file_the_server_would_refuse(self):
+        import os
+        from unittest import mock
+
+        from evaluation.inspect_documents import _describe
+
+        # The ceiling it reports is the server's, not a second copy of it.
+        with mock.patch.dict(os.environ, {"MAX_UPLOAD_MB": "0"}):
+            row = _describe(self.ROOT / "samples/corpus/SCAN-01_Sohagpur_SECL_FY2024-25_scanned.pdf")
+        self.assertTrue(any("upload ceiling" in n for n in row["notes"]))
+
+    def test_the_label_skeleton_covers_every_scored_field(self):
+        """A skeleton missing a field is a field nobody remembers to label."""
+        import json
+        import tempfile
+
+        from evaluation import inspect_documents
+        from validation_engine import COMPARABLE_FIELDS, REQUIRED_FIELDS
+
+        source = self.ROOT / "samples/corpus/EN-01_Jharia_BCCL_FY2024-25.pdf"
+        with tempfile.TemporaryDirectory() as directory:
+            original = inspect_documents.LABELS_DIR
+            inspect_documents.LABELS_DIR = Path(directory)
+            try:
+                written = inspect_documents._write_label({"path": source})
+            finally:
+                inspect_documents.LABELS_DIR = original
+
+            label = json.loads(written.read_text(encoding="utf-8"))
+
+        for field, *_ in COMPARABLE_FIELDS:
+            self.assertIn(field, label["expected"], f"{field} is scored but not offered")
+        for field, _ in REQUIRED_FIELDS:
+            self.assertIn(field, label["expected"])
+        # Blank, not guessed: a prefilled value would score the labeller.
+        self.assertTrue(all(v == "" for v in label["expected"].values()))
+        self.assertTrue(label["document"].startswith("samples/corpus/"))
+
+
 if __name__ == "__main__":
     unittest.main()
