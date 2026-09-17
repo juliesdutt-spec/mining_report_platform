@@ -53,10 +53,11 @@ test("the whole corpus is indexed in batches, and the loop can end", () => {
   // Bounded per call, so no single request can run into the edge's limit.
   assert.match(api, /REINDEX_BATCH = \d+/);
   assert.match(api, /\/admin\/reindex\?limit=/);
-  // Stops when finished - and also when a call indexes nothing, because a
-  // report that cannot be embedded stays pending for ever and the loop would
-  // spend the embedding quota on it until the tab closed.
-  assert.match(api, /batch\.remaining <= 0 \|\| batch\.reports_indexed === 0/);
+  // A cursor, not a retry of the same window. Batches are taken in id order,
+  // so a few unembeddable reports at the front would otherwise fill every
+  // batch and stop the loop before it reached anything that would work.
+  assert.match(api, /after = batch\.next_after/);
+  assert.match(api, /if \(batch\.remaining <= 0\) return total;/);
 });
 
 test("progress is shown, because a spinner cannot say working from hung", () => {

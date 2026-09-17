@@ -151,8 +151,10 @@ export interface ReindexResult {
   reports_seen: number;
   reports_indexed: number;
   chunks_indexed: number;
-  /** Reports still without passages after this call. Zero means done. */
+  /** Reports still without passages beyond the cursor. Zero means done. */
   remaining: number;
+  /** Where the next call should start. Passed back as `after`. */
+  next_after: number;
   failures: { report_id: number; filename: string; error: string }[];
   embedding_model: string | null;
   index: { available: boolean; reason: string | null; chunks: number; reports: number };
@@ -239,9 +241,10 @@ export async function fetchSystemStatus(): Promise<SystemStatus> {
  */
 export async function rebuildSearchIndex(
   limit = REINDEX_BATCH,
+  after = 0,
 ): Promise<ReindexResult> {
   return apiFetch<ReindexResult>(
-    `/admin/reindex?limit=${limit}`,
+    `/admin/reindex?limit=${limit}&after=${after}`,
     { method: 'POST' },
     REINDEX_TIMEOUT_MS
   );
@@ -271,9 +274,14 @@ export async function rebuildSearchIndexFully(
 ): Promise<ReindexResult> {
   let total: ReindexResult | null = null;
   let done = 0;
+  let after = 0;
 
   for (;;) {
-    const batch = await rebuildSearchIndex();
+    const batch = await rebuildSearchIndex(REINDEX_BATCH, after);
+    // The cursor advances past documents that cannot be embedded. Without it
+    // a handful of those at the front of the corpus fill every batch, index
+    // nothing, and stop this loop before it reaches anything that would work.
+    after = batch.next_after;
     done += batch.reports_indexed;
     total = total
       ? {
@@ -285,7 +293,10 @@ export async function rebuildSearchIndexFully(
       : batch;
 
     onProgress?.(done, batch.remaining);
-    if (batch.remaining <= 0 || batch.reports_indexed === 0) return total;
+    // Only `remaining` ends it now. A batch that indexed nothing is no longer
+    // a stopping point, because the cursor guarantees the next call looks at
+    // different documents - that is what makes it safe to keep going.
+    if (batch.remaining <= 0) return total;
   }
 }
 
