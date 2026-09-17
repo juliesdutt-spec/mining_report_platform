@@ -36,6 +36,14 @@ reaches production by being committed, the same way code does. That is also
 what makes the figure auditable: the run that produced it is in the history,
 next to the labels it scored against.
 
+**A run that fell back mid-way is not scored at all.** The extractor answers
+with mock fields when a provider call fails — right for an upload, fatal for
+a measurement. One rate-limit partway through would score fabricated fields
+against hand-read labels and publish the average as if it were real. The
+scorer now checks which provider answered *per document* and stops, naming
+the ones that fell back. Nothing is cached, so running again costs only the
+calls.
+
 **A `--language` run cannot be recorded as the corpus figure.** The dashboard
 presents that file as the accuracy of every document, so a Hindi-only score
 saved there would be a number nobody measured. The scorer refuses, before

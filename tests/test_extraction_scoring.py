@@ -125,5 +125,74 @@ class RecordingARunCannotMisrepresentIt(unittest.TestCase):
         )
 
 
+class AMidRunFallbackCannotBeScored(unittest.TestCase):
+    """
+    The extractor answers with mock fields when a provider call fails.
+
+    That is right for an upload - a bad minute from Gemini should not 500
+    somebody's ingest - and fatal for a measurement. One 429 partway through
+    a run would score fabricated fields against hand-read labels and fold the
+    result into a single published percentage, with nothing on the page
+    saying which documents were real. Checking the configured mode once at
+    the start cannot catch it, because it happens per document.
+    """
+
+    def test_the_extractor_reports_which_provider_answered(self):
+        import ai_extractor
+
+        result = ai_extractor.extract_structured_data_detailed("coal in Jharkhand", "t.pdf")
+        self.assertIn("data", result)
+        self.assertIn(result["source"], {"mock", "claude", "gemini", "openrouter", "ollama"})
+
+    def test_the_plain_extractor_still_returns_just_the_fields(self):
+        """Every existing caller keeps the shape it had."""
+        import ai_extractor
+
+        data = ai_extractor.extract_structured_data("coal in Jharkhand", "t.pdf")
+        self.assertIsInstance(data, dict)
+        self.assertNotIn("source", data)
+        self.assertIn("mineral_type", data)
+
+    def test_scoring_stops_when_a_document_fell_back(self):
+        from unittest import mock
+
+        from evaluation import score as scorer
+
+        real = {"mine_name": "Jharia Coal Mine"}
+        calls = iter([(real, "gemini"), (real, "mock")])
+
+        with mock.patch.object(scorer, "_refuse_if_mocked", lambda: None), \
+             mock.patch.object(scorer, "_load_labels", lambda language: [
+                 {"document": "a.pdf", "language": "en", "expected": real, "_label_file": "a.json"},
+                 {"document": "b.pdf", "language": "en", "expected": real, "_label_file": "b.json"},
+             ]), \
+             mock.patch.object(Path, "exists", lambda self: True), \
+             mock.patch.object(scorer, "_extract", lambda path: next(calls)):
+            with self.assertRaises(SystemExit) as stop:
+                scorer.score(None)
+
+        message = str(stop.exception)
+        self.assertIn("b.pdf", message, "the contaminated document must be named")
+        self.assertNotIn("a.pdf", message, "the clean one is not the problem")
+        self.assertIn("mock", message)
+
+    def test_a_fully_real_run_scores_normally(self):
+        from unittest import mock
+
+        from evaluation import score as scorer
+
+        real = {"mine_name": "Jharia Coal Mine"}
+        with mock.patch.object(scorer, "_refuse_if_mocked", lambda: None), \
+             mock.patch.object(scorer, "_load_labels", lambda language: [
+                 {"document": "a.pdf", "language": "en", "expected": real, "_label_file": "a.json"},
+             ]), \
+             mock.patch.object(Path, "exists", lambda self: True), \
+             mock.patch.object(scorer, "_extract", lambda path: (real, "gemini")):
+            result = scorer.score(None)
+
+        self.assertEqual(result["accuracy"], 1.0)
+        self.assertEqual(result["documents"][0]["source"], "gemini")
+
+
 if __name__ == "__main__":
     unittest.main()
