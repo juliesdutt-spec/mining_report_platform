@@ -20,7 +20,16 @@ from validation_engine import COMPARABLE_FIELDS
 class TheFieldsUsedForMatchingAreNormalised(unittest.TestCase):
     @property
     def prompt_source(self) -> str:
-        return inspect.getsource(ai_extractor.extract_structured_data)
+        # The prompt lives in the detailed form; the public one delegates to
+        # it. Read the wrong one and these assertions pass on a docstring
+        # that happens to name a few of the same fields - which is exactly
+        # what they did for one commit.
+        return inspect.getsource(ai_extractor.extract_structured_data_detailed)
+
+    def test_the_public_extractor_cannot_bypass_the_policy(self):
+        """Both callers must reach the same prompt, or one of them drifts."""
+        wrapper = inspect.getsource(ai_extractor.extract_structured_data)
+        self.assertIn("extract_structured_data_detailed", wrapper)
 
     def test_every_comparable_field_is_named_in_the_policy(self):
         # If a field is compared across documents but the prompt never says

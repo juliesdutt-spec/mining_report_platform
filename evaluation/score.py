@@ -54,13 +54,15 @@ def _classify(expected: str, actual: Optional[str]) -> str:
     return WRONG
 
 
-def _extract(pdf_path: Path) -> dict:
+def _extract(pdf_path: Path) -> tuple[dict, str]:
+    """The extracted fields, and which provider actually produced them."""
     from document_processor import extract_text_from_pdf
-    from ai_extractor import extract_structured_data
+    from ai_extractor import extract_structured_data_detailed
 
     data = pdf_path.read_bytes()
     text = extract_text_from_pdf(data, pdf_path.name)
-    return extract_structured_data(text, pdf_path.name) or {}
+    result = extract_structured_data_detailed(text, pdf_path.name)
+    return (result.get("data") or {}), result.get("source", "mock")
 
 
 def _refuse_if_mocked() -> None:
@@ -85,6 +87,7 @@ def score(language: Optional[str] = None) -> dict:
 
     per_field: Dict[str, Counter] = {}
     documents = []
+    contaminated: List[str] = []
 
     for label in labels:
         pdf_path = (PROJECT_ROOT / label["document"]).resolve()
@@ -92,7 +95,14 @@ def score(language: Optional[str] = None) -> dict:
             print(f"  ! {label['_label_file']}: {label['document']} not found, skipped")
             continue
 
-        extracted = _extract(pdf_path)
+        extracted, source = _extract(pdf_path)
+        # The extractor falls back to mock output when a call fails, which is
+        # right for an upload and fatal here: one 429 in the middle of a run
+        # would score fabricated fields against hand-read labels and fold the
+        # result into a single published percentage. Checking the configured
+        # mode once at the start cannot see this - it happens per document.
+        if source == "mock":
+            contaminated.append(label["document"])
         outcomes = {}
         for field, expected in label["expected"].items():
             verdict = _classify(str(expected), extracted.get(field))
@@ -106,6 +116,7 @@ def score(language: Optional[str] = None) -> dict:
         documents.append({
             "document": label["document"],
             "language": label.get("language", "unknown"),
+            "source": source,
             "fields": outcomes,
         })
 
@@ -115,6 +126,16 @@ def score(language: Optional[str] = None) -> dict:
 
     scored = sum(totals.values())
     correct = totals[EXACT] + totals[EQUIVALENT]
+    if contaminated:
+        listed = "\n".join(f"    {d}" for d in contaminated)
+        sys.exit(
+            f"{len(contaminated)} of {len(documents)} document(s) fell back to mock\n"
+            f"extraction mid-run, so this score would be part measurement and part\n"
+            f"fiction:\n{listed}\n\n"
+            "Usually the provider's rate limit. Wait and run again - nothing is\n"
+            "cached, so a clean run costs only the calls."
+        )
+
     return {
         "documents": documents,
         "perField": {f: dict(c) for f, c in per_field.items()},

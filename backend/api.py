@@ -254,6 +254,11 @@ def health_check():
         # is in the index. Off is a normal state with a reason, not a fault:
         # /query answers either way, from the field dump when this is off.
         "retrieval": _retrieval_health(),
+        # So the browser can refuse an oversized file before sending it. Held
+        # here rather than duplicated in the frontend: two copies of a ceiling
+        # drift, and the copy that drifts is the one that lets a user wait out
+        # a 200 MB upload to be told no at the end of it.
+        "max_upload_mb": MAX_UPLOAD_BYTES // (1024 * 1024),
     }
 
 

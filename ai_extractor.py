@@ -53,9 +53,30 @@ def extract_structured_data(text: str, filename: str = "") -> dict:
     Extract structured data from mining report text using the active provider.
     Returns a dict with: date, location, mineral_type, quantity, 
     extraction_method, company, mine_name, summary, topics, etc.
+
+    Falls back to mock output when the call fails, so an upload does not 500
+    on a bad minute from the provider. Anything that needs to know whether a
+    real model answered - the accuracy scorer above all - must call
+    `extract_structured_data_detailed` instead, because from here the two are
+    indistinguishable.
+    """
+    return extract_structured_data_detailed(text, filename)["data"]
+
+
+def extract_structured_data_detailed(text: str, filename: str = "") -> dict:
+    """
+    Extraction, plus whether a real provider actually produced it.
+
+    Mirrors `query_reports_detailed`. It exists because the fallback above is
+    silent by design: a 429 in the middle of a run returns mock fields that
+    look exactly like extracted ones. That is right for an upload and wrong
+    for a measurement - scoring mock output against hand-read labels produces
+    a number describing nothing, which is the one thing the harness is for.
+
+    Returns {"data": dict, "source": "gemini" | ... | "mock", "note": str|None}.
     """
     if USE_MOCK:
-        return _mock_extraction(text, filename)
+        return {"data": _mock_extraction(text, filename), "source": "mock", "note": None}
     
     prompt = f"""You are an expert geological and mining data analyst working for CMPDI/CIL 
 (Coal Mines Planning and Development India / Coal India Limited).
@@ -109,11 +130,20 @@ numerals, and units stay as the document gives them.
 
 Respond ONLY with valid JSON. No markdown, no explanation."""
 
+    provider = ai_providers.describe()["mode"]
     try:
-        return _parse_json_response(ai_providers.complete(prompt, max_tokens=2000))
+        return {
+            "data": _parse_json_response(ai_providers.complete(prompt, max_tokens=2000)),
+            "source": provider,
+            "note": None,
+        }
     except ProviderError as exc:
         print(f"AI extraction failed, using mock data: {exc}")
-        return _mock_extraction(text, filename)
+        return {
+            "data": _mock_extraction(text, filename),
+            "source": "mock",
+            "note": f"{provider} was configured but the call failed: {exc}",
+        }
 
 
 def summarize_report(text: str) -> str:

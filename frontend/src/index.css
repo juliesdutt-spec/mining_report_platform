@@ -293,6 +293,74 @@
   animation: df-rise 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
+/* Long-form prose.
+   ------------------------------------------------------------------
+   The privacy policy and the terms are the only places in DataForge
+   that are a document rather than an interface, and Tailwind's own
+   typography plugin is 30 kB for two pages nobody reads twice. This
+   is the whole of what they need, on the same tokens as the rest of
+   the app so they cannot drift from it in dark mode. */
+.df-prose {
+  color: hsl(var(--muted-foreground));
+  font-size: 0.9375rem;
+  line-height: 1.75;
+}
+
+.df-prose > * + * {
+  margin-top: 1rem;
+}
+
+.df-prose h2 {
+  margin-top: 2.5rem;
+  margin-bottom: 0.75rem;
+  color: hsl(var(--foreground));
+  font-size: 1.0625rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.df-prose h2:first-child {
+  margin-top: 0;
+}
+
+.df-prose strong {
+  color: hsl(var(--foreground));
+  font-weight: 600;
+}
+
+.df-prose ul {
+  margin-top: 0.75rem;
+  padding-left: 1.125rem;
+  list-style: disc;
+}
+
+.df-prose li + li {
+  margin-top: 0.375rem;
+}
+
+.df-prose li::marker {
+  color: hsl(var(--border));
+}
+
+.df-prose code {
+  border-radius: calc(var(--radius) - 4px);
+  background: hsl(var(--muted));
+  padding: 0.0625rem 0.3125rem;
+  color: hsl(var(--foreground));
+  font-family: theme("fontFamily.mono");
+  font-size: 0.8125em;
+}
+
+.df-prose a {
+  color: hsl(var(--primary));
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.df-prose a:hover {
+  text-decoration-thickness: 2px;
+}
+
 /* Print.
    ------------------------------------------------------------------
    The app is a fixed-height shell: h-screen on the outer frame,

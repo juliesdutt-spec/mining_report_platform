@@ -43,6 +43,13 @@ const ValidationPage = lazy(
     import("@/pages/ValidationPage").then((m) => ({ default: m.ValidationPage }))
   )
 );
+// Split out: two pages of prose nobody reads twice put 12 kB on the first
+// load of every screen. Fetched when someone actually opens one.
+const LegalPage = lazy(
+  retryOnStaleChunk(() =>
+    import("@/pages/LegalPage").then((m) => ({ default: m.LegalPage }))
+  )
+);
 const SettingsPage = lazy(
   retryOnStaleChunk(() =>
     import("@/pages/SettingsPage").then((m) => ({ default: m.SettingsPage }))
@@ -50,7 +57,9 @@ const SettingsPage = lazy(
 );
 import { NavigationTab, OrganisationFilter, EvidenceSnippet } from "@/types";
 import { useHashRoute } from "@/lib/useHashRoute";
+import { usePublicRoute } from "@/lib/publicRoute";
 import { LoginPage } from "@/pages/LoginPage";
+
 import { fetchCurrentUser } from "@/services/api";
 import { clearToken, getToken, onSessionChange, SessionUser } from "@/lib/session";
 import { Skeleton as AuthSkeleton } from "@/components/ui/skeleton";
@@ -58,6 +67,7 @@ import { Skeleton as AuthSkeleton } from "@/components/ui/skeleton";
 export function App() {
   // Tab lives in the URL hash so Back/Forward, deep links and refresh all work.
   const [currentTab, setCurrentTab, routeParam] = useHashRoute();
+  const publicRoute = usePublicRoute();
   const [user, setUser] = useState<SessionUser | null>(null);
   // Distinct from "signed out": a stored token has to be checked against the
   // server before the shell can be shown, and rendering the sign-in form during
@@ -107,6 +117,21 @@ export function App() {
     setCurrentTab("documents");
   };
 
+
+  // Ahead of everything, including the session check. A privacy policy that
+  // needs an account to read is not a privacy policy, and making someone wait
+  // on a token exchange to be told a URL is wrong helps nobody. These screens
+  // read no corpus data, so there is nothing here to gate.
+  if (publicRoute) {
+    return (
+      // The fallback is the page's own ground rather than a spinner: the
+      // chunk is a few kB and a flash of grey boxes would be longer than the
+      // fetch it covers.
+      <Suspense fallback={<div className="min-h-screen bg-background" />}>
+        <LegalPage route={publicRoute} />
+      </Suspense>
+    );
+  }
 
   if (isRestoringSession) {
     return (

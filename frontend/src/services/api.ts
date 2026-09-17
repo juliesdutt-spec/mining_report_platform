@@ -183,6 +183,33 @@ export interface SystemStatus {
   retrieval: RetrievalStatus | null;
 }
 
+/**
+ * The server's upload ceiling, so the browser can refuse a file rather than
+ * send it and collect a 413 at the end.
+ *
+ * Read from /health rather than written here. Two copies of a limit drift,
+ * and the copy that drifts is this one - which would either reject files the
+ * server would have taken, or let someone wait out a 200 MB upload to be told
+ * no. Fetched once and remembered; the fallback only applies to a backend too
+ * old to report it, and it is the value that backend shipped with.
+ */
+const FALLBACK_MAX_UPLOAD_MB = 50;
+let uploadLimitPromise: Promise<number> | null = null;
+
+export function maxUploadBytes(): Promise<number> {
+  if (!uploadLimitPromise) {
+    uploadLimitPromise = apiFetch<{ max_upload_mb?: number }>('/health', undefined, 6000)
+      .then((health) => (health.max_upload_mb ?? FALLBACK_MAX_UPLOAD_MB) * 1024 * 1024)
+      .catch(() => {
+        // Unreachable backend: let the upload proceed and fail with the real
+        // reason rather than inventing a limit error for a connection problem.
+        uploadLimitPromise = null;
+        return Number.POSITIVE_INFINITY;
+      });
+  }
+  return uploadLimitPromise;
+}
+
 export async function fetchSystemStatus(): Promise<SystemStatus> {
   try {
     const health = await apiFetch<AiStatus & { retrieval?: RetrievalStatus }>(

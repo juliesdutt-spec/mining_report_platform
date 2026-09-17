@@ -28,7 +28,7 @@ import {
   getDocumentById,
   uploadMiningDocument,
 } from "@/services/documents";
-import { ApiError, fetchFile, saveFile } from "@/services/api";
+import { ApiError, fetchFile, maxUploadBytes, saveFile } from "@/services/api";
 
 interface DocumentsPageProps {
   onInspectEvidence: (evidence: EvidenceSnippet) => void;
@@ -208,17 +208,56 @@ export function DocumentsPage({
    * uploaded in sequence. Each result is reported individually: one failure
    * does not discard the documents that succeeded.
    */
+  /** "1.4 MB", "212 MB" - the same unit the server's refusal speaks in. */
+  const formatMegabytes = (bytes: number) => {
+    const mb = bytes / (1024 * 1024);
+    return `${mb >= 10 ? Math.round(mb) : mb.toFixed(1)} MB`;
+  };
+
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files ?? []);
-    if (files.length === 0) return;
+    const picked = Array.from(e.target.files ?? []);
+    if (picked.length === 0) return;
 
     setIsUploading(true);
     setUploadError(null);
     setUploadNotice(null);
+
+    // Checked here rather than left to the server, which enforces both again.
+    // `accept` on the input is a filter, not a rule - drag-and-drop and "All
+    // files" walk straight past it - and sending a file the server is certain
+    // to refuse costs the whole upload before saying so. On a 200 MB scan over
+    // a site connection that is minutes of a progress bar ending in a 413.
+    const limit = await maxUploadBytes();
+    const files: File[] = [];
+    const rejected: string[] = [];
+
+    for (const file of picked) {
+      const isPdf =
+        file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
+      if (!isPdf) {
+        rejected.push(`${file.name}: only PDF files can be processed`);
+      } else if (file.size > limit) {
+        rejected.push(
+          `${file.name}: ${formatMegabytes(file.size)} is over the ` +
+            `${formatMegabytes(limit)} limit`
+        );
+      } else {
+        files.push(file);
+      }
+    }
+
+    if (files.length === 0) {
+      setUploadError(rejected.join(" · "));
+      setIsUploading(false);
+      setUploadProgress(null);
+      e.target.value = "";
+      return;
+    }
+
     setUploadProgress(files.length > 1 ? { done: 0, total: files.length } : null);
 
     const succeeded: string[] = [];
-    const failed: string[] = [];
+    const failed: string[] = [...rejected];
     let lastId: number | undefined;
 
     for (const [index, file] of files.entries()) {
