@@ -154,19 +154,68 @@ def _render(result: dict) -> None:
             print(f"      got      {outcome['actual']!r}")
 
 
+#: Where the dashboard looks for a recorded run. Writing anywhere else scores
+#: extraction and shows nobody: the Extraction accuracy card goes on reading
+#: "Not measured", with nothing to say why. `--json` with no path lands here.
+DASHBOARD_PATH = PROJECT_ROOT / "evaluation" / "latest.json"
+
+
+def refuse_to_record(language: Optional[str], destination: Optional[Path]) -> Optional[str]:
+    """
+    Why this run must not be written to `destination`, or None if it may be.
+
+    One case, and it is the failure the whole harness exists to prevent: a
+    single-language run recorded as the corpus figure. The dashboard presents
+    that file as the accuracy of every document, so a Hindi-only score saved
+    there is an accuracy nobody measured - which is exactly the fabricated
+    number the scorer refuses to produce from mock extraction.
+
+    Keeping such a run for yourself is fine. Publishing it is not.
+    """
+    if destination is None or not language:
+        return None
+    if destination.resolve() != DASHBOARD_PATH.resolve():
+        return None
+    return (
+        f"Refusing to record a --language {language} run as the corpus accuracy.\n"
+        f"The dashboard presents {DASHBOARD_PATH.name} as the figure for every "
+        "document, and this run scores a subset.\n"
+        "Run without --language to record, or pass an explicit path to keep this "
+        "one for yourself."
+    )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--language", help="score only documents in this language")
-    parser.add_argument("--json", dest="json_path", help="also write the result as JSON")
+    parser.add_argument(
+        "--json", dest="json_path", nargs="?", const=str(DASHBOARD_PATH), default=None,
+        help=f"write the result as JSON; with no path, to {DASHBOARD_PATH.name}, "
+             "which is the file the dashboard reads",
+    )
     args = parser.parse_args()
 
+    destination = Path(args.json_path) if args.json_path else None
+    # Checked before scoring, not after. Scoring calls the provider once per
+    # document and spends real quota; refusing to record the result at the end
+    # of that is a bill for nothing.
+    refusal = refuse_to_record(args.language, destination)
+    if refusal:
+        sys.exit(refusal)
+
     result = score(args.language)
+    result["language"] = args.language or "all"
     _render(result)
 
-    if args.json_path:
-        Path(args.json_path).write_text(json.dumps(result, indent=2, ensure_ascii=False),
-                                        encoding="utf-8")
-        print(f"\n  written to {args.json_path}")
+    if destination is None:
+        return
+
+    destination.write_text(json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8")
+    print(f"\n  written to {destination}")
+    if destination.resolve() == DASHBOARD_PATH.resolve():
+        # The backend runs from the repository and has no writable volume, so
+        # a run recorded on a laptop reaches the deployment by being committed.
+        print("  the dashboard reads this file - commit it for the deployed one to see it")
 
 
 if __name__ == "__main__":

@@ -9,7 +9,10 @@ import json
 import unittest
 from pathlib import Path
 
-from evaluation.score import EQUIVALENT, EXACT, MISSING, WRONG, _classify, _load_labels
+from evaluation.score import (
+    DASHBOARD_PATH, EQUIVALENT, EXACT, MISSING, WRONG, _classify, _load_labels,
+    refuse_to_record,
+)
 
 LABELS = Path(__file__).resolve().parent.parent / "evaluation" / "labelled"
 
@@ -73,6 +76,53 @@ class TheLabelledSetIsWellFormed(unittest.TestCase):
         english = _load_labels("en")
         self.assertLessEqual(len(english), len(everything))
         self.assertTrue(all(l.get("language") == "en" for l in english))
+
+
+class RecordingARunCannotMisrepresentIt(unittest.TestCase):
+    """
+    The dashboard presents one file as the accuracy of the whole corpus.
+
+    Two ways that goes wrong, and both are the failure this harness exists to
+    prevent: a run written somewhere the dashboard never reads (measured, and
+    the card still says "Not measured", with nothing to say why), and a
+    single-language run recorded as the figure for every document.
+    """
+
+    def test_the_default_json_path_is_the_one_the_dashboard_reads(self):
+        import extraction_quality
+
+        self.assertEqual(
+            DASHBOARD_PATH.resolve(),
+            extraction_quality.MEASUREMENT_PATH.resolve(),
+            "score --json must land where the dashboard looks, or measuring "
+            "extraction changes nothing anyone can see",
+        )
+
+    def test_a_single_language_run_is_refused_as_the_corpus_figure(self):
+        refusal = refuse_to_record("hi", DASHBOARD_PATH)
+        self.assertIsNotNone(refusal)
+        self.assertIn("--language hi", refusal)
+        self.assertIn(DASHBOARD_PATH.name, refusal)
+
+    def test_a_full_run_records_freely(self):
+        self.assertIsNone(refuse_to_record(None, DASHBOARD_PATH))
+
+    def test_a_filtered_run_may_still_be_kept_under_its_own_name(self):
+        """Keeping a Hindi-only score for yourself is fine; publishing it is not."""
+        self.assertIsNone(refuse_to_record("hi", Path("hindi-only.json")))
+
+    def test_nothing_is_refused_when_nothing_is_being_written(self):
+        self.assertIsNone(refuse_to_record("hi", None))
+
+    def test_the_refusal_happens_before_the_provider_is_called(self):
+        # Scoring spends one provider call per document. Refusing to record
+        # the result afterwards is a bill for nothing.
+        source = (Path(__file__).resolve().parent.parent / "evaluation" / "score.py").read_text()
+        body = source[source.index("def main()"):]
+        self.assertLess(
+            body.index("refuse_to_record("), body.index("score(args.language)"),
+            "the check must run before scoring, not after",
+        )
 
 
 if __name__ == "__main__":
