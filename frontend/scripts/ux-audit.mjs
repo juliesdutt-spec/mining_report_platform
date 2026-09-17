@@ -58,7 +58,7 @@ const browser = await chromium.launch({ executablePath: resolveChromium() });
 
 async function signIn(page) {
   await page.goto(BASE, { waitUntil: "networkidle" });
-  await page.getByRole("button", { name: /sign in as demo/i }).click();
+  await page.getByRole("button", { name: /enter demo workspace|sign in as demo/i }).click();
   await page.waitForTimeout(3000);
 }
 
@@ -280,7 +280,7 @@ for (const route of ROUTES) {
       }
       // The demo account is the only way in for someone who was never issued
       // credentials, so its absence is a broken deployment, not a tidy one.
-      if (!(await entry.getByRole("button", { name: /sign in as demo/i }).count())) {
+      if (!(await entry.getByRole("button", { name: /enter demo workspace|sign in as demo/i }).count())) {
         add("content", where, "no demo sign-in offered");
       }
       await ctx.close();
