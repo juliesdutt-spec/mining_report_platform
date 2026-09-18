@@ -152,8 +152,9 @@ class AModelThatDoesNotSendJSONIsAFailureNotAnEmptyExtraction(unittest.TestCase)
         self.assertEqual(result["source"], "mock",
                          "an unreadable reply must not count as a real extraction")
         self.assertIn("did not answer in the requested format", result["note"])
-        # And the note should point somewhere useful on a small model.
-        self.assertIn("OPENROUTER_MODEL", result["note"])
+        # The note names which kind of failure it was - the three need
+        # different fixes and used to share one message.
+        self.assertIn("no JSON object could be read", result["note"])
         self.assertIn("show_reply", result["note"])
 
 
@@ -205,6 +206,82 @@ class ValidJSONThatAnswersADifferentQuestionIsNotAnExtraction(unittest.TestCase)
         self.assertIn("COAL MINE REPORT", prompt)
         self.assertIn("mine_name", prompt)
         self.assertIn("Respond ONLY with valid JSON", prompt)
+
+
+class TheReplyIsGivenRoomToFinish(unittest.TestCase):
+    """
+    Every document in production failed on gemini AND on openrouter, which
+    is the shape of a bug in this code rather than in either model.
+
+    2000 output tokens has to carry eighteen fields, four of them arrays,
+    and a summary. On a reasoning model the thinking is billed against that
+    same budget before a single output token is written, and a Hindi or
+    Telugu summary costs three to four times the tokens per character. So
+    the model thought, started writing, and was cut off mid-object - the
+    truncated JSON parsed as nothing, and the document was recorded as an
+    extraction that answered and got everything wrong.
+    """
+
+    def test_the_budget_is_far_above_what_the_fields_need(self):
+        self.assertGreaterEqual(
+            ai_extractor.EXTRACTION_MAX_TOKENS, 4000,
+            "eighteen fields plus a non-Latin summary does not fit in less",
+        )
+
+    def test_the_budget_is_what_is_actually_sent(self):
+        seen = {}
+
+        def capture(prompt, max_tokens=1000):
+            seen["max_tokens"] = max_tokens
+            return '{"mine_name": "Jharia"}'
+
+        with mock.patch.object(ai_extractor, "USE_MOCK", False), \
+             mock.patch.object(ai_providers, "describe",
+                               return_value={"mode": "gemini", "model": "m"}), \
+             mock.patch.object(ai_providers, "complete", capture):
+            ai_extractor.extract_structured_data_detailed("text", "t.pdf")
+
+        self.assertEqual(seen["max_tokens"], ai_extractor.EXTRACTION_MAX_TOKENS)
+
+    def test_a_truncated_reply_says_so_rather_than_blaming_the_model(self):
+        # "did not answer in the requested format" sent an evening into
+        # swapping models when the fix was a number.
+        with mock.patch.object(ai_extractor, "USE_MOCK", False), \
+             mock.patch.object(ai_providers, "describe",
+                               return_value={"mode": "gemini", "model": "m"}), \
+             mock.patch.object(ai_providers, "complete",
+                               return_value='{"mine_name": "Jharia", "loca'):
+            result = ai_extractor.extract_structured_data_detailed("text", "t.pdf")
+
+        self.assertEqual(result["source"], "mock")
+        self.assertIn("cut off mid-object", result["note"])
+        self.assertIn("EXTRACTION_MAX_TOKENS", result["note"])
+
+    def test_an_off_schema_reply_is_described_differently_from_a_truncated_one(self):
+        with mock.patch.object(ai_extractor, "USE_MOCK", False), \
+             mock.patch.object(ai_providers, "describe",
+                               return_value={"mode": "gemini", "model": "m"}), \
+             mock.patch.object(ai_providers, "complete",
+                               return_value='{"report": {"mine_name": "J"}}'):
+            result = ai_extractor.extract_structured_data_detailed("text", "t.pdf")
+
+        self.assertIn("none of the fields asked for", result["note"])
+        self.assertNotIn("cut off", result["note"])
+
+    def test_prose_with_no_json_is_described_differently_again(self):
+        with mock.patch.object(ai_extractor, "USE_MOCK", False), \
+             mock.patch.object(ai_providers, "describe",
+                               return_value={"mode": "gemini", "model": "m"}), \
+             mock.patch.object(ai_providers, "complete",
+                               return_value="I cannot read that document."):
+            result = ai_extractor.extract_structured_data_detailed("text", "t.pdf")
+
+        self.assertIn("no JSON object could be read", result["note"])
+
+    def test_truncation_is_detected_by_unbalanced_braces_only(self):
+        self.assertTrue(ai_extractor._looks_truncated('{"a": 1, "b'))
+        self.assertFalse(ai_extractor._looks_truncated('{"a": 1}'))
+        self.assertFalse(ai_extractor._looks_truncated("no braces here"))
 
 
 if __name__ == "__main__":
