@@ -1071,6 +1071,13 @@ def reindex_corpus(
             # cannot be embedded should not leave the other fourteen
             # unsearchable.
             failures.append({"report_id": report.id, "filename": report.filename, "error": error})
+            # Logged as well as returned. The returned list reaches the
+            # browser only if the request completes, and the whole reason
+            # this endpoint batches is that it often does not - a timeout,
+            # a redeploy mid-request, a closed tab. The reason a document
+            # could not be indexed is then lost entirely, and "the search
+            # index is not working" is all anyone can say afterwards.
+            print(f"reindex: report {report.id} ({report.filename}) FAILED: {error}")
         else:
             indexed_chunks += written
             indexed_reports += 1
@@ -1088,6 +1095,11 @@ def reindex_corpus(
         f"{indexed_chunks} passage(s), {len(pending) - len(batch)} remaining "
         f"after id {next_after}"
     )
+    if not reports:
+        # Worth saying plainly. An empty corpus and a broken index look
+        # identical from the button, and "0 indexed" reads as a failure
+        # when it means there is nothing here to index yet.
+        print("reindex: no completed reports in the database - upload documents first")
 
     return {
         "reports_seen": len(reports),
