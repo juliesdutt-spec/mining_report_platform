@@ -977,6 +977,12 @@ def reindex_corpus(
         description="Index at most this many reports, so one call finishes well "
                     "inside the edge's request timeout. 0 means every remaining report.",
     ),
+    after: int = Query(
+        0, ge=0,
+        description="Only consider reports with an id above this. The caller "
+                    "passes back next_after so each call advances past documents "
+                    "that cannot be embedded instead of retrying them for ever.",
+    ),
     db: Session = Depends(get_db),
     user: User = Depends(writing_user),
 ):
@@ -1001,9 +1007,15 @@ def reindex_corpus(
     with the client told nothing, which is exactly what happened in
     production - 300,011ms and a 499, while the browser sat on a spinner.
     Passing `limit` bounds one call; `remaining` says how many reports still
-    have no passages. A caller loops while `remaining` is above zero AND the
-    last call indexed something, because a report that cannot be embedded
-    stays pending for ever and would otherwise loop for ever with it.
+    have no passages above the cursor.
+
+    **A cursor, not just a limit.** Batches are taken in id order, so a few
+    documents at the front that can never be embedded - a report whose text
+    extraction produced nothing, say - would otherwise fill every batch,
+    index zero, and stop the caller's loop before it ever reached the
+    documents behind them. Found by running this against a database that had
+    some: nine perfectly indexable reports were never touched. The caller
+    passes back `next_after` so each call advances past them.
     """
     ok, reason = vector_store.available()
     if not ok:
@@ -1021,6 +1033,7 @@ def reindex_corpus(
     reports = (
         db.query(MiningReport)
         .filter(MiningReport.status == "completed")
+        .filter(MiningReport.id > after)
         .order_by(MiningReport.id)
         .all()
     )
@@ -1049,17 +1062,24 @@ def reindex_corpus(
     # Logged because the alternative is silence: a batch that spends minutes
     # waiting out the provider's rate limit looks identical, from outside, to
     # one that has hung.
+    # Where the next call starts. The highest id this call looked at, whether
+    # it could be embedded or not - that is what moves the window past a
+    # document that will fail every time it is tried.
+    next_after = batch[-1].id if batch else after
+
     print(
         f"reindex: {indexed_reports}/{len(batch)} report(s) indexed, "
-        f"{indexed_chunks} passage(s), {len(pending) - indexed_reports} remaining"
+        f"{indexed_chunks} passage(s), {len(pending) - len(batch)} remaining "
+        f"after id {next_after}"
     )
 
     return {
         "reports_seen": len(reports),
         "reports_indexed": indexed_reports,
         "chunks_indexed": indexed_chunks,
-        # What is still unindexed after this call. Zero means done.
-        "remaining": len(pending) - indexed_reports,
+        # Still unindexed beyond the cursor. Zero means done.
+        "remaining": len(pending) - len(batch),
+        "next_after": next_after,
         "failures": failures,
         "embedding_model": embeddings["model"],
         "index": vector_store.stats(),

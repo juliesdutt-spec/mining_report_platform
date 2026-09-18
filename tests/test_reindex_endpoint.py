@@ -158,16 +158,29 @@ class IndexingIsBatchedBecauseTheEdgeClosesLongRequests(unittest.TestCase):
             inspect.getsource(reindex_corpus),
         )
 
-    def test_the_client_stops_when_a_batch_indexes_nothing(self):
+    def test_the_client_advances_a_cursor_rather_than_retrying_the_same_window(self):
         """
-        A report that cannot be embedded stays pending for ever.
+        A document that cannot be embedded must not block the ones behind it.
 
-        Looping on `remaining > 0` alone would spend the embedding quota on it
-        until the tab is closed, so the loop also stops when a call makes no
-        progress at all.
+        Batches are taken in id order. Without a cursor, a few unembeddable
+        reports at the front fill every batch, index zero, and the loop stops
+        before reaching anything that would have worked - found by running
+        this against a database that had some, where nine perfectly good
+        reports were never touched. The client passes `next_after` back so
+        each call looks at different documents, which is also what makes
+        `remaining` the only stopping condition it needs.
         """
+        import inspect
+
+        from backend.api import reindex_corpus
+
+        source = inspect.getsource(reindex_corpus)
+        self.assertIn("MiningReport.id > after", source, "the cursor must filter")
+        self.assertIn('"next_after"', source, "the caller cannot advance without it")
+
         api = (PROJECT_ROOT / "frontend" / "src" / "services" / "api.ts").read_text()
-        self.assertIn("batch.remaining <= 0 || batch.reports_indexed === 0", api)
+        self.assertIn("after = batch.next_after", api)
+        self.assertIn("if (batch.remaining <= 0) return total;", api)
 
     def test_one_call_is_given_far_less_than_the_edge_allows(self):
         api = (PROJECT_ROOT / "frontend" / "src" / "services" / "api.ts").read_text()
