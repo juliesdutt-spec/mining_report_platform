@@ -98,6 +98,20 @@ def _check_ai() -> int:
 
     print(f"{OK} Provider resolved: {mode}  (model: {model})")
 
+    # Said separately because it can differ, and when it does, silence here
+    # is how semantic search goes missing without anyone connecting it to a
+    # provider change. OpenRouter has no embeddings endpoint at all.
+    embeddings = ai_providers.embeddings_describe()
+    if embeddings["available"]:
+        if embeddings["provider"] != mode:
+            print(f"{OK} Embeddings: {embeddings['provider']} ({embeddings['model']})"
+                  f" - a different provider from {mode}, which is fine and deliberate")
+        else:
+            print(f"{OK} Embeddings: {embeddings['provider']} ({embeddings['model']})")
+    else:
+        print(f"{BAD} Embeddings unavailable - semantic search cannot be built.")
+        print(f"       {embeddings['reason']}")
+
     # 3. The step /health cannot do: actually call it.
     print(f"{INFO} Calling {mode} for real...")
     try:

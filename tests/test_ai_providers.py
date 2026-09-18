@@ -27,6 +27,7 @@ PROVIDER_VARS = {
     "GEMINI_API_KEY", "GOOGLE_API_KEY", "GEMINI_MODEL",
     "OPENROUTER_API_KEY", "OPENROUTER_MODEL",
     "OLLAMA_HOST", "OLLAMA_MODEL",
+    "AI_EMBED_PROVIDER",
 }
 
 
@@ -56,6 +57,9 @@ def run_with_env(env_body: str, snippet: str) -> str:
 MODE = "import ai_providers as p; print(p.describe()['mode'])"
 MODEL = "import ai_providers as p; print(p.describe()['model'])"
 REASON = "import ai_providers as p; print(p.describe()['reason'])"
+EMBED = "import ai_providers as p; print(p.embeddings_describe()['provider'])"
+EMBED_OK = "import ai_providers as p; print(p.embeddings_describe()['available'])"
+EMBED_WHY = "import ai_providers as p; print(p.embeddings_describe()['reason'])"
 
 
 class TestProviderSelection(unittest.TestCase):
@@ -294,6 +298,62 @@ class AnEmptyGeminiResponseSaysWhyItWasEmpty(unittest.TestCase):
         self.assertIsNotNone(match, "the doctor should still make a real call")
         self.assertGreaterEqual(int(match.group(1)), 500,
                                 "the app's smallest real call is 500 tokens")
+
+
+class GenerationAndEmbeddingResolveSeparately(unittest.TestCase):
+    """
+    OpenRouter publishes no embeddings endpoint.
+
+    Choosing it for generation is the sane move when Gemini's daily
+    generation quota is 20 and its embedding quota is 100 a minute - but it
+    used to take semantic search down with it, because one provider served
+    both jobs. Nothing was wrong with the embedding key; it simply stopped
+    being consulted. That is a headline feature disappearing as a side
+    effect of a quota workaround, which nobody would think to check for.
+    """
+
+    OPENROUTER_AND_GEMINI = (
+        "OPENROUTER_API_KEY=or-test\n"
+        "OPENROUTER_MODEL=meta-llama/llama-3.3-70b-instruct:free\n"
+        "GEMINI_API_KEY=gem-test\n"
+        "AI_PROVIDER=openrouter\n"
+    )
+
+    def test_openrouter_generates_while_gemini_still_embeds(self):
+        self.assertEqual(run_with_env(self.OPENROUTER_AND_GEMINI, MODE), "openrouter")
+        self.assertEqual(run_with_env(self.OPENROUTER_AND_GEMINI, EMBED), "gemini")
+        self.assertEqual(run_with_env(self.OPENROUTER_AND_GEMINI, EMBED_OK), "True")
+
+    def test_openrouter_alone_says_why_search_is_off_rather_than_pretending(self):
+        env = (
+            "OPENROUTER_API_KEY=or-test\n"
+            "OPENROUTER_MODEL=meta-llama/llama-3.3-70b-instruct:free\n"
+        )
+        self.assertEqual(run_with_env(env, MODE), "openrouter")
+        self.assertEqual(run_with_env(env, EMBED_OK), "False")
+        why = run_with_env(env, EMBED_WHY)
+        self.assertIn("no embeddings API", why)
+        # And it names the fix, because "unavailable" alone sends someone
+        # looking at the vector database instead of at their keys.
+        self.assertIn("GEMINI_API_KEY", why)
+
+    def test_one_provider_that_embeds_is_still_used_for_both(self):
+        env = "GEMINI_API_KEY=gem-test\n"
+        self.assertEqual(run_with_env(env, MODE), "gemini")
+        self.assertEqual(run_with_env(env, EMBED), "gemini")
+
+    def test_the_embedder_can_be_pinned_explicitly(self):
+        env = self.OPENROUTER_AND_GEMINI + "AI_EMBED_PROVIDER=gemini\n"
+        self.assertEqual(run_with_env(env, EMBED), "gemini")
+
+    def test_pinning_an_embedder_that_cannot_embed_is_refused_not_ignored(self):
+        env = self.OPENROUTER_AND_GEMINI + "AI_EMBED_PROVIDER=openrouter\n"
+        self.assertEqual(run_with_env(env, EMBED_OK), "False")
+        self.assertIn("no embeddings API", run_with_env(env, EMBED_WHY))
+
+    def test_no_provider_at_all_leaves_embeddings_off_with_the_same_reason(self):
+        self.assertEqual(run_with_env("", EMBED_OK), "False")
+        self.assertIn("No AI provider is configured", run_with_env("", EMBED_WHY))
 
 
 if __name__ == "__main__":
