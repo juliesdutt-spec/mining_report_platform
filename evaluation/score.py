@@ -96,7 +96,10 @@ def _refuse_if_ocr_unavailable(labels: List[dict]) -> None:
     Checked before any document is extracted, so a run that cannot produce a
     publishable number does not spend quota discovering it.
     """
-    from document_processor import has_usable_text_layer, ocr_status
+    from document_processor import (
+        OCR_LANGUAGE_CODES, has_usable_text_layer, installed_ocr_languages,
+        ocr_status,
+    )
 
     scans = []
     for label in labels:
@@ -109,30 +112,56 @@ def _refuse_if_ocr_unavailable(labels: List[dict]) -> None:
             # one would be a worse error than the one it is guarding against.
             continue
         if not has_usable_text_layer(data):
-            scans.append(label["document"])
+            scans.append(label)
     if not scans:
         return
 
-    status = ocr_status()
-    if status["ok"]:
-        return
-
-    listed = "\n".join(f"    {d}" for d in scans)
-    fields = sum(
-        len(l["expected"]) for l in labels
-        if l["document"] in set(scans)
-    )
     total = sum(len(l["expected"]) for l in labels)
-    sys.exit(
-        f"{len(scans)} of {len(labels)} labelled document(s) are scans, and OCR "
-        f"is not working here:\n{listed}\n\n"
-        f"  {status['reason']}\n\n"
-        f"Every field in those documents would score missing - {fields} of {total} "
-        f"({fields / total * 100:.0f}%) - and the run would report that as the\n"
-        "extractor's accuracy rather than this machine's. Install OCR and run\n"
-        "again, or pass --language to score a subset that excludes them and keep\n"
-        "the result for yourself."
-    )
+
+    def _stop(headline: str, affected: List[dict], detail: str, remedy: str) -> None:
+        listed = "\n".join(f"    {l['document']}" for l in affected)
+        fields = sum(len(l["expected"]) for l in affected)
+        sys.exit(
+            f"{headline}\n{listed}\n\n  {detail}\n\n"
+            f"That is {fields} of {total} scored fields ({fields / total * 100:.0f}%), "
+            f"and the run would report the result as the extractor's accuracy\n"
+            f"rather than this machine's setup. {remedy}"
+        )
+
+    status = ocr_status()
+    if not status["ok"]:
+        _stop(
+            f"{len(scans)} of {len(labels)} labelled document(s) are scans, and OCR "
+            "is not working here:",
+            scans,
+            status["reason"],
+            "Install OCR and run again, or pass --language to score a subset that\n"
+            "excludes them and keep the result for yourself.",
+        )
+
+    # OCR running is not the same as OCR able to read this document. tesseract
+    # with only `eng` does not fail on a Devanagari page - it returns confident
+    # Latin nonsense, which extraction then reads and answers over. That is
+    # worse than the case above: missing fields are a visible gap, whereas
+    # fields extracted from garbage are confidently wrong, and `wrong` is the
+    # bucket that corrupts a conflict report.
+    installed = installed_ocr_languages()
+    unreadable = [
+        label for label in scans
+        if (code := OCR_LANGUAGE_CODES.get(label.get("language", ""))) and code not in installed
+    ]
+    if unreadable:
+        needed = sorted({
+            OCR_LANGUAGE_CODES[l["language"]] for l in unreadable
+        })
+        _stop(
+            f"{len(unreadable)} labelled document(s) are scans in a script this host "
+            "has no OCR data for:",
+            unreadable,
+            f"tesseract is installed but missing: {', '.join(needed)}. It will not "
+            f"fail on those pages - it will read them as Latin and return nonsense.",
+            f"Install the {', '.join(needed)} language data and run again.",
+        )
 
 
 def score(language: Optional[str] = None) -> dict:

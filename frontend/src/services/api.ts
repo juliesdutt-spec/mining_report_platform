@@ -160,6 +160,8 @@ export interface OcrStatus {
   version: string | null;
   /** tesseract language codes joined by "+", e.g. "eng+hin+tel". */
   languages: string | null;
+  /** Wanted codes with no traineddata installed. Empty when all are present. */
+  missing_languages?: string[];
 }
 
 /** What POST /admin/reindex reports once it has walked the corpus. */

@@ -417,5 +417,78 @@ class TheInspectorRunsOnAFreshWindowsCheckout(unittest.TestCase):
         self.assertFalse(document_processor.has_usable_text_layer(b"not a pdf"))
 
 
+class AScanInAScriptTheHostCannotReadIsRefusedToo(unittest.TestCase):
+    """
+    The second-order version of the OCR gap, and the more dangerous one.
+
+    tesseract with only `eng` does not fail on a Devanagari page. It reads it
+    as Latin and returns confident nonsense, which extraction then parses into
+    fields. Those score `wrong` rather than `missing` - and `wrong` is the
+    bucket that corrupts a conflict report, where a blank is a visible gap.
+
+    Found on a real Windows install where the language checkboxes in the
+    installer were missed: OCR reported as working, SCAN-02 (Hindi) extracted
+    1664 characters, and the script detector called it Latin.
+    """
+
+    def setUp(self):
+        self.labels = _load_labels(None)
+        self.working = {
+            "ok": True, "reason": None, "version": "5.5.3",
+            "languages": "eng", "missing_languages": ["hin", "tel"], "path": "on PATH",
+        }
+
+    def test_english_only_OCR_refuses_over_the_hindi_scan(self):
+        with mock.patch.object(document_processor, "ocr_status", return_value=self.working), \
+             mock.patch.object(document_processor, "installed_ocr_languages",
+                               return_value={"eng", "osd"}):
+            with self.assertRaises(SystemExit) as caught:
+                _refuse_if_ocr_unavailable(self.labels)
+
+        message = str(caught.exception)
+        self.assertIn("SCAN-02", message)
+        self.assertIn("hin", message)
+        # The English scan is readable, so it must not be swept in.
+        self.assertNotIn("SCAN-01", message)
+        # And it must say why this is worse than a blank, or someone will
+        # reasonably decide to just accept the missing fields.
+        self.assertIn("nonsense", message)
+
+    def test_all_language_data_present_scores_normally(self):
+        full = dict(self.working, languages="eng+hin+tel", missing_languages=[])
+        with mock.patch.object(document_processor, "ocr_status", return_value=full), \
+             mock.patch.object(document_processor, "installed_ocr_languages",
+                               return_value={"eng", "hin", "tel", "osd"}):
+            self.assertIsNone(_refuse_if_ocr_unavailable(self.labels))
+
+    def test_a_missing_language_only_matters_for_a_scan(self):
+        # HI-01 is Hindi with a real text layer. No OCR is involved, so
+        # missing Hindi traineddata is irrelevant to it and refusing would be
+        # a false alarm over a document that reads perfectly.
+        text_layer_hindi = [
+            l for l in self.labels
+            if l["language"] == "hi" and "SCAN-" not in l["document"]
+        ]
+        self.assertTrue(text_layer_hindi, "expected a Hindi text-layer document")
+        with mock.patch.object(document_processor, "ocr_status", return_value=self.working), \
+             mock.patch.object(document_processor, "installed_ocr_languages",
+                               return_value={"eng"}):
+            self.assertIsNone(_refuse_if_ocr_unavailable(text_layer_hindi))
+
+    def test_no_OCR_at_all_is_still_reported_as_the_bigger_problem_first(self):
+        broken = {
+            "ok": False, "reason": "tesseract is not installed",
+            "version": None, "languages": None, "missing_languages": [], "path": None,
+        }
+        with mock.patch.object(document_processor, "ocr_status", return_value=broken), \
+             mock.patch.object(document_processor, "installed_ocr_languages", return_value=set()):
+            with self.assertRaises(SystemExit) as caught:
+                _refuse_if_ocr_unavailable(self.labels)
+        message = str(caught.exception)
+        self.assertIn("not installed", message)
+        self.assertIn("SCAN-01", message, "both scans are affected when OCR is absent")
+        self.assertIn("SCAN-02", message)
+
+
 if __name__ == "__main__":
     unittest.main()

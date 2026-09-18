@@ -78,6 +78,24 @@ path in `.env`:
 
     TESSERACT_CMD=C:\Program Files\Tesseract-OCR\tesseract.exe
 
+**If the language checkboxes were missed**, you do not need to reinstall. The
+language data is two files. In PowerShell:
+
+    $dir = "C:\Program Files\Tesseract-OCR\tessdata"
+    $base = "https://github.com/tesseract-ocr/tessdata/raw/main"
+    foreach ($lang in "hin", "tel") {
+      Invoke-WebRequest "$base/$lang.traineddata" -OutFile "$dir\$lang.traineddata"
+    }
+
+That needs an elevated terminal, because the folder is under Program Files.
+Re-run the inspector afterwards; the last line should read `eng+hin+tel`.
+
+This matters more than it looks. tesseract with only `eng` does **not** fail on
+a Devanagari page — it reads it as Latin and returns confident nonsense, which
+extraction then parses into fields. Those score *wrong* rather than *missing*,
+and wrong is the bucket that corrupts a conflict report. The scorer refuses on
+this case for that reason.
+
 **macOS** — `brew install tesseract tesseract-lang`
 
 **Debian/Ubuntu** — `sudo apt-get install tesseract-ocr tesseract-ocr-hin tesseract-ocr-tel`
