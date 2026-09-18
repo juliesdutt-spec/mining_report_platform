@@ -614,5 +614,71 @@ class ExtractionsSurviveAQuotaFailure(unittest.TestCase):
         self.assertIn("c.pdf", message)
 
 
+class TheRunSaysWhatItIsDoingWhileItDoesIt(unittest.TestCase):
+    """
+    Reported as "it is not giving any output bro".
+
+    It was working. The run printed nothing until every document was done,
+    and thirteen documents at up to 90 seconds each is twenty minutes of a
+    silent terminal - indistinguishable from a hang, and reported as one.
+    A tool whose entire purpose is to be trusted should not be the least
+    legible thing in the project.
+    """
+
+    def _run(self, outcomes):
+        from evaluation import score as scorer
+
+        expected = {"mine_name": "Jharia Coal Mine"}
+        labels = [
+            {"document": f"samples/corpus/EN-0{n}.pdf", "language": "en",
+             "expected": expected, "_label_file": f"{n}.json"}
+            for n in range(1, len(outcomes) + 1)
+        ]
+        results = iter(outcomes)
+        printed = []
+        with mock.patch.object(scorer, "_refuse_if_mocked", lambda: None), \
+             mock.patch.object(scorer, "_refuse_if_ocr_unavailable", lambda l: None), \
+             mock.patch.object(scorer, "_provider_name", lambda: "openrouter (m)"), \
+             mock.patch.object(scorer, "_load_labels", lambda language: labels), \
+             mock.patch.object(Path, "exists", lambda self: True), \
+             mock.patch.object(scorer, "_extract",
+                               lambda path, use_cache=True: next(results)), \
+             mock.patch("builtins.print",
+                        lambda *a, **k: printed.append(" ".join(str(x) for x in a))):
+            try:
+                scorer.score(None)
+            except SystemExit:
+                pass
+        return "\n".join(printed)
+
+    def test_every_document_is_named_as_it_is_reached(self):
+        real = {"mine_name": "Jharia Coal Mine"}
+        out = self._run([(real, "openrouter", False)] * 3)
+        for n in (1, 2, 3):
+            self.assertIn(f"EN-0{n}.pdf", out)
+            self.assertIn(f"[{n}/3]", out)
+
+    def test_the_provider_is_named_before_the_wait_starts(self):
+        real = {"mine_name": "Jharia Coal Mine"}
+        out = self._run([(real, "openrouter", False)])
+        self.assertIn("openrouter (m)", out)
+        # And that Ctrl-C does not throw away what has been paid for, which
+        # is the thing someone staring at a silent terminal wants to know.
+        self.assertIn("Ctrl-C", out)
+
+    def test_a_reused_extraction_is_distinguishable_from_a_fresh_call(self):
+        real = {"mine_name": "Jharia Coal Mine"}
+        out = self._run([(real, "openrouter", True), (real, "openrouter", False)])
+        self.assertIn("saved", out)
+        self.assertIn("ok", out)
+
+    def test_a_document_that_fell_back_is_flagged_on_its_own_line(self):
+        # Not only in the refusal at the end: seeing it happen tells someone
+        # whether to stop the run rather than wait out twelve more.
+        real = {"mine_name": "Jharia Coal Mine"}
+        out = self._run([(real, "mock", False)])
+        self.assertIn("MOCK", out)
+
+
 if __name__ == "__main__":
     unittest.main()
