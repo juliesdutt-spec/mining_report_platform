@@ -101,7 +101,13 @@ def _check_ai() -> int:
     # 3. The step /health cannot do: actually call it.
     print(f"{INFO} Calling {mode} for real...")
     try:
-        reply = ai_providers.complete("Reply with the single word: ready", 20)
+        # 500, not 20. The app's smallest real call is 500, and a reasoning
+        # model bills its thinking against this same budget - so a 20-token
+        # probe is consumed entirely by thinking, returns no text, and fails
+        # a provider that works perfectly for every call the app makes. A
+        # doctor that fails where the patient is healthy is worse than none:
+        # it cost a real debugging session an hour chasing a rate limit.
+        reply = ai_providers.complete("Reply with the single word: ready", 500)
     except ai_providers.ProviderError as exc:
         print(f"{BAD} {mode} is configured but the call FAILED.")
         print(f"       {exc}")
@@ -202,6 +208,12 @@ def _advice(error: str) -> str:
     if "permission" in lowered or "403" in lowered:
         return ("Fix: the key exists but is not enabled for this API. "
                 "Create a fresh key in AI Studio.")
+    if "output limit" in lowered or "reasoning models bill" in lowered:
+        return ("Fix: this is a token budget, not an outage. The message above "
+                "says what to raise.")
+    if "declined to answer" in lowered or "content filter" in lowered:
+        return ("Fix: nothing - the provider works. This particular prompt was "
+                "refused; try the pipeline on a real document.")
     if "could not reach" in lowered or "timed out" in lowered:
         return ("Fix: no network route to the provider. Check your internet, "
                 "VPN or proxy, or raise AI_TIMEOUT_SECONDS in .env.")

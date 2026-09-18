@@ -13,6 +13,7 @@ case's configuration for every case after it.
 import os
 import subprocess
 import sys
+import re
 import unittest
 from pathlib import Path
 
@@ -242,6 +243,57 @@ class TestExtractorFallsBackCleanly(unittest.TestCase):
             "import ai_extractor as a; print(a.extract_structured_data('coal in Jharkhand')['mineral_type'])",
         )
         self.assertEqual(out, "Coal")
+
+
+class AnEmptyGeminiResponseSaysWhyItWasEmpty(unittest.TestCase):
+    """
+    "Gemini returned an empty response." reads like an outage.
+
+    It is almost never one. A reasoning model spends tokens thinking before
+    it writes, billed against the same maxOutputTokens budget, so a small
+    budget is consumed entirely by reasoning and no text is produced. The
+    old message sent a real debugging session chasing a rate limit that did
+    not exist - waiting, retrying, and concluding the API was down while a
+    2000-token call would have worked first time.
+    """
+
+    def setUp(self):
+        # Imported here rather than at module scope: provider selection
+        # happens at import time, which is why every other case in this file
+        # runs in a subprocess. _empty_response_reason is pure, so it is safe
+        # to call directly - but the import must not leak to the top.
+        import ai_providers
+        self.reason = ai_providers._empty_response_reason
+
+    def test_a_budget_exhausted_by_reasoning_is_not_reported_as_an_outage(self):
+        reason = self.reason(
+            {"finishReason": "MAX_TOKENS"},
+            {"usageMetadata": {"thoughtsTokenCount": 20, "candidatesTokenCount": 0}},
+            20,
+        )
+        self.assertIn("20-token output limit", reason)
+        self.assertIn("reasoning", reason)
+        # The sentence that stops someone waiting it out.
+        self.assertIn("not a rate limit", reason)
+
+    def test_a_content_refusal_says_the_provider_itself_is_fine(self):
+        reason = self.reason({"finishReason": "SAFETY"}, {}, 2000)
+        self.assertIn("declined", reason)
+        self.assertIn("working", reason)
+
+    def test_an_unknown_reason_still_rules_out_quota_and_network(self):
+        reason = self.reason({"finishReason": "OTHER"}, {}, 2000)
+        self.assertIn("OTHER", reason)
+        self.assertIn("not a quota or network problem", reason)
+
+    def test_the_doctor_probes_with_a_budget_the_app_actually_uses(self):
+        # A probe smaller than every real call can fail on a provider that
+        # serves the app perfectly, which is the worst kind of false alarm.
+        source = (Path(__file__).resolve().parent.parent / "doctor.py").read_text(encoding="utf-8")
+        match = re.search(r'complete\("Reply with the single word: ready",\s*(\d+)\)', source)
+        self.assertIsNotNone(match, "the doctor should still make a real call")
+        self.assertGreaterEqual(int(match.group(1)), 500,
+                                "the app's smallest real call is 500 tokens")
 
 
 if __name__ == "__main__":
