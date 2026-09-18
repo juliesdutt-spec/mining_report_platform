@@ -7,7 +7,7 @@ Pipeline: PDF Upload → Extract Text → OCR (if scanned) → Chunk Text
 import io
 import os
 import sys
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
 from pypdf import PdfReader
 from PIL import Image
@@ -67,20 +67,43 @@ def _available_ocr_languages() -> str:
 TEXT_LAYER_MIN_CHARS_PER_PAGE = 120
 
 
-def has_usable_text_layer(pdf_bytes: bytes) -> bool:
-    """Whether this PDF can be read without OCR, judged by density not presence."""
+def _text_layer_pages(pdf_bytes: bytes) -> Optional[List[str]]:
+    """The raw text layer page by page, or None if the PDF cannot be opened."""
     try:
         import pymupdf
     except ImportError:
-        return False
+        pass
+    else:
+        try:
+            with pymupdf.open(stream=pdf_bytes, filetype="pdf") as document:
+                return [page.get_text() or "" for page in document]
+        except Exception:  # noqa: BLE001 - fall through to pypdf
+            pass
+
+    # pypdf is a hard dependency where pymupdf is effectively optional, so
+    # giving up here would call every text-layer document a scan - and then
+    # refuse a scoring run over documents that were fine. pypdf reads a little
+    # less per page, but nowhere near the threshold's margin: this corpus lands
+    # at 1100-1300 characters a page either way, against a cutoff of 120.
     try:
-        with pymupdf.open(stream=pdf_bytes, filetype="pdf") as document:
-            layer = [page.get_text() or "" for page in document]
-    except Exception:  # noqa: BLE001 - an unopenable PDF has no text layer either
-        return False
+        reader = PdfReader(io.BytesIO(pdf_bytes))
+        return [(page.extract_text() or "") for page in reader.pages]
+    except Exception:  # noqa: BLE001 - an unopenable PDF has no text layer
+        return None
+
+
+def has_usable_text_layer(pdf_bytes: bytes) -> bool:
+    """Whether this PDF can be read without OCR, judged by density not presence."""
+    layer = _text_layer_pages(pdf_bytes)
     if not layer:
         return False
     return sum(len(t.strip()) for t in layer) / len(layer) >= TEXT_LAYER_MIN_CHARS_PER_PAGE
+
+
+def page_count(pdf_bytes: bytes) -> int:
+    """How many pages this PDF has, or 0 if it cannot be read."""
+    layer = _text_layer_pages(pdf_bytes)
+    return len(layer) if layer else 0
 
 
 def ocr_status() -> dict:

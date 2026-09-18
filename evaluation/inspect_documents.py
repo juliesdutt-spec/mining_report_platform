@@ -56,12 +56,11 @@ def _scripts_in(text: str) -> str:
 
 
 def _describe(path: Path) -> dict:
-    import fitz
-
     from document_processor import (
         TEXT_LAYER_MIN_CHARS_PER_PAGE,
         extract_pages_from_pdf,
         has_usable_text_layer,
+        page_count,
     )
     from vector_store import chunk_pages
 
@@ -71,8 +70,7 @@ def _describe(path: Path) -> dict:
     # The raw text layer, read without the OCR fallback, so the two can be
     # told apart. extract_pages_from_pdf hides that difference on purpose -
     # the app does not care which one answered, and this does.
-    with fitz.open(stream=data, filetype="pdf") as document:
-        pages = document.page_count
+    pages = page_count(data)
     has_layer = has_usable_text_layer(data)
 
     extracted = extract_pages_from_pdf(data)
@@ -150,6 +148,38 @@ def _write_label(row: dict) -> Path:
     return destination
 
 
+#: What this tool cannot run without, and what to type. The pip name is not
+#: always the import name, which is exactly the point of spelling both out.
+REQUIRED = [("pypdf", "pypdf"), ("PIL", "Pillow")]
+
+
+def _require_dependencies() -> None:
+    """
+    Fail with an instruction rather than a traceback.
+
+    This is the first command anyone runs against a fresh checkout, and it is
+    the one advertised as needing no API key - so a stack trace ending in
+    ModuleNotFoundError is the worst possible first impression of the
+    project. It also cannot tell you that the answer is one pip command,
+    because the module that is missing is rarely the package you install.
+    """
+    import importlib
+
+    missing = []
+    for module, package in REQUIRED:
+        try:
+            importlib.import_module(module)
+        except ImportError:
+            missing.append(package)
+    if missing:
+        sys.exit(
+            f"Missing: {', '.join(missing)}.\n"
+            "Install everything this project needs with:\n"
+            "  python -m pip install -r requirements.txt\n"
+            "(on Windows, `py -m pip install -r requirements.txt`)"
+        )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("targets", nargs="+", help="PDF files, or directories of them")
@@ -160,6 +190,8 @@ def main() -> None:
     documents = _pdfs(args.targets)
     if not documents:
         sys.exit("No PDFs found.")
+
+    _require_dependencies()
 
     from document_processor import ocr_status
 
