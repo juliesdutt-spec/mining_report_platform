@@ -58,6 +58,22 @@ def _check_ai() -> int:
             if "=" in line and not line.strip().startswith("#")
         })
         print(f"{OK} .env found  ({len(names)} settings: {', '.join(names) or 'none'})")
+
+        # VITE_* in the root .env does nothing whatsoever. Vite reads
+        # frontend/.env, and this file is the backend's - so a setting put
+        # here is not overriding anything, it is simply inert. Worth saying
+        # out loud: a .env that looks populated is the strongest possible
+        # reason to stop suspecting the .env, and someone who put the
+        # frontend's URL here may well have replaced the backend's keys doing
+        # it.
+        frontend_only = [n for n in names if n.startswith("VITE_")]
+        if frontend_only:
+            print(f"{INFO} {', '.join(frontend_only)} belongs in frontend/.env, not here.")
+            print("       Vite reads that file; this one is the backend's, so these")
+            print("       settings have no effect at all where they are.")
+            if len(frontend_only) == len(names):
+                print(f"{BAD} This .env contains nothing but frontend settings.")
+                print("       If the backend used to work, its keys were overwritten.")
     else:
         print(f"{BAD} No .env file in {env_path.parent}")
         print("       Fix: copy .env.example to .env and add a provider key.")
