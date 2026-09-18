@@ -11,7 +11,9 @@ read. These tests fail if that path breaks again.
 """
 import io
 import os
+import pathlib
 import sys
+import tempfile
 import unittest
 from unittest import mock
 
@@ -223,6 +225,50 @@ class TheDoctorDiagnosesBothHalvesIndependently(unittest.TestCase):
         folder = document_processor.tessdata_dir()
         self.assertTrue(folder, "tesseract should report where it reads data from")
         self.assertIn("tessdata", folder)
+
+
+class TheDoctorNamesFrontendSettingsInTheBackendEnv(unittest.TestCase):
+    """
+    Reported state: `.env found (1 settings: VITE_API_URL)`.
+
+    VITE_* is read by Vite out of frontend/.env. In the root .env it is
+    inert - not overriding anything, just absent of effect. The failure mode
+    is that the file looks populated, so the .env is the last place anyone
+    looks, while the backend key it used to hold is gone.
+    """
+
+    def _run(self, contents):
+        import doctor
+
+        with tempfile.TemporaryDirectory() as folder:
+            env = pathlib.Path(folder) / ".env"
+            env.write_text(contents, encoding="utf-8")
+            printed = []
+            with mock.patch.object(doctor.Path, "resolve", autospec=True,
+                                   side_effect=lambda self: pathlib.Path(folder) / "doctor.py"), \
+                 mock.patch("builtins.print", lambda *a, **k: printed.append(" ".join(map(str, a)))):
+                try:
+                    doctor._check_ai()
+                except Exception:
+                    pass
+            return "\n".join(printed)
+
+    def test_a_vite_only_env_is_called_out_as_the_likely_cause(self):
+        out = self._run("VITE_API_URL=https://example.invalid\n")
+        self.assertIn("VITE_API_URL", out)
+        self.assertIn("frontend/.env", out)
+        self.assertIn("nothing but frontend settings", out)
+
+    def test_a_backend_env_is_not_nagged_about(self):
+        out = self._run("GEMINI_API_KEY=xx\nAUTH_SECRET=yy\n")
+        self.assertNotIn("frontend/.env", out)
+        # And a key is never echoed back, whatever else is printed.
+        self.assertNotIn("xx", out)
+
+    def test_a_mixed_env_warns_without_claiming_the_backend_is_empty(self):
+        out = self._run("VITE_API_URL=https://example.invalid\nGEMINI_API_KEY=xx\n")
+        self.assertIn("frontend/.env", out)
+        self.assertNotIn("nothing but frontend settings", out)
 
 
 if __name__ == "__main__":
