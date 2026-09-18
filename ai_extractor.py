@@ -132,8 +132,19 @@ Respond ONLY with valid JSON. No markdown, no explanation."""
 
     provider = ai_providers.describe()["mode"]
     try:
+        parsed = _parse_json_response(ai_providers.complete(prompt, max_tokens=2000))
+        if parsed is None:
+            # Not an extraction. Handled exactly like a failed call, so every
+            # guard downstream fires: the scorer refuses and names the
+            # document rather than counting its fields as missing, and an
+            # upload carries the note instead of storing a blank record.
+            raise ProviderError(
+                f"{provider} replied without valid JSON - the model did not "
+                "follow the output format. A smaller model may need a larger "
+                "max_tokens, or a different OPENROUTER_MODEL."
+            )
         return {
-            "data": _parse_json_response(ai_providers.complete(prompt, max_tokens=2000)),
+            "data": parsed,
             "source": provider,
             "note": None,
         }
@@ -308,24 +319,87 @@ def generate_report_content(extracted_data: dict) -> str:
 
 # ==================== MOCK/DEMO FUNCTIONS ====================
 
-def _parse_json_response(text: str) -> dict:
-    """Parse JSON from a model response, handling markdown code blocks"""
-    # Remove markdown code blocks if present
-    text = re.sub(r'```json\s*', '', text)
-    text = re.sub(r'```\s*', '', text)
+def _json_objects(text: str) -> list:
+    """
+    Every balanced {...} span in the text that parses, in the order found.
+
+    Scanning for balance rather than regexing from the first "{" to the last
+    "}": a model that reasons aloud writes braces in its reasoning, and one
+    span stretching from a brace inside that to the closing brace of the real
+    answer parses as nothing at all. String contents are skipped so a "}" in
+    a value does not end the object early.
+    """
+    found = []
+    index = 0
+    while True:
+        start = text.find("{", index)
+        if start == -1:
+            return found
+        depth, in_string, escaped = 0, False, False
+        for position in range(start, len(text)):
+            character = text[position]
+            if in_string:
+                if escaped:
+                    escaped = False
+                elif character == "\\":
+                    escaped = True
+                elif character == '"':
+                    in_string = False
+                continue
+            if character == '"':
+                in_string = True
+            elif character == "{":
+                depth += 1
+            elif character == "}":
+                depth -= 1
+                if depth == 0:
+                    try:
+                        parsed = json.loads(text[start:position + 1])
+                    except json.JSONDecodeError:
+                        pass
+                    else:
+                        if isinstance(parsed, dict):
+                            found.append(parsed)
+                    break
+        index = start + 1
+
+
+def _parse_json_response(text: str) -> Optional[dict]:
+    """
+    The JSON object a model was asked for, or None if it did not send one.
+
+    None rather than a placeholder dict. This used to return
+    {"summary": text, "error": "Could not parse structured data"} on failure,
+    which is a perfectly valid dict with none of the fields in it - so the
+    caller reported a successful extraction by the configured provider, the
+    document stored no fields, and the scorer counted every one of them as
+    "missing" and folded that into a published accuracy. A model that failed
+    to answer was being measured as a model that answered wrongly.
+
+    It matters more on a small model. Instruction-following on "respond ONLY
+    with valid JSON" is exactly what a 3B-active model is worst at, and a
+    reasoning model wraps its answer in prose as a matter of course.
+    """
+    # Reasoning blocks first: their contents are not an answer, and they are
+    # the likeliest place for stray braces.
+    text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL | re.IGNORECASE)
+    text = re.sub(r"```json\s*", "", text)
+    text = re.sub(r"```\s*", "", text)
     text = text.strip()
-    
+
     try:
-        return json.loads(text)
+        parsed = json.loads(text)
+        if isinstance(parsed, dict):
+            return parsed
     except json.JSONDecodeError:
-        # Try to find JSON object in the text
-        match = re.search(r'\{.*\}', text, re.DOTALL)
-        if match:
-            try:
-                return json.loads(match.group())
-            except json.JSONDecodeError:
-                pass
-        return {"summary": text, "error": "Could not parse structured data"}
+        pass
+
+    candidates = _json_objects(text)
+    if not candidates:
+        return None
+    # The richest one. A chatty model can emit a small object before the real
+    # payload, and field count separates them more reliably than position.
+    return max(candidates, key=len)
 
 
 def _parse_json_array(text: str) -> list:

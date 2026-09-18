@@ -133,9 +133,23 @@ def tessdata_dir() -> Optional[str]:
         )
     except Exception:  # noqa: BLE001 - no binary, or it would not run
         return None
+    text = (result.stdout or "") + (result.stderr or "")
+
+    # The quoted form first, and the capture stops at the closing quote
+    # rather than at any colon. A non-greedy match up to ":" reported
+    # C:\Program Files\Tesseract-OCR\tessdata as "C" on Windows - it ended
+    # at the drive letter - which then went into a generated install command
+    # as $dir = "C". A path that is confidently wrong is worse here than
+    # none, because the files land somewhere and tesseract still cannot see
+    # them.
+    match = re.search(r'List of available languages in "([^"]+)"', text)
+    if match:
+        return match.group(1).strip()
+
+    # Unquoted, for a tesseract build that prints it that way: take the rest
+    # of the line and drop a trailing count.
     match = re.search(
-        r'List of available languages in "?(.+?)"?\s*(?:\(\d+\))?:',
-        (result.stdout or "") + (result.stderr or ""),
+        r"List of available languages in (.+?)(?:\s*\(\d+\))?:?\s*$", text, re.M
     )
     return match.group(1).strip() if match else None
 

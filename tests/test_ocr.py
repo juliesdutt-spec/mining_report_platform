@@ -271,5 +271,48 @@ class TheDoctorNamesFrontendSettingsInTheBackendEnv(unittest.TestCase):
         self.assertNotIn("nothing but frontend settings", out)
 
 
+class TheTessdataPathSurvivesAWindowsDriveLetter(unittest.TestCase):
+    """
+    Reported from a Windows run: `Language data folder: C`.
+
+    The capture was non-greedy up to a colon, and the first colon on Windows
+    is the one in the drive letter. The truncated path then went into a
+    generated install command as $dir = "C", which would have put the
+    language files somewhere tesseract never looks - and looked like they had
+    downloaded fine.
+    """
+
+    def _dir_from(self, output):
+        with mock.patch.object(document_processor, "OCR_AVAILABLE", True), \
+             mock.patch.object(document_processor.subprocess, "run",
+                               return_value=mock.Mock(stdout=output, stderr="")):
+            return document_processor.tessdata_dir()
+
+    def test_a_windows_path_keeps_its_drive_letter(self):
+        folder = self._dir_from(
+            'List of available languages in "C:\\Program Files\\Tesseract-OCR'
+            '\\tessdata/" (4):\neng\nhin\n'
+        )
+        self.assertEqual(folder, "C:\\Program Files\\Tesseract-OCR\\tessdata/")
+        self.assertNotEqual(folder, "C")
+
+    def test_a_posix_path_is_unchanged(self):
+        folder = self._dir_from(
+            'List of available languages in "/usr/share/tesseract-ocr/5/tessdata/" (4):\neng\n'
+        )
+        self.assertEqual(folder, "/usr/share/tesseract-ocr/5/tessdata/")
+
+    def test_an_unquoted_path_still_parses(self):
+        folder = self._dir_from(
+            "List of available languages in /usr/share/tessdata/ (3):\neng\n"
+        )
+        self.assertEqual(folder, "/usr/share/tessdata/")
+
+    def test_output_that_says_nothing_about_a_folder_gives_none(self):
+        # Better than a wrong path: a wrong one sends files somewhere real
+        # that tesseract does not read, which looks like success.
+        self.assertIsNone(self._dir_from("eng\nhin\n"))
+
+
 if __name__ == "__main__":
     unittest.main()

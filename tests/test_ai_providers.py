@@ -356,5 +356,43 @@ class GenerationAndEmbeddingResolveSeparately(unittest.TestCase):
         self.assertIn("No AI provider is configured", run_with_env("", EMBED_WHY))
 
 
+class AWithdrawnFreeModelIsNotAnInvitationToSpend(unittest.TestCase):
+    """
+    OpenRouter's 404 for a retired free model names a replacement slug, and
+    that slug is the paid one. The message mentions it only in passing
+    ("The paid version is available now"), so it reads as a fix rather than
+    a bill. Free ids rotate as promotions end, which is why
+    OPENROUTER_MODEL has no default in this project.
+    """
+
+    ERROR = (
+        'HTTP 404 from https://openrouter.ai: {"error":{"message":"This model '
+        'is unavailable for free. The paid version is available now - use this '
+        'slug instead: meta-llama/llama-3.3-70b-instruct","code":404}}'
+    )
+
+    def test_the_advice_says_the_suggested_slug_costs_money(self):
+        import doctor
+
+        advice = doctor._advice(self.ERROR)
+        self.assertIn("PAID", advice)
+        self.assertIn("spends credits", advice)
+        self.assertIn("meta-llama/llama-3.3-70b-instruct", advice)
+
+    def test_it_points_at_the_free_listing_rather_than_a_guess(self):
+        import doctor
+
+        advice = doctor._advice(self.ERROR)
+        self.assertIn("max_price=0", advice)
+        self.assertIn("OPENROUTER_MODEL", advice)
+
+    def test_a_missing_slug_in_the_message_still_gives_usable_advice(self):
+        import doctor
+
+        advice = doctor._advice("This model is unavailable for free.")
+        self.assertIn("max_price=0", advice)
+        self.assertNotIn("()", advice)
+
+
 if __name__ == "__main__":
     unittest.main()
