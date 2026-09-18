@@ -20,3 +20,8 @@ build/
 
 # Generated reports / runtime artifacts
 reports/*.png
+
+# Extractions the scorer has already paid for. Derived data, kept out of
+# git on purpose: a committed cache would let a "score" run complete without
+# calling the model at all, and nobody would notice.
+evaluation/.extractions/

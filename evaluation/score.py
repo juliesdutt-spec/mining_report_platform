@@ -10,10 +10,12 @@ a claim anyone could check.
 Run with `python -m evaluation.score`. See evaluation/README.md.
 """
 import argparse
+import hashlib
 import json
 import os
 import sys
 from collections import Counter
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -54,15 +56,106 @@ def _classify(expected: str, actual: Optional[str]) -> str:
     return WRONG
 
 
-def _extract(pdf_path: Path) -> tuple[dict, str]:
-    """The extracted fields, and which provider actually produced them."""
+#: Extractions already paid for, kept between runs.
+#:
+#: The free tier caps generation per day, not only per minute. A corpus of 13
+#: documents needs 13 calls in one unbroken run, and a run that dies at
+#: document 9 used to throw away the eight that had succeeded - so the next
+#: attempt cost 13 more. Against a daily cap of 20 that is unfinishable: you
+#: can retry every day and never once complete a score.
+#:
+#: Nothing here weakens the measurement. Every entry is a real model
+#: extraction of that exact document, and the key includes the model and the
+#: prompt, so changing either one invalidates the lot rather than silently
+#: scoring yesterday's answers against today's code. Mock output is never
+#: written, so a cache hit can never be a stand-in.
+CACHE_DIR = Path(__file__).resolve().parent / ".extractions"
+
+
+def _cache_key(pdf_bytes: bytes, model: str) -> str:
+    """Document, model and prompt together - any change makes a new entry."""
+    import ai_extractor
+
+    digest = hashlib.sha256()
+    digest.update(pdf_bytes)
+    digest.update(b"\0")
+    digest.update(model.encode("utf-8"))
+    digest.update(b"\0")
+    # The prompt is the third input to the result, so scoring an old
+    # extraction against a reworded prompt would report the old prompt's
+    # accuracy under the new one's name.
+    #
+    # The whole module file, not the extracting function's source: reading a
+    # function object breaks the moment anything replaces it, and the key
+    # must not depend on something that patchable. Hashing the file
+    # over-invalidates - an unrelated edit to ai_extractor.py costs a
+    # re-extraction - and that is the right way to be wrong. A stale hit
+    # scores silently; a stale miss only costs calls.
+    try:
+        digest.update(Path(ai_extractor.__file__).read_bytes())
+    except (OSError, TypeError, AttributeError):
+        # No readable source: fall back to never reusing rather than reusing
+        # across a prompt change nobody can detect.
+        digest.update(os.urandom(16))
+    return digest.hexdigest()
+
+
+def _cached(key: str) -> Optional[dict]:
+    path = CACHE_DIR / f"{key}.json"
+    try:
+        entry = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    # Defensive: a hand-edited or truncated entry must not become a score.
+    if not isinstance(entry.get("data"), dict) or entry.get("source") == "mock":
+        return None
+    return entry
+
+
+def _remember(key: str, document: str, data: dict, source: str, model: str) -> None:
+    try:
+        CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        (CACHE_DIR / f"{key}.json").write_text(
+            json.dumps({
+                "document": document,
+                "data": data,
+                "source": source,
+                "model": model,
+                "extracted_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            }, indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
+    except OSError as exc:
+        # A cache that cannot be written is a slower run, not a failed one.
+        print(f"  ! could not cache {document}: {exc}")
+
+
+def _extract(pdf_path: Path, use_cache: bool = True) -> tuple[dict, str, bool]:
+    """
+    The extracted fields, which provider produced them, and whether it cost a call.
+
+    Re-reading the PDF on a cache hit is deliberate: the key is the document's
+    bytes, so a document that changed must miss.
+    """
     from document_processor import extract_text_from_pdf
     from ai_extractor import extract_structured_data_detailed
+    import ai_providers
 
     data = pdf_path.read_bytes()
+    model = str(ai_providers.describe().get("model") or "unknown")
+    key = _cache_key(data, model)
+
+    if use_cache:
+        entry = _cached(key)
+        if entry is not None:
+            return entry["data"], entry["source"], True
+
     text = extract_text_from_pdf(data, pdf_path.name)
     result = extract_structured_data_detailed(text, pdf_path.name)
-    return (result.get("data") or {}), result.get("source", "mock")
+    fields, source = (result.get("data") or {}), result.get("source", "mock")
+    if source != "mock":
+        _remember(key, pdf_path.name, fields, source, model)
+    return fields, source, False
 
 
 def _refuse_if_mocked() -> None:
@@ -164,7 +257,7 @@ def _refuse_if_ocr_unavailable(labels: List[dict]) -> None:
         )
 
 
-def score(language: Optional[str] = None) -> dict:
+def score(language: Optional[str] = None, use_cache: bool = True) -> dict:
     labels = _load_labels(language)
     if not labels:
         sys.exit(f"No labelled documents{' for ' + language if language else ''}.")
@@ -175,6 +268,7 @@ def score(language: Optional[str] = None) -> dict:
     per_field: Dict[str, Counter] = {}
     documents = []
     contaminated: List[str] = []
+    reused = 0
 
     for label in labels:
         pdf_path = (PROJECT_ROOT / label["document"]).resolve()
@@ -182,7 +276,9 @@ def score(language: Optional[str] = None) -> dict:
             print(f"  ! {label['_label_file']}: {label['document']} not found, skipped")
             continue
 
-        extracted, source = _extract(pdf_path)
+        extracted, source, from_cache = _extract(pdf_path, use_cache)
+        if from_cache:
+            reused += 1
         # The extractor falls back to mock output when a call fails, which is
         # right for an upload and fatal here: one 429 in the middle of a run
         # would score fabricated fields against hand-read labels and fold the
@@ -215,12 +311,17 @@ def score(language: Optional[str] = None) -> dict:
     correct = totals[EXACT] + totals[EQUIVALENT]
     if contaminated:
         listed = "\n".join(f"    {d}" for d in contaminated)
+        done = len(documents) - len(contaminated)
         sys.exit(
             f"{len(contaminated)} of {len(documents)} document(s) fell back to mock\n"
-            f"extraction mid-run, so this score would be part measurement and part\n"
+            f"extraction, so this score would be part measurement and part\n"
             f"fiction:\n{listed}\n\n"
-            "Usually the provider's rate limit. Wait and run again - nothing is\n"
-            "cached, so a clean run costs only the calls."
+            f"The other {done} are extracted and saved, so running again costs "
+            f"{len(contaminated)} call(s), not {len(documents)}.\n"
+            "That matters against a daily quota: the free tier caps requests per\n"
+            "day as well as per minute, so a corpus can be finished across several\n"
+            "runs rather than needing one unbroken one.\n\n"
+            "Wait for the limit to clear and run exactly this command again."
         )
 
     return {
@@ -229,6 +330,12 @@ def score(language: Optional[str] = None) -> dict:
         "totals": dict(totals),
         "fieldsScored": scored,
         "accuracy": (correct / scored) if scored else 0.0,
+        # Provenance, because a run assembled over three days is still a real
+        # measurement but should not pretend to be one sitting. Every reused
+        # extraction was a live model call on the same document, model and
+        # prompt - the cache key is all three.
+        "reusedExtractions": reused,
+        "recordedAt": datetime.now(timezone.utc).isoformat(timespec="seconds"),
     }
 
 
@@ -245,6 +352,9 @@ def _render(result: dict) -> None:
     totals = result["totals"]
     print()
     print(f"  {len(result['documents'])} document(s), {result['fieldsScored']} fields scored")
+    if result.get("reusedExtractions"):
+        print(f"  {result['reusedExtractions']} reused a saved extraction "
+              f"(same document, model and prompt) - pass --fresh to re-call")
     print(f"  accuracy {result['accuracy'] * 100:.1f}%"
           f"  ({totals.get(EXACT, 0)} exact + {totals.get(EQUIVALENT, 0)} equivalent)")
     if totals.get(WRONG):
@@ -297,6 +407,11 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--language", help="score only documents in this language")
     parser.add_argument(
+        "--fresh", action="store_true",
+        help="ignore saved extractions and call the provider for every document "
+             "(costs one request each - check your daily quota first)",
+    )
+    parser.add_argument(
         "--json", dest="json_path", nargs="?", const=str(DASHBOARD_PATH), default=None,
         help=f"write the result as JSON; with no path, to {DASHBOARD_PATH.name}, "
              "which is the file the dashboard reads",
@@ -311,7 +426,7 @@ def main() -> None:
     if refusal:
         sys.exit(refusal)
 
-    result = score(args.language)
+    result = score(args.language, use_cache=not args.fresh)
     result["language"] = args.language or "all"
     _render(result)
 
