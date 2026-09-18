@@ -27,3 +27,38 @@ test("both timers are cleared, so a finished action cannot flash late", () => {
 test("state resets when the action ends", () => {
   assert.match(source, /setVisible\(false\)[\s\S]*setSlow\(false\)/);
 });
+
+
+test("a busy backend is given longer than a second to answer", () => {
+  // Uploading a long document is synchronous work on the same worker -
+  // parsing, OCR, then the model call - and CPU-bound work starves other
+  // requests under the GIL. A 148-page PDF pushed /health past 1.8 seconds
+  // and the pill read "Backend Offline" while the upload it was blocked
+  // behind completed perfectly.
+  const api = readFileSync(
+    new URL("../src/services/api.ts", import.meta.url), "utf8"
+  );
+  const call = api.match(/checkBackendHealth[\s\S]*?apiFetch<[^>]*>\('\/health',\s*undefined,\s*(\d+)\)/);
+  assert.ok(call, "checkBackendHealth should still call /health with a timeout");
+  assert.ok(
+    Number(call[1]) >= 5000,
+    `health timeout is ${call[1]}ms - too tight for a worker doing OCR`
+  );
+});
+
+test("one slow reply does not report the backend as offline", () => {
+  // A pill that flips to "Backend Offline" and back a few seconds later is
+  // alarming and wrong. Two failures in a row is a pattern; one is traffic.
+  const shell = readFileSync(
+    new URL("../src/components/layout/AppShell.tsx", import.meta.url), "utf8"
+  );
+  assert.match(shell, /consecutiveFailures/, "the poller should count failures");
+  assert.match(
+    shell, /consecutiveFailures\s*>=\s*2/,
+    "it should take two consecutive failures to show offline"
+  );
+  assert.match(
+    shell, /consecutiveFailures\s*=\s*0/,
+    "a success must reset the counter, or it would latch"
+  );
+});

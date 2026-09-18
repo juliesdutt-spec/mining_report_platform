@@ -105,7 +105,22 @@ export function AppShell({
   useEffect(() => {
     let interval: ReturnType<typeof setInterval> | undefined;
 
-    const poll = () => checkBackendHealth().then(setBackendStatus);
+    // One failure is not an outage. A single slow reply - most often while
+    // the backend is busy with an upload it is doing on the same worker -
+    // used to flip the pill straight to "Backend Offline" and back again a
+    // few seconds later, which is alarming and wrong. Two in a row is a
+    // pattern; one is traffic.
+    let consecutiveFailures = 0;
+    const poll = () =>
+      checkBackendHealth().then((status) => {
+        if (status.isOnline) {
+          consecutiveFailures = 0;
+          setBackendStatus(status);
+          return;
+        }
+        consecutiveFailures += 1;
+        if (consecutiveFailures >= 2) setBackendStatus(status);
+      });
 
     const start = () => {
       if (interval !== undefined) return;

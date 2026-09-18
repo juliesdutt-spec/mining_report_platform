@@ -112,9 +112,22 @@ export async function apiFetch<T>(
   return (await res.json()) as T;
 }
 
+/**
+ * Whether the backend is answering, for the status pill.
+ *
+ * 6000ms, not 1800. Uploading a long document is synchronous work on the
+ * same worker - parsing, OCR, then the model call - and CPU-bound work in a
+ * threadpool starves other requests under the GIL. A 148-page PDF pushed
+ * /health past 1.8 seconds and the pill read "Backend Offline" while the
+ * upload it was blocked behind completed perfectly. Reporting a busy server
+ * as a dead one, during the one operation most likely to make it busy.
+ *
+ * The caller also has to see two failures in a row before it believes this,
+ * because one slow answer is not an outage.
+ */
 export async function checkBackendHealth(): Promise<{ isOnline: boolean; statusText: string }> {
   try {
-    const data = await apiFetch<{ status?: string }>('/health', undefined, 1800);
+    const data = await apiFetch<{ status?: string }>('/health', undefined, 6000);
     return { isOnline: true, statusText: `FastAPI Live (${data.status ?? 'ok'})` };
   } catch {
     return { isOnline: false, statusText: 'Backend Offline' };
