@@ -87,6 +87,34 @@ def _looks_like_our_schema(parsed: dict) -> bool:
     return bool(SCHEMA_FIELDS & set(parsed))
 
 
+#: How much room the model gets to answer an extraction.
+#:
+#: Was 2000, which is where the whole corpus quietly failed. The reply has to
+#: carry eighteen fields, four of them arrays, plus a summary - and on a
+#: reasoning model the thinking is billed against this same budget before a
+#: single output token is written. A Hindi or Telugu summary costs three to
+#: four times the tokens per character on top. So the model would think,
+#: start writing, and be cut off mid-object; the truncated JSON parsed as
+#: nothing, and every document scored as though extraction had answered and
+#: got everything wrong.
+#:
+#: 8000 is chosen to be uncomfortable rather than tight. Output tokens are
+#: only billed when used, so a generous ceiling costs nothing on a reply that
+#: does not need it, and the failure it prevents is silent and total.
+EXTRACTION_MAX_TOKENS = int(os.getenv("EXTRACTION_MAX_TOKENS", "8000"))
+
+
+def _looks_truncated(text: str) -> bool:
+    """
+    Whether the reply was cut off mid-object rather than never started.
+
+    They need different fixes - a bigger budget against a different model -
+    and they are indistinguishable in the message that matters.
+    """
+    opened = text.count("{")
+    return opened > 0 and opened > text.count("}")
+
+
 def extraction_prompt(text: str, filename: str = "") -> str:
     """
     The exact prompt extraction sends.
@@ -95,7 +123,11 @@ def extraction_prompt(text: str, filename: str = "") -> str:
     A diagnostic that sends a near-enough prompt measures a near-enough
     system, which is how you spend an evening fixing the wrong thing.
     """
-    return f"""You are an expert geological and mining data analyst working for CMPDI/CIL 
+    return f"""Output a single JSON object and nothing else. Do not explain your
+reasoning, do not narrate your thinking, do not write any text before or after
+the object. Begin with {{ and end with }}.
+
+You are an expert geological and mining data analyst working for CMPDI/CIL 
 (Coal Mines Planning and Development India / Coal India Limited).
 
 Analyze the following mining report text and extract ALL structured information.
@@ -167,8 +199,13 @@ def extract_structured_data_detailed(text: str, filename: str = "") -> dict:
 
     provider = ai_providers.describe()["mode"]
     try:
-        reply = ai_providers.complete(prompt, max_tokens=2000)
+        reply = ai_providers.complete(
+            prompt, max_tokens=EXTRACTION_MAX_TOKENS, json_object=True
+        )
         parsed = _parse_json_response(reply)
+        # Kept so the error can say which of the two happened: a reply that
+        # parsed but was the wrong shape, or one that never parsed at all.
+        parsed_before_schema_check = parsed
         if parsed is not None and not _looks_like_our_schema(parsed):
             # It parsed, and it is not an answer to the question asked. A
             # weaker model wraps the object ({"report": {...}}), renames the
@@ -184,11 +221,23 @@ def extract_structured_data_detailed(text: str, filename: str = "") -> dict:
             # guard downstream fires: the scorer refuses and names the
             # document rather than counting its fields as missing, and an
             # upload carries the note instead of storing a blank record.
+            if _looks_truncated(reply):
+                why = (
+                    f"the reply was cut off mid-object after "
+                    f"{EXTRACTION_MAX_TOKENS} token(s) - raise "
+                    "EXTRACTION_MAX_TOKENS"
+                )
+            elif parsed_before_schema_check is not None:
+                why = (
+                    "it sent valid JSON carrying none of the fields asked "
+                    "for - usually a model too small to hold the format"
+                )
+            else:
+                why = "no JSON object could be read out of the reply"
             raise ProviderError(
-                f"{provider} did not answer in the requested format. Run "
-                "`python -m evaluation.show_reply <pdf>` to see exactly what "
-                "it sent. A smaller model may need a larger max_tokens, or a "
-                "different OPENROUTER_MODEL."
+                f"{provider} did not answer in the requested format: {why}. "
+                "Run `python -m evaluation.show_reply <pdf>` to see exactly "
+                "what it sent."
             )
         return {
             "data": parsed,

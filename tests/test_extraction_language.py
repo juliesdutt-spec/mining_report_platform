@@ -152,8 +152,9 @@ class AModelThatDoesNotSendJSONIsAFailureNotAnEmptyExtraction(unittest.TestCase)
         self.assertEqual(result["source"], "mock",
                          "an unreadable reply must not count as a real extraction")
         self.assertIn("did not answer in the requested format", result["note"])
-        # And the note should point somewhere useful on a small model.
-        self.assertIn("OPENROUTER_MODEL", result["note"])
+        # The note names which kind of failure it was - the three need
+        # different fixes and used to share one message.
+        self.assertIn("no JSON object could be read", result["note"])
         self.assertIn("show_reply", result["note"])
 
 
@@ -204,6 +205,141 @@ class ValidJSONThatAnswersADifferentQuestionIsNotAnExtraction(unittest.TestCase)
         prompt = ai_extractor.extraction_prompt("COAL MINE REPORT", "x.pdf")
         self.assertIn("COAL MINE REPORT", prompt)
         self.assertIn("mine_name", prompt)
+        self.assertIn("Respond ONLY with valid JSON", prompt)
+
+
+class TheReplyIsGivenRoomToFinish(unittest.TestCase):
+    """
+    Every document in production failed on gemini AND on openrouter, which
+    is the shape of a bug in this code rather than in either model.
+
+    2000 output tokens has to carry eighteen fields, four of them arrays,
+    and a summary. On a reasoning model the thinking is billed against that
+    same budget before a single output token is written, and a Hindi or
+    Telugu summary costs three to four times the tokens per character. So
+    the model thought, started writing, and was cut off mid-object - the
+    truncated JSON parsed as nothing, and the document was recorded as an
+    extraction that answered and got everything wrong.
+    """
+
+    def test_the_budget_is_far_above_what_the_fields_need(self):
+        self.assertGreaterEqual(
+            ai_extractor.EXTRACTION_MAX_TOKENS, 4000,
+            "eighteen fields plus a non-Latin summary does not fit in less",
+        )
+
+    def test_the_budget_is_what_is_actually_sent(self):
+        seen = {}
+
+        def capture(prompt, max_tokens=1000, json_object=False):
+            seen["max_tokens"] = max_tokens
+            return '{"mine_name": "Jharia"}'
+
+        with mock.patch.object(ai_extractor, "USE_MOCK", False), \
+             mock.patch.object(ai_providers, "describe",
+                               return_value={"mode": "gemini", "model": "m"}), \
+             mock.patch.object(ai_providers, "complete", capture):
+            ai_extractor.extract_structured_data_detailed("text", "t.pdf")
+
+        self.assertEqual(seen["max_tokens"], ai_extractor.EXTRACTION_MAX_TOKENS)
+
+    def test_a_truncated_reply_says_so_rather_than_blaming_the_model(self):
+        # "did not answer in the requested format" sent an evening into
+        # swapping models when the fix was a number.
+        with mock.patch.object(ai_extractor, "USE_MOCK", False), \
+             mock.patch.object(ai_providers, "describe",
+                               return_value={"mode": "gemini", "model": "m"}), \
+             mock.patch.object(ai_providers, "complete",
+                               return_value='{"mine_name": "Jharia", "loca'):
+            result = ai_extractor.extract_structured_data_detailed("text", "t.pdf")
+
+        self.assertEqual(result["source"], "mock")
+        self.assertIn("cut off mid-object", result["note"])
+        self.assertIn("EXTRACTION_MAX_TOKENS", result["note"])
+
+    def test_an_off_schema_reply_is_described_differently_from_a_truncated_one(self):
+        with mock.patch.object(ai_extractor, "USE_MOCK", False), \
+             mock.patch.object(ai_providers, "describe",
+                               return_value={"mode": "gemini", "model": "m"}), \
+             mock.patch.object(ai_providers, "complete",
+                               return_value='{"report": {"mine_name": "J"}}'):
+            result = ai_extractor.extract_structured_data_detailed("text", "t.pdf")
+
+        self.assertIn("none of the fields asked for", result["note"])
+        self.assertNotIn("cut off", result["note"])
+
+    def test_prose_with_no_json_is_described_differently_again(self):
+        with mock.patch.object(ai_extractor, "USE_MOCK", False), \
+             mock.patch.object(ai_providers, "describe",
+                               return_value={"mode": "gemini", "model": "m"}), \
+             mock.patch.object(ai_providers, "complete",
+                               return_value="I cannot read that document."):
+            result = ai_extractor.extract_structured_data_detailed("text", "t.pdf")
+
+        self.assertIn("no JSON object could be read", result["note"])
+
+    def test_truncation_is_detected_by_unbalanced_braces_only(self):
+        self.assertTrue(ai_extractor._looks_truncated('{"a": 1, "b'))
+        self.assertFalse(ai_extractor._looks_truncated('{"a": 1}'))
+        self.assertFalse(ai_extractor._looks_truncated("no braces here"))
+
+
+class TheModelIsConstrainedToJSONNotAskedNicely(unittest.TestCase):
+    """
+    Every Devanagari and Telugu document in the corpus failed while every
+    Latin one passed. Not OCR - the English scan passed and the Hindi scan
+    did not, and both OCR'd fine. The reply showed why:
+
+        Here's a thinking process:
+        1. **Analyze User Request:** ...
+
+    The model narrated its reasoning in plain prose - not in <think> tags
+    that could be stripped, just prose - and on a document hard enough to
+    deliberate over, it never reached the JSON at all. Eight thousand tokens
+    of visible thinking, cut off mid-sentence. The English documents it
+    answered directly, which is what made it look like a script problem
+    rather than a format one.
+
+    "Respond ONLY with valid JSON" in the prompt is a request. The API's own
+    JSON mode is a constraint.
+    """
+
+    def test_extraction_asks_the_api_for_json_not_just_the_model(self):
+        seen = {}
+
+        def capture(prompt, max_tokens=1000, json_object=False):
+            seen["json_object"] = json_object
+            return '{"mine_name": "Jayant Opencast Mine"}'
+
+        with mock.patch.object(ai_extractor, "USE_MOCK", False), \
+             mock.patch.object(ai_providers, "describe",
+                               return_value={"mode": "openrouter", "model": "m"}), \
+             mock.patch.object(ai_providers, "complete", capture):
+            ai_extractor.extract_structured_data_detailed("text", "t.pdf")
+
+        self.assertTrue(seen["json_object"], "a prompt instruction is not a constraint")
+
+    def test_openrouter_sends_response_format(self):
+        body = ai_providers._chat_body("m", "p", 100, True)
+        self.assertEqual(body["response_format"], {"type": "json_object"})
+
+    def test_a_non_json_call_is_left_unconstrained(self):
+        # Summaries and Q&A are prose. Forcing JSON on them would break them.
+        self.assertNotIn("response_format", ai_providers._chat_body("m", "p", 100, False))
+        self.assertNotIn("responseMimeType", ai_providers._generation_config(100, False))
+
+    def test_gemini_sends_its_own_spelling_of_the_same_thing(self):
+        config = ai_providers._generation_config(100, True)
+        self.assertEqual(config["responseMimeType"], "application/json")
+        self.assertEqual(config["maxOutputTokens"], 100)
+
+    def test_the_prompt_forbids_narration_before_it_asks_for_anything(self):
+        # Front-loaded as well as repeated at the end: a model that drops
+        # instructions drops the ones furthest from where it starts writing.
+        prompt = ai_extractor.extraction_prompt("COAL", "x.pdf")
+        opening = prompt[:200]
+        self.assertIn("nothing else", opening)
+        self.assertIn("narrate", opening)
         self.assertIn("Respond ONLY with valid JSON", prompt)
 
 

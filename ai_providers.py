@@ -267,7 +267,8 @@ class Provider:
         """
         return self.is_configured()
 
-    def complete(self, prompt: str, max_tokens: int = 1000) -> str:
+    def complete(self, prompt: str, max_tokens: int = 1000,
+                 json_object: bool = False) -> str:
         raise NotImplementedError
 
     # -------------------------------------------------------- embeddings ---
@@ -289,6 +290,34 @@ class Provider:
         raise ProviderError(f"{self.name} has no embeddings API.")
 
 
+#: Asking a model for JSON in the prompt is a request; asking the API for it
+#: is a constraint. A reasoning model handed a hard document narrates its
+#: thinking in plain prose first - not in <think> tags that could be stripped,
+#: just prose - and on a long enough deliberation never reaches the answer at
+#: all. That is what happened to every Devanagari and Telugu document in the
+#: corpus: eight thousand tokens of visible reasoning, cut off mid-sentence,
+#: no JSON. The English ones answered directly and were fine, which is why it
+#: looked like a script problem rather than a format one.
+def _chat_body(model: str, prompt: str, max_tokens: int, json_object: bool) -> dict:
+    """An OpenAI-compatible chat request, JSON-constrained when asked."""
+    body = {
+        "model": model,
+        "max_tokens": max_tokens,
+        "messages": [{"role": "user", "content": prompt}],
+    }
+    if json_object:
+        body["response_format"] = {"type": "json_object"}
+    return body
+
+
+def _generation_config(max_tokens: int, json_object: bool) -> dict:
+    """Gemini's spelling of the same thing."""
+    config: dict = {"maxOutputTokens": max_tokens}
+    if json_object:
+        config["responseMimeType"] = "application/json"
+    return config
+
+
 class ClaudeProvider(Provider):
     """Anthropic's API, through the SDK when installed and REST when not."""
 
@@ -303,7 +332,8 @@ class ClaudeProvider(Provider):
     def unconfigured_reason(self) -> str:
         return "CLAUDE_API_KEY is not set."
 
-    def complete(self, prompt: str, max_tokens: int = 1000) -> str:
+    def complete(self, prompt: str, max_tokens: int = 1000,
+                 json_object: bool = False) -> str:
         try:
             import anthropic
         except ImportError:
@@ -433,8 +463,9 @@ class GeminiProvider(Provider):
     def unconfigured_reason(self) -> str:
         return "GEMINI_API_KEY is not set."
 
-    def complete(self, prompt: str, max_tokens: int = 1000) -> str:
-        data = self._generate(prompt, max_tokens)
+    def complete(self, prompt: str, max_tokens: int = 1000,
+                 json_object: bool = False) -> str:
+        data = self._generate(prompt, max_tokens, json_object)
 
         candidates = data.get("candidates") or []
         if not candidates:
@@ -452,7 +483,7 @@ class GeminiProvider(Provider):
         return text
 
 
-    def _generate(self, prompt: str, max_tokens: int) -> dict:
+    def _generate(self, prompt: str, max_tokens: int, json_object: bool = False) -> dict:
         """
         One generation call, paced and retried.
 
@@ -471,7 +502,7 @@ class GeminiProvider(Provider):
                     f"{self.endpoint}/{self.model}:generateContent",
                     {
                         "contents": [{"parts": [{"text": prompt}]}],
-                        "generationConfig": {"maxOutputTokens": max_tokens},
+                        "generationConfig": _generation_config(max_tokens, json_object),
                     },
                     {"x-goog-api-key": GEMINI_API_KEY},
                 )
@@ -621,14 +652,11 @@ class OpenRouterProvider(Provider):
         # A key with no model id is the common half-finished setup here.
         return bool(OPENROUTER_API_KEY)
 
-    def complete(self, prompt: str, max_tokens: int = 1000) -> str:
+    def complete(self, prompt: str, max_tokens: int = 1000,
+                 json_object: bool = False) -> str:
         data = _post_json(
             self.endpoint,
-            {
-                "model": self.model,
-                "max_tokens": max_tokens,
-                "messages": [{"role": "user", "content": prompt}],
-            },
+            _chat_body(self.model, prompt, max_tokens, json_object),
             {"Authorization": f"Bearer {OPENROUTER_API_KEY}"},
         )
 
@@ -662,7 +690,8 @@ class OllamaProvider(Provider):
     def unconfigured_reason(self) -> str:
         return "OLLAMA_MODEL or OLLAMA_HOST is empty."
 
-    def complete(self, prompt: str, max_tokens: int = 1000) -> str:
+    def complete(self, prompt: str, max_tokens: int = 1000,
+                 json_object: bool = False) -> str:
         data = _post_json(
             f"{self.host}/api/chat",
             {
@@ -670,6 +699,7 @@ class OllamaProvider(Provider):
                 "messages": [{"role": "user", "content": prompt}],
                 "stream": False,
                 "options": {"num_predict": max_tokens},
+                **({"format": "json"} if json_object else {}),
             },
         )
         text = str((data.get("message") or {}).get("content", "")).strip()
@@ -825,7 +855,7 @@ MOCK_REASON_FOR_EMBED = MOCK_REASON
 EMBED_PROVIDER, EMBED_REASON = _resolve_embedder(ACTIVE_PROVIDER)
 
 
-def complete(prompt: str, max_tokens: int = 1000) -> str:
+def complete(prompt: str, max_tokens: int = 1000, json_object: bool = False) -> str:
     """
     Complete a prompt with the active provider.
 
@@ -834,7 +864,7 @@ def complete(prompt: str, max_tokens: int = 1000) -> str:
     """
     if ACTIVE_PROVIDER is None:
         raise ProviderError(MOCK_REASON or "No AI provider is configured.")
-    return ACTIVE_PROVIDER.complete(prompt, max_tokens)
+    return ACTIVE_PROVIDER.complete(prompt, max_tokens, json_object)
 
 
 def embed(texts: list[str]) -> list[list[float]]:
