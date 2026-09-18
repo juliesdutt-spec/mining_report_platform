@@ -231,7 +231,7 @@ class TheReplyIsGivenRoomToFinish(unittest.TestCase):
     def test_the_budget_is_what_is_actually_sent(self):
         seen = {}
 
-        def capture(prompt, max_tokens=1000):
+        def capture(prompt, max_tokens=1000, json_object=False):
             seen["max_tokens"] = max_tokens
             return '{"mine_name": "Jharia"}'
 
@@ -282,6 +282,65 @@ class TheReplyIsGivenRoomToFinish(unittest.TestCase):
         self.assertTrue(ai_extractor._looks_truncated('{"a": 1, "b'))
         self.assertFalse(ai_extractor._looks_truncated('{"a": 1}'))
         self.assertFalse(ai_extractor._looks_truncated("no braces here"))
+
+
+class TheModelIsConstrainedToJSONNotAskedNicely(unittest.TestCase):
+    """
+    Every Devanagari and Telugu document in the corpus failed while every
+    Latin one passed. Not OCR - the English scan passed and the Hindi scan
+    did not, and both OCR'd fine. The reply showed why:
+
+        Here's a thinking process:
+        1. **Analyze User Request:** ...
+
+    The model narrated its reasoning in plain prose - not in <think> tags
+    that could be stripped, just prose - and on a document hard enough to
+    deliberate over, it never reached the JSON at all. Eight thousand tokens
+    of visible thinking, cut off mid-sentence. The English documents it
+    answered directly, which is what made it look like a script problem
+    rather than a format one.
+
+    "Respond ONLY with valid JSON" in the prompt is a request. The API's own
+    JSON mode is a constraint.
+    """
+
+    def test_extraction_asks_the_api_for_json_not_just_the_model(self):
+        seen = {}
+
+        def capture(prompt, max_tokens=1000, json_object=False):
+            seen["json_object"] = json_object
+            return '{"mine_name": "Jayant Opencast Mine"}'
+
+        with mock.patch.object(ai_extractor, "USE_MOCK", False), \
+             mock.patch.object(ai_providers, "describe",
+                               return_value={"mode": "openrouter", "model": "m"}), \
+             mock.patch.object(ai_providers, "complete", capture):
+            ai_extractor.extract_structured_data_detailed("text", "t.pdf")
+
+        self.assertTrue(seen["json_object"], "a prompt instruction is not a constraint")
+
+    def test_openrouter_sends_response_format(self):
+        body = ai_providers._chat_body("m", "p", 100, True)
+        self.assertEqual(body["response_format"], {"type": "json_object"})
+
+    def test_a_non_json_call_is_left_unconstrained(self):
+        # Summaries and Q&A are prose. Forcing JSON on them would break them.
+        self.assertNotIn("response_format", ai_providers._chat_body("m", "p", 100, False))
+        self.assertNotIn("responseMimeType", ai_providers._generation_config(100, False))
+
+    def test_gemini_sends_its_own_spelling_of_the_same_thing(self):
+        config = ai_providers._generation_config(100, True)
+        self.assertEqual(config["responseMimeType"], "application/json")
+        self.assertEqual(config["maxOutputTokens"], 100)
+
+    def test_the_prompt_forbids_narration_before_it_asks_for_anything(self):
+        # Front-loaded as well as repeated at the end: a model that drops
+        # instructions drops the ones furthest from where it starts writing.
+        prompt = ai_extractor.extraction_prompt("COAL", "x.pdf")
+        opening = prompt[:200]
+        self.assertIn("nothing else", opening)
+        self.assertIn("narrate", opening)
+        self.assertIn("Respond ONLY with valid JSON", prompt)
 
 
 if __name__ == "__main__":

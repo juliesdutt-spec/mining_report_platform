@@ -123,7 +123,11 @@ def extraction_prompt(text: str, filename: str = "") -> str:
     A diagnostic that sends a near-enough prompt measures a near-enough
     system, which is how you spend an evening fixing the wrong thing.
     """
-    return f"""You are an expert geological and mining data analyst working for CMPDI/CIL 
+    return f"""Output a single JSON object and nothing else. Do not explain your
+reasoning, do not narrate your thinking, do not write any text before or after
+the object. Begin with {{ and end with }}.
+
+You are an expert geological and mining data analyst working for CMPDI/CIL 
 (Coal Mines Planning and Development India / Coal India Limited).
 
 Analyze the following mining report text and extract ALL structured information.
@@ -195,7 +199,9 @@ def extract_structured_data_detailed(text: str, filename: str = "") -> dict:
 
     provider = ai_providers.describe()["mode"]
     try:
-        reply = ai_providers.complete(prompt, max_tokens=EXTRACTION_MAX_TOKENS)
+        reply = ai_providers.complete(
+            prompt, max_tokens=EXTRACTION_MAX_TOKENS, json_object=True
+        )
         parsed = _parse_json_response(reply)
         # Kept so the error can say which of the two happened: a reply that
         # parsed but was the wrong shape, or one that never parsed at all.
