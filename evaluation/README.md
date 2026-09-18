@@ -71,6 +71,13 @@ documents in both, and tesseract with only English does not fail on a
 Devanagari page, it returns confident Latin nonsense. Let the installer add
 the directory to PATH, then open a new terminal.
 
+If you already installed it and PATH was missed — which is the common outcome,
+the checkbox is easy to skip — you do not have to fix PATH. The standard
+install locations are checked automatically; for anywhere else, put the full
+path in `.env`:
+
+    TESSERACT_CMD=C:\Program Files\Tesseract-OCR\tesseract.exe
+
 **macOS** — `brew install tesseract tesseract-lang`
 
 **Debian/Ubuntu** — `sudo apt-get install tesseract-ocr tesseract-ocr-hin tesseract-ocr-tel`

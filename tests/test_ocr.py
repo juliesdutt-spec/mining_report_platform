@@ -13,6 +13,7 @@ import io
 import os
 import sys
 import unittest
+from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -118,6 +119,61 @@ class OcrWiringTests(unittest.TestCase):
     def test_an_unreadable_pdf_still_returns_a_message_not_a_crash(self):
         self.assertIn("could not extract", extract_text_from_pdf(b"not a pdf", "x.pdf").lower()
                       + _fallback_extraction(b"not a pdf").lower())
+
+
+class TesseractIsFoundWithoutEditingPATH(unittest.TestCase):
+    """
+    Reported from a real Windows machine: tesseract installed, PATH not
+    updated, and every scanned document silently extracting to nothing. The
+    UB Mannheim installer offers to add itself to PATH and the box is easy to
+    miss, so this is the normal outcome rather than an unlucky one.
+    """
+
+    def test_PATH_wins_and_pytesseract_is_left_alone(self):
+        with mock.patch.object(document_processor.shutil, "which", return_value="/usr/bin/tesseract"):
+            self.assertIsNone(document_processor._locate_tesseract())
+
+    def test_an_explicit_setting_is_used_when_PATH_has_nothing(self):
+        with mock.patch.object(document_processor.shutil, "which", return_value=None), \
+             mock.patch.object(document_processor, "TESSERACT_CMD", r"D:\tools\tesseract.exe"):
+            self.assertEqual(document_processor._locate_tesseract(), r"D:\tools\tesseract.exe")
+
+    def test_a_wrong_setting_is_not_quietly_replaced_by_a_guess(self):
+        # It must fail naming what the operator asked for. Falling through to
+        # a working guess would report a different problem than the one they
+        # created, and they would never find their typo.
+        with mock.patch.object(document_processor.shutil, "which", return_value=None), \
+             mock.patch.object(document_processor, "TESSERACT_CMD", r"C:\typo\tesseract.exe"), \
+             mock.patch.object(sys, "platform", "win32"), \
+             mock.patch.object(os.path, "isfile", return_value=True):
+            self.assertEqual(document_processor._locate_tesseract(), r"C:\typo\tesseract.exe")
+
+    def test_the_standard_windows_install_is_found_on_its_own(self):
+        expected = document_processor._WINDOWS_TESSERACT_PATHS[0]
+        with mock.patch.object(document_processor.shutil, "which", return_value=None), \
+             mock.patch.object(document_processor, "TESSERACT_CMD", ""), \
+             mock.patch.object(sys, "platform", "win32"), \
+             mock.patch.object(os.path, "isfile", lambda p: p == expected):
+            self.assertEqual(document_processor._locate_tesseract(), expected)
+
+    def test_nothing_anywhere_gives_up_rather_than_inventing_a_path(self):
+        with mock.patch.object(document_processor.shutil, "which", return_value=None), \
+             mock.patch.object(document_processor, "TESSERACT_CMD", ""), \
+             mock.patch.object(sys, "platform", "win32"), \
+             mock.patch.object(os.path, "isfile", return_value=False):
+            self.assertIsNone(document_processor._locate_tesseract())
+
+    def test_the_windows_hint_offers_the_env_var_not_only_a_PATH_edit(self):
+        with mock.patch.object(sys, "platform", "win32"):
+            hint = document_processor._install_hint()
+        self.assertIn("TESSERACT_CMD", hint)
+        self.assertIn("UB-Mannheim", hint)
+
+    def test_status_says_where_the_binary_came_from(self):
+        status = document_processor.ocr_status()
+        self.assertIn("path", status)
+        if status["ok"]:
+            self.assertTrue(status["path"], "a working install must say where it is")
 
 
 if __name__ == "__main__":

@@ -6,6 +6,7 @@ Pipeline: PDF Upload → Extract Text → OCR (if scanned) → Chunk Text
 """
 import io
 import os
+import shutil
 import sys
 from typing import List, Optional, Tuple
 
@@ -19,6 +20,51 @@ try:
 except (ImportError, OSError):
     OCR_AVAILABLE = False
     print("[WARN] pytesseract not available. OCR for scanned PDFs will be limited.")
+
+
+#: An explicit path to the tesseract binary, for a host where it is installed
+#: but not on PATH. Set it in .env like every other setting here.
+TESSERACT_CMD = os.getenv("TESSERACT_CMD", "").strip()
+
+#: Where the Windows installer actually puts tesseract.exe. The UB Mannheim
+#: build offers to add itself to PATH and the box is easy to miss, which
+#: leaves a machine where tesseract is genuinely installed and nothing can
+#: find it. Editing the system PATH and restarting the terminal to fix that is
+#: a poor use of anyone's evening when the file is in one of four places.
+_WINDOWS_TESSERACT_PATHS = (
+    r"C:\Program Files\Tesseract-OCR\tesseract.exe",
+    r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe",
+    os.path.expandvars(r"%LOCALAPPDATA%\Programs\Tesseract-OCR\tesseract.exe"),
+    os.path.expandvars(r"%LOCALAPPDATA%\Tesseract-OCR\tesseract.exe"),
+)
+
+
+def _locate_tesseract() -> Optional[str]:
+    """
+    Where to find tesseract when PATH cannot, or None to leave PATH to it.
+
+    TESSERACT_CMD is returned even when it points at nothing: a setting that
+    is wrong should fail saying what it looked for, not fall through to a
+    guess and report a different problem than the one the operator created.
+    """
+    if shutil.which("tesseract"):
+        return None
+    if TESSERACT_CMD:
+        return TESSERACT_CMD
+    if sys.platform.startswith("win"):
+        for candidate in _WINDOWS_TESSERACT_PATHS:
+            if candidate and os.path.isfile(candidate):
+                return candidate
+    return None
+
+
+#: The path OCR is actually using, for ocr_status to report. None means PATH.
+_TESSERACT_PATH: Optional[str] = None
+
+if OCR_AVAILABLE:
+    _TESSERACT_PATH = _locate_tesseract()
+    if _TESSERACT_PATH:
+        pytesseract.pytesseract.tesseract_cmd = _TESSERACT_PATH
 
 
 # Which languages OCR should look for, as tesseract language codes joined by
@@ -131,25 +177,34 @@ def ocr_status() -> dict:
             "reason": "the pytesseract package is not installed (pip install pytesseract)",
             "version": None,
             "languages": None,
+            "path": None,
         }
     try:
         version = str(pytesseract.get_tesseract_version())
     except Exception as exc:  # noqa: BLE001 - TesseractNotFoundError and friends
+        looked_in = (
+            f"tried {_TESSERACT_PATH!r}" if _TESSERACT_PATH else "not on PATH"
+        )
         return {
             "ok": False,
             "reason": (
                 "the pytesseract package is installed but the tesseract binary "
-                f"it wraps is not on PATH ({type(exc).__name__}). "
+                f"it wraps could not be run ({looked_in}; {type(exc).__name__}). "
                 + _install_hint()
             ),
             "version": None,
             "languages": None,
+            "path": _TESSERACT_PATH,
         }
     return {
         "ok": True,
         "reason": None,
         "version": version,
         "languages": _available_ocr_languages(),
+        # Worth reporting: "working" via a guessed Windows path is a different
+        # situation from "working" via PATH, and the next person to move the
+        # install will care which one this was.
+        "path": _TESSERACT_PATH or "on PATH",
     }
 
 
@@ -157,10 +212,13 @@ def _install_hint() -> str:
     """How to install tesseract here, named for the platform actually running."""
     if sys.platform.startswith("win"):
         return (
-            "Install it from https://github.com/UB-Mannheim/tesseract/wiki, tick "
-            "Hindi and Telugu under 'Additional language data' during setup, and "
-            "make sure the install directory is on PATH (the installer offers "
-            "this; a new terminal is needed afterwards)."
+            "Install it from https://github.com/UB-Mannheim/tesseract/wiki and tick "
+            "Hindi and Telugu under 'Additional language data' during setup. If it "
+            "is already installed, you do not have to touch PATH - put the full "
+            "path to tesseract.exe in your .env instead, for example:\n"
+            "    TESSERACT_CMD=C:\\Program Files\\Tesseract-OCR\\tesseract.exe\n"
+            "The standard install locations are checked automatically, so this is "
+            "only needed for one somewhere else."
         )
     if sys.platform == "darwin":
         return "Install it with: brew install tesseract tesseract-lang"
