@@ -5,7 +5,9 @@ The scorer that finally puts a number on extraction.
 Its own logic has to be right, or the measurement is worse than none: a
 generous scorer would report accuracy the platform does not have.
 """
+import builtins
 import json
+import re
 import unittest
 from pathlib import Path
 
@@ -348,6 +350,71 @@ class TheOCRProbeTellsAHalfInstallFromAWorkingOne(unittest.TestCase):
         self.assertIn("binary", status["reason"])
         # And it says what to do about it, on the platform actually running.
         self.assertTrue(len(status["reason"]) > 60, status["reason"])
+
+
+class TheInspectorRunsOnAFreshWindowsCheckout(unittest.TestCase):
+    """
+    The first command in the evaluation README, and the one sold as needing no
+    API key. It crashed on a real machine with `No module named 'fitz'`.
+    """
+
+    def test_nothing_imports_the_deprecated_fitz_alias(self):
+        # PyMuPDF is `pymupdf`; `fitz` is the legacy alias, kept for
+        # compatibility and not guaranteed to be installed. The rest of the
+        # codebase already imports pymupdf, so the one module still asking for
+        # fitz was the one tool meant to run before anything else is set up.
+        root = Path(__file__).resolve().parent.parent
+        offenders = []
+        for path in root.rglob("*.py"):
+            if "node_modules" in path.parts or ".git" in path.parts:
+                continue
+            text = path.read_text(encoding="utf-8", errors="ignore")
+            if re.search(r"^\s*import fitz\b|^\s*from fitz\b", text, re.M):
+                offenders.append(str(path.relative_to(root)))
+        self.assertEqual(offenders, [], "use pymupdf, not the fitz alias")
+
+    def test_the_text_layer_check_survives_without_pymupdf(self):
+        """
+        pymupdf missing must not make every document look like a scan.
+
+        It did: has_usable_text_layer returned False on ImportError, so a
+        machine without it would have the scorer refuse over thirteen
+        documents, eleven of which read perfectly through pypdf.
+        """
+        real_import = builtins.__import__
+
+        def without_pymupdf(name, *args, **kwargs):
+            if name == "pymupdf":
+                raise ImportError("simulated: pymupdf is not installed")
+            return real_import(name, *args, **kwargs)
+
+        corpus = Path(__file__).resolve().parent.parent / "samples" / "corpus"
+        text_layer = (corpus / "EN-01_Jharia_BCCL_FY2024-25.pdf").read_bytes()
+        scan = (corpus / "SCAN-01_Sohagpur_SECL_FY2024-25_scanned.pdf").read_bytes()
+
+        with mock.patch.object(builtins, "__import__", without_pymupdf):
+            self.assertTrue(document_processor.has_usable_text_layer(text_layer))
+            self.assertFalse(document_processor.has_usable_text_layer(scan))
+            self.assertEqual(document_processor.page_count(text_layer), 2)
+
+        # And the verdict is the same one pymupdf gives, or the fallback would
+        # quietly change which documents the scorer refuses over.
+        self.assertTrue(document_processor.has_usable_text_layer(text_layer))
+        self.assertFalse(document_processor.has_usable_text_layer(scan))
+
+    def test_a_missing_dependency_is_an_instruction_not_a_traceback(self):
+        from evaluation import inspect_documents
+
+        with mock.patch.object(inspect_documents, "REQUIRED", [("no_such_module", "somepkg")]):
+            with self.assertRaises(SystemExit) as caught:
+                inspect_documents._require_dependencies()
+        message = str(caught.exception)
+        self.assertIn("somepkg", message)
+        self.assertIn("pip install -r requirements.txt", message)
+
+    def test_an_unreadable_file_has_no_pages_rather_than_raising(self):
+        self.assertEqual(document_processor.page_count(b"not a pdf"), 0)
+        self.assertFalse(document_processor.has_usable_text_layer(b"not a pdf"))
 
 
 if __name__ == "__main__":
