@@ -63,22 +63,39 @@ def extract_structured_data(text: str, filename: str = "") -> dict:
     return extract_structured_data_detailed(text, filename)["data"]
 
 
-def extract_structured_data_detailed(text: str, filename: str = "") -> dict:
-    """
-    Extraction, plus whether a real provider actually produced it.
+#: A reply has to contain at least one of these to be an answer to the prompt
+#: rather than merely valid JSON. Kept deliberately small - the fields the
+#: platform is actually built around - so a partial extraction still counts.
+SCHEMA_FIELDS = frozenset({
+    "report_date", "location", "district", "state", "mineral_type",
+    "quantity_extracted", "extraction_method", "company_name", "mine_name",
+    "area_sq_km", "reserve_estimate", "summary", "key_findings", "topics",
+    "minerals_mentioned", "locations_mentioned", "financial_data",
+    "environmental_notes",
+})
 
-    Mirrors `query_reports_detailed`. It exists because the fallback above is
-    silent by design: a 429 in the middle of a run returns mock fields that
-    look exactly like extracted ones. That is right for an upload and wrong
-    for a measurement - scoring mock output against hand-read labels produces
-    a number describing nothing, which is the one thing the harness is for.
 
-    Returns {"data": dict, "source": "gemini" | ... | "mock", "note": str|None}.
+def _looks_like_our_schema(parsed: dict) -> bool:
     """
-    if USE_MOCK:
-        return {"data": _mock_extraction(text, filename), "source": "mock", "note": None}
-    
-    prompt = f"""You are an expert geological and mining data analyst working for CMPDI/CIL 
+    Whether this object answers the prompt, or is merely valid JSON.
+
+    Checked on keys, not values. A document that genuinely states none of
+    these comes back with the keys present and null, which is a real
+    extraction of a thin document and must still score. An object with none
+    of the keys at all is a different shape entirely.
+    """
+    return bool(SCHEMA_FIELDS & set(parsed))
+
+
+def extraction_prompt(text: str, filename: str = "") -> str:
+    """
+    The exact prompt extraction sends.
+
+    Lifted out so `python -m evaluation.show_reply` can send the same one.
+    A diagnostic that sends a near-enough prompt measures a near-enough
+    system, which is how you spend an evening fixing the wrong thing.
+    """
+    return f"""You are an expert geological and mining data analyst working for CMPDI/CIL 
 (Coal Mines Planning and Development India / Coal India Limited).
 
 Analyze the following mining report text and extract ALL structured information.
@@ -130,18 +147,48 @@ numerals, and units stay as the document gives them.
 
 Respond ONLY with valid JSON. No markdown, no explanation."""
 
+
+def extract_structured_data_detailed(text: str, filename: str = "") -> dict:
+    """
+    Extraction, plus whether a real provider actually produced it.
+
+    Mirrors `query_reports_detailed`. It exists because the fallback above is
+    silent by design: a 429 in the middle of a run returns mock fields that
+    look exactly like extracted ones. That is right for an upload and wrong
+    for a measurement - scoring mock output against hand-read labels produces
+    a number describing nothing, which is the one thing the harness is for.
+
+    Returns {"data": dict, "source": "gemini" | ... | "mock", "note": str|None}.
+    """
+    if USE_MOCK:
+        return {"data": _mock_extraction(text, filename), "source": "mock", "note": None}
+    
+    prompt = extraction_prompt(text, filename)
+
     provider = ai_providers.describe()["mode"]
     try:
-        parsed = _parse_json_response(ai_providers.complete(prompt, max_tokens=2000))
+        reply = ai_providers.complete(prompt, max_tokens=2000)
+        parsed = _parse_json_response(reply)
+        if parsed is not None and not _looks_like_our_schema(parsed):
+            # It parsed, and it is not an answer to the question asked. A
+            # weaker model wraps the object ({"report": {...}}), renames the
+            # fields, or returns something else entirely - and every one of
+            # those reaches the scorer as a valid dict whose .get() calls all
+            # return None. Thirteen documents came back that way once and
+            # scored 0.0%, with no refusal, because "the provider answered"
+            # was true and "the provider answered this question" was never
+            # checked.
+            parsed = None
         if parsed is None:
             # Not an extraction. Handled exactly like a failed call, so every
             # guard downstream fires: the scorer refuses and names the
             # document rather than counting its fields as missing, and an
             # upload carries the note instead of storing a blank record.
             raise ProviderError(
-                f"{provider} replied without valid JSON - the model did not "
-                "follow the output format. A smaller model may need a larger "
-                "max_tokens, or a different OPENROUTER_MODEL."
+                f"{provider} did not answer in the requested format. Run "
+                "`python -m evaluation.show_reply <pdf>` to see exactly what "
+                "it sent. A smaller model may need a larger max_tokens, or a "
+                "different OPENROUTER_MODEL."
             )
         return {
             "data": parsed,

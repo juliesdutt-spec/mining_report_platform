@@ -22,11 +22,17 @@ from validation_engine import COMPARABLE_FIELDS
 class TheFieldsUsedForMatchingAreNormalised(unittest.TestCase):
     @property
     def prompt_source(self) -> str:
-        # The prompt lives in the detailed form; the public one delegates to
-        # it. Read the wrong one and these assertions pass on a docstring
-        # that happens to name a few of the same fields - which is exactly
-        # what they did for one commit.
-        return inspect.getsource(ai_extractor.extract_structured_data_detailed)
+        # The prompt now lives in extraction_prompt, lifted out so the
+        # show_reply diagnostic can send the identical one. Read the wrong
+        # function and these assertions pass on a docstring that happens to
+        # name a few of the same fields - which is exactly what they did for
+        # one commit, and what they did again when the prompt moved.
+        return inspect.getsource(ai_extractor.extraction_prompt)
+
+    def test_the_detailed_extractor_still_sends_that_prompt(self):
+        """The policy is worthless if the caller stops using the prompt."""
+        caller = inspect.getsource(ai_extractor.extract_structured_data_detailed)
+        self.assertIn("extraction_prompt(", caller)
 
     def test_the_public_extractor_cannot_bypass_the_policy(self):
         """Both callers must reach the same prompt, or one of them drifts."""
@@ -145,9 +151,60 @@ class AModelThatDoesNotSendJSONIsAFailureNotAnEmptyExtraction(unittest.TestCase)
 
         self.assertEqual(result["source"], "mock",
                          "an unreadable reply must not count as a real extraction")
-        self.assertIn("valid JSON", result["note"])
+        self.assertIn("did not answer in the requested format", result["note"])
         # And the note should point somewhere useful on a small model.
         self.assertIn("OPENROUTER_MODEL", result["note"])
+        self.assertIn("show_reply", result["note"])
+
+
+class ValidJSONThatAnswersADifferentQuestionIsNotAnExtraction(unittest.TestCase):
+    """
+    Thirteen documents scored 0.0% - every field missing, no refusal.
+
+    "The provider answered" was true. "The provider answered this question"
+    was never checked. A weaker model wraps the object, renames the fields,
+    or replies with something else entirely, and each of those reaches the
+    scorer as a perfectly valid dict whose .get() calls all return None. The
+    score table then reads exactly like a model that got everything wrong.
+    """
+
+    def test_our_own_schema_is_accepted(self):
+        self.assertTrue(ai_extractor._looks_like_our_schema({"mine_name": "Jharia"}))
+
+    def test_all_null_values_still_count_as_an_answer(self):
+        # A thin document genuinely stating none of these comes back with the
+        # keys present and null. That is a real extraction and must score.
+        self.assertTrue(
+            ai_extractor._looks_like_our_schema({"mine_name": None, "state": None})
+        )
+
+    def test_a_wrapped_or_renamed_object_is_rejected(self):
+        self.assertFalse(ai_extractor._looks_like_our_schema({"report": {"mine_name": "J"}}))
+        self.assertFalse(ai_extractor._looks_like_our_schema({"Mine Name": "Jharia"}))
+        self.assertFalse(ai_extractor._looks_like_our_schema({"answer": "I cannot help"}))
+
+    def test_an_off_schema_reply_is_reported_as_mock_not_scored_as_wrong(self):
+        with mock.patch.object(ai_extractor, "USE_MOCK", False), \
+             mock.patch.object(ai_providers, "describe",
+                               return_value={"mode": "openrouter", "model": "m"}), \
+             mock.patch.object(ai_providers, "complete",
+                               return_value='{"report": {"mine_name": "Jharia"}}'):
+            result = ai_extractor.extract_structured_data_detailed("text", "t.pdf")
+
+        self.assertEqual(result["source"], "mock")
+        # And it points at the tool that shows what actually came back,
+        # because the score table cannot distinguish this from a bad model.
+        self.assertIn("show_reply", result["note"])
+
+    def test_the_diagnostic_sends_the_same_prompt_extraction_does(self):
+        # A debug tool that sends a near-enough prompt measures a
+        # near-enough system.
+        import evaluation.show_reply  # noqa: F401 - import must not explode
+
+        prompt = ai_extractor.extraction_prompt("COAL MINE REPORT", "x.pdf")
+        self.assertIn("COAL MINE REPORT", prompt)
+        self.assertIn("mine_name", prompt)
+        self.assertIn("Respond ONLY with valid JSON", prompt)
 
 
 if __name__ == "__main__":

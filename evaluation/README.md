@@ -68,6 +68,15 @@ source, so changing either re-extracts rather than silently scoring stale
 answers. Mock output is never saved. `--fresh` ignores the lot and re-calls
 for every document.
 
+**Every field missing, on every document?** That is not a bad model, it is a
+model that did not answer the question — and the score table cannot tell you
+which. Send one document and look at what comes back:
+
+    python -m evaluation.show_reply samples/corpus/EN-01_Jharia_BCCL_FY2024-25.pdf
+
+It prints the raw reply and what the parser makes of it, using the exact
+prompt extraction sends. One call, nothing cached.
+
 **A host that cannot read scans is not allowed to score them.** Two of the
 thirteen labelled documents are scans, carrying 20 of the 124 fields. Without
 working OCR they extract to nothing, score all-missing, and cap the run at
