@@ -37,11 +37,6 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 LABELS_DIR = Path(__file__).resolve().parent / "labelled"
 
-#: Below this many characters on a page, a "text layer" is page furniture -
-#: a header, a stamp, a page number - and the body is an image. Treating it
-#: as extracted text is how a scan silently indexes to nothing.
-TEXT_LAYER_MIN_CHARS_PER_PAGE = 120
-
 SCRIPTS = (
     ("Devanagari", re.compile(r"[ऀ-ॿ]")),
     ("Telugu", re.compile(r"[ఀ-౿]")),
@@ -63,7 +58,11 @@ def _scripts_in(text: str) -> str:
 def _describe(path: Path) -> dict:
     import fitz
 
-    from document_processor import extract_pages_from_pdf
+    from document_processor import (
+        TEXT_LAYER_MIN_CHARS_PER_PAGE,
+        extract_pages_from_pdf,
+        has_usable_text_layer,
+    )
     from vector_store import chunk_pages
 
     size = path.stat().st_size
@@ -73,10 +72,8 @@ def _describe(path: Path) -> dict:
     # told apart. extract_pages_from_pdf hides that difference on purpose -
     # the app does not care which one answered, and this does.
     with fitz.open(stream=data, filetype="pdf") as document:
-        layer = [page.get_text() or "" for page in document]
-    layer_chars = sum(len(t.strip()) for t in layer)
-    pages = len(layer)
-    has_layer = pages > 0 and (layer_chars / pages) >= TEXT_LAYER_MIN_CHARS_PER_PAGE
+        pages = document.page_count
+    has_layer = has_usable_text_layer(data)
 
     extracted = extract_pages_from_pdf(data)
     chars = sum(len(t.strip()) for t in extracted)
@@ -164,6 +161,9 @@ def main() -> None:
     if not documents:
         sys.exit("No PDFs found.")
 
+    from document_processor import ocr_status
+
+    status = ocr_status()
     rows = [_describe(path) for path in documents]
 
     print(f"\n{'document':<44}{'MB':>6}{'pages':>7}{'text':>6}{'chars':>9}{'passages':>10}  script")
@@ -197,6 +197,14 @@ def main() -> None:
     scanned = sum(1 for r in rows if not r["text_layer"])
     if scanned:
         print(f"  {scanned} of them go through OCR rather than a text layer")
+        # Said here rather than left to the per-document rows: a broken OCR
+        # install makes those rows read "0 chars", which looks like a bad scan
+        # rather than a missing binary.
+        if status["ok"]:
+            print(f"  OCR is working (tesseract {status['version']}, {status['languages']})")
+        else:
+            print(f"  ! OCR IS NOT WORKING - those {scanned} will extract to nothing")
+            print(f"    {status['reason']}")
 
     if args.labels:
         print()

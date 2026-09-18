@@ -6,6 +6,7 @@ Pipeline: PDF Upload → Extract Text → OCR (if scanned) → Chunk Text
 """
 import io
 import os
+import sys
 from typing import List, Tuple
 
 from pypdf import PdfReader
@@ -58,6 +59,89 @@ def _available_ocr_languages() -> str:
         )
     _ocr_langs_checked = "+".join(usable) or "eng"
     return _ocr_langs_checked
+
+
+#: Below this many characters on a page, a "text layer" is page furniture - a
+#: header, a stamp, a page number - and the body of the page is an image. This
+#: is what separates a document that reads itself from one OCR has to carry.
+TEXT_LAYER_MIN_CHARS_PER_PAGE = 120
+
+
+def has_usable_text_layer(pdf_bytes: bytes) -> bool:
+    """Whether this PDF can be read without OCR, judged by density not presence."""
+    try:
+        import pymupdf
+    except ImportError:
+        return False
+    try:
+        with pymupdf.open(stream=pdf_bytes, filetype="pdf") as document:
+            layer = [page.get_text() or "" for page in document]
+    except Exception:  # noqa: BLE001 - an unopenable PDF has no text layer either
+        return False
+    if not layer:
+        return False
+    return sum(len(t.strip()) for t in layer) / len(layer) >= TEXT_LAYER_MIN_CHARS_PER_PAGE
+
+
+def ocr_status() -> dict:
+    """
+    Whether scanned pages can actually be read on this host, and if not, why.
+
+    `import pytesseract` succeeding proves nothing. The module is a thin
+    wrapper around a separate binary, and `pip install pytesseract` on a
+    machine with no tesseract installs the wrapper alone - so OCR_AVAILABLE
+    goes True, image_to_string raises TesseractNotFoundError once per page,
+    _ocr_pages catches it and logs a warning that scrolls past, and every
+    scanned document extracts to nothing while the run reports success.
+
+    That is the shape of failure this project refuses everywhere else, and it
+    was live here: two scanned documents in the evaluation corpus silently
+    scored all-missing, which is 20 of 124 fields and a ceiling of 83.9% on a
+    number presented as the accuracy of the extractor. Probing the binary is
+    the only way to tell a working install from a half one.
+
+    Returns {"ok", "reason", "version", "languages"}.
+    """
+    if not OCR_AVAILABLE:
+        return {
+            "ok": False,
+            "reason": "the pytesseract package is not installed (pip install pytesseract)",
+            "version": None,
+            "languages": None,
+        }
+    try:
+        version = str(pytesseract.get_tesseract_version())
+    except Exception as exc:  # noqa: BLE001 - TesseractNotFoundError and friends
+        return {
+            "ok": False,
+            "reason": (
+                "the pytesseract package is installed but the tesseract binary "
+                f"it wraps is not on PATH ({type(exc).__name__}). "
+                + _install_hint()
+            ),
+            "version": None,
+            "languages": None,
+        }
+    return {
+        "ok": True,
+        "reason": None,
+        "version": version,
+        "languages": _available_ocr_languages(),
+    }
+
+
+def _install_hint() -> str:
+    """How to install tesseract here, named for the platform actually running."""
+    if sys.platform.startswith("win"):
+        return (
+            "Install it from https://github.com/UB-Mannheim/tesseract/wiki, tick "
+            "Hindi and Telugu under 'Additional language data' during setup, and "
+            "make sure the install directory is on PATH (the installer offers "
+            "this; a new terminal is needed afterwards)."
+        )
+    if sys.platform == "darwin":
+        return "Install it with: brew install tesseract tesseract-lang"
+    return "Install it with: sudo apt-get install tesseract-ocr tesseract-ocr-hin tesseract-ocr-tel"
 
 
 def extract_text_from_pdf(pdf_bytes: bytes, filename: str = "") -> str:

@@ -9,9 +9,12 @@ import json
 import unittest
 from pathlib import Path
 
+from unittest import mock
+
+import document_processor
 from evaluation.score import (
     DASHBOARD_PATH, EQUIVALENT, EXACT, MISSING, WRONG, _classify, _load_labels,
-    refuse_to_record,
+    _refuse_if_ocr_unavailable, refuse_to_record,
 )
 
 LABELS = Path(__file__).resolve().parent.parent / "evaluation" / "labelled"
@@ -263,6 +266,88 @@ class InspectingRealDocumentsNeedsNoKey(unittest.TestCase):
         # Blank, not guessed: a prefilled value would score the labeller.
         self.assertTrue(all(v == "" for v in label["expected"].values()))
         self.assertTrue(label["document"].startswith("samples/corpus/"))
+
+
+class AHostThatCannotReadScansIsNotAllowedToScoreThem(unittest.TestCase):
+    """
+    The 83.9% failure, as a test.
+
+    pytesseract installs cleanly on a machine with no tesseract binary, so
+    OCR_AVAILABLE goes True and every page raises TesseractNotFoundError
+    inside a caught-and-logged block. The scans then extract to nothing,
+    score all-missing, and the run publishes the result as the extractor's
+    accuracy. Nothing about that run looks wrong from outside, which is why
+    it needs catching before it starts rather than explaining afterwards.
+    """
+
+    def setUp(self):
+        self.labels = _load_labels(None)
+        self.assertTrue(self.labels, "the corpus labels are the fixture here")
+
+    def test_the_corpus_contains_scans_to_refuse_over(self):
+        # If this ever fails the refusal has nothing to fire on, and the rest
+        # of this class would pass by measuring nothing.
+        scans = [
+            l for l in self.labels
+            if not document_processor.has_usable_text_layer(
+                (Path(__file__).resolve().parent.parent / l["document"]).read_bytes()
+            )
+        ]
+        self.assertEqual(len(scans), 2, "expected SCAN-01 and SCAN-02")
+
+    def test_a_missing_binary_stops_the_run_before_it_spends_quota(self):
+        broken = {
+            "ok": False,
+            "reason": "the tesseract binary it wraps is not on PATH",
+            "version": None,
+            "languages": None,
+        }
+        with mock.patch.object(document_processor, "ocr_status", return_value=broken):
+            with self.assertRaises(SystemExit) as caught:
+                _refuse_if_ocr_unavailable(self.labels)
+
+        message = str(caught.exception)
+        self.assertIn("SCAN-01", message)
+        self.assertIn("SCAN-02", message)
+        self.assertIn("not on PATH", message)
+        # The share at stake is the point: a bare "OCR is off" leaves someone
+        # to guess whether it matters.
+        self.assertIn("of 124", message)
+
+    def test_a_working_install_scores_normally(self):
+        working = {"ok": True, "reason": None, "version": "5.3.4", "languages": "eng+hin+tel"}
+        with mock.patch.object(document_processor, "ocr_status", return_value=working):
+            self.assertIsNone(_refuse_if_ocr_unavailable(self.labels))
+
+    def test_a_corpus_of_text_layer_documents_never_asks_about_OCR(self):
+        # No scans, no reason to care whether OCR works - and no reason to pay
+        # the probe's subprocess call either.
+        text_only = [l for l in self.labels if "SCAN-" not in l["document"]]
+        with mock.patch.object(document_processor, "ocr_status") as probe:
+            self.assertIsNone(_refuse_if_ocr_unavailable(text_only))
+        probe.assert_not_called()
+
+
+class TheOCRProbeTellsAHalfInstallFromAWorkingOne(unittest.TestCase):
+    def test_no_module_is_reported_as_no_module(self):
+        with mock.patch.object(document_processor, "OCR_AVAILABLE", False):
+            status = document_processor.ocr_status()
+        self.assertFalse(status["ok"])
+        self.assertIn("pytesseract", status["reason"])
+
+    def test_a_module_without_its_binary_is_not_reported_as_working(self):
+        # The case that matters: importing succeeded, so every other check in
+        # the codebase believes OCR is present.
+        with mock.patch.object(document_processor, "OCR_AVAILABLE", True), \
+             mock.patch.object(
+                 document_processor.pytesseract, "get_tesseract_version",
+                 side_effect=OSError("tesseract is not installed"),
+             ):
+            status = document_processor.ocr_status()
+        self.assertFalse(status["ok"])
+        self.assertIn("binary", status["reason"])
+        # And it says what to do about it, on the platform actually running.
+        self.assertTrue(len(status["reason"]) > 60, status["reason"])
 
 
 if __name__ == "__main__":

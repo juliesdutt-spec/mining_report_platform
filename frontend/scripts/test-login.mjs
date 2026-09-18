@@ -111,6 +111,7 @@ const healthy = {
   online: true,
   ai: { ai_mode: "gemini", ai_model: "gemini-3.6-flash", ai_mode_reason: null },
   retrieval: { enabled: true, indexed_chunks: 240, indexed_reports: 6, index_reason: null, embeddings_reason: null },
+  ocr: { ok: true, reason: null, version: "5.3.4", languages: "eng+hin+tel" },
 };
 
 test("nothing is claimed before the backend has answered", () => {
@@ -126,7 +127,7 @@ test("an unreachable API does not leave three rows reading operational", () => {
   const rows = byLabel(statusRows({ online: false, ai: null, retrieval: null }));
   assert.equal(rows.API.tone, "down");
   assert.equal(rows.API.value, "Unreachable");
-  for (const label of ["Document engine", "Semantic search", "Evidence retrieval"]) {
+  for (const label of ["Document engine", "Semantic search", "Evidence retrieval", "Scanned documents"]) {
     assert.equal(rows[label].value, "Unknown", `${label} cannot be known from here`);
     assert.notEqual(rows[label].tone, "ok");
   }
@@ -166,11 +167,34 @@ test("an index that is reachable but empty is not the same as one that is broken
   assert.equal(rows["Semantic search"].tone, "warn");
 });
 
-test("a healthy backend does read operational, across all four", () => {
+test("a healthy backend does read operational, across all five", () => {
   const rows = statusRows(healthy);
-  assert.equal(rows.length, 4);
+  assert.equal(rows.length, 5);
   for (const row of rows) assert.equal(row.tone, "ok", `${row.label} should be ok`);
   assert.equal(byLabel(rows)["Semantic search"].detail, "6 reports · 240 passages");
+});
+
+test("a host that cannot read scans says so rather than showing green", () => {
+  // The failure this row exists for: pytesseract installs without the binary
+  // it wraps, so scanned uploads succeed and extract nothing.
+  const rows = byLabel(statusRows({
+    ...healthy,
+    ocr: { ok: false, reason: "the tesseract binary is not on PATH", version: null, languages: null },
+  }));
+  assert.equal(rows["Scanned documents"].value, "Cannot be read");
+  assert.equal(rows["Scanned documents"].tone, "warn");
+  assert.equal(rows["Scanned documents"].detail, "the tesseract binary is not on PATH");
+});
+
+test("a backend too old to report OCR does not crash the panel or cry wolf", () => {
+  // `ocr` absent is undefined, not null. A strict null check here threw on
+  // every row, so the panel that exists to report a degraded backend was the
+  // thing that broke against one.
+  const { ocr, ...older } = healthy;
+  const rows = byLabel(statusRows(older));
+  assert.equal(rows["Scanned documents"].tone, "idle");
+  assert.equal(rows["Scanned documents"].value, "Not reported");
+  assert.equal(rows.API.tone, "ok", "the rest of the panel still reports");
 });
 
 test("the demo button the audit clicks is the one the page renders", () => {

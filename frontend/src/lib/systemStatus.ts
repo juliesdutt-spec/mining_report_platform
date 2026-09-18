@@ -1,4 +1,4 @@
-import { AiStatus, RetrievalStatus, SystemStatus } from "@/services/api";
+import { AiStatus, OcrStatus, RetrievalStatus, SystemStatus } from "@/services/api";
 
 /**
  * The sign-in screen's status panel, as data.
@@ -24,6 +24,7 @@ export const STATUS_LABELS = [
   "Document engine",
   "Semantic search",
   "Evidence retrieval",
+  "Scanned documents",
 ] as const;
 
 function engineRow(ai: AiStatus | null): StatusRow {
@@ -68,6 +69,40 @@ function searchRow(retrieval: RetrievalStatus | null): StatusRow {
   };
 }
 
+function scanRow(ocr: OcrStatus | null): StatusRow {
+  // Deliberately not "Unknown" when absent: this row was added after the
+  // backend it reads, so a deployment mid-upgrade has no field to report and
+  // is not thereby broken. An amber dot there would cry wolf.
+  //
+  // `!ocr`, not `=== null`: a backend too old to carry the field leaves it
+  // undefined rather than null, and the strict check threw on the first byte
+  // of it - taking the whole panel down to report that one row was missing.
+  if (!ocr) {
+    return {
+      label: "Scanned documents",
+      value: "Not reported",
+      tone: "idle",
+      detail: "This backend predates the OCR check.",
+    };
+  }
+  if (ocr.ok) {
+    return {
+      label: "Scanned documents",
+      value: "Readable",
+      tone: "ok",
+      detail: ocr.version ? `tesseract ${ocr.version} · ${ocr.languages}` : null,
+    };
+  }
+  // Warn, not down: every other document type still works, and calling the
+  // whole platform down over it would be as wrong as calling it healthy.
+  return {
+    label: "Scanned documents",
+    value: "Cannot be read",
+    tone: "warn",
+    detail: ocr.reason,
+  };
+}
+
 export function statusRows(status: SystemStatus | null): StatusRow[] {
   if (status === null) {
     return STATUS_LABELS.map((label) => ({
@@ -101,5 +136,6 @@ export function statusRows(status: SystemStatus | null): StatusRow[] {
       tone: "ok",
       detail: "Runs in-process over stored document text.",
     },
+    scanRow(status.ocr),
   ];
 }
