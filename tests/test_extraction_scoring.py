@@ -8,6 +8,7 @@ generous scorer would report accuracy the platform does not have.
 import builtins
 import json
 import re
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -124,8 +125,11 @@ class RecordingARunCannotMisrepresentIt(unittest.TestCase):
         # the result afterwards is a bill for nothing.
         source = (Path(__file__).resolve().parent.parent / "evaluation" / "score.py").read_text()
         body = source[source.index("def main()"):]
+        # Matched without the closing paren: score() has grown arguments
+        # since, and pinning the exact call text made this fail on a change
+        # that had nothing to do with the ordering it is guarding.
         self.assertLess(
-            body.index("refuse_to_record("), body.index("score(args.language)"),
+            body.index("refuse_to_record("), body.index("score(args.language"),
             "the check must run before scoring, not after",
         )
 
@@ -164,7 +168,7 @@ class AMidRunFallbackCannotBeScored(unittest.TestCase):
         from evaluation import score as scorer
 
         real = {"mine_name": "Jharia Coal Mine"}
-        calls = iter([(real, "gemini"), (real, "mock")])
+        calls = iter([(real, "gemini", False), (real, "mock", False)])
 
         with mock.patch.object(scorer, "_refuse_if_mocked", lambda: None), \
              mock.patch.object(scorer, "_load_labels", lambda language: [
@@ -172,7 +176,7 @@ class AMidRunFallbackCannotBeScored(unittest.TestCase):
                  {"document": "b.pdf", "language": "en", "expected": real, "_label_file": "b.json"},
              ]), \
              mock.patch.object(Path, "exists", lambda self: True), \
-             mock.patch.object(scorer, "_extract", lambda path: next(calls)):
+             mock.patch.object(scorer, "_extract", lambda path, use_cache=True: next(calls)):
             with self.assertRaises(SystemExit) as stop:
                 scorer.score(None)
 
@@ -192,7 +196,7 @@ class AMidRunFallbackCannotBeScored(unittest.TestCase):
                  {"document": "a.pdf", "language": "en", "expected": real, "_label_file": "a.json"},
              ]), \
              mock.patch.object(Path, "exists", lambda self: True), \
-             mock.patch.object(scorer, "_extract", lambda path: (real, "gemini")):
+             mock.patch.object(scorer, "_extract", lambda path, use_cache=True: (real, "gemini", False)):
             result = scorer.score(None)
 
         self.assertEqual(result["accuracy"], 1.0)
@@ -488,6 +492,126 @@ class AScanInAScriptTheHostCannotReadIsRefusedToo(unittest.TestCase):
         self.assertIn("not installed", message)
         self.assertIn("SCAN-01", message, "both scans are affected when OCR is absent")
         self.assertIn("SCAN-02", message)
+
+
+class ExtractionsSurviveAQuotaFailure(unittest.TestCase):
+    """
+    The free tier caps generation per day, not only per minute.
+
+    13 documents needed 13 calls in one unbroken run. A run that died at
+    document 9 discarded the eight that had succeeded, so the next attempt
+    cost 13 again - against a daily cap of 20 that is unfinishable. Reported
+    from a real machine: "Quota exceeded for metric:
+    generate_content_free_tier_requests, limit: 20".
+    """
+
+    def setUp(self):
+        from evaluation import score as scorer
+
+        self.scorer = scorer
+        self.folder = tempfile.TemporaryDirectory()
+        self.addCleanup(self.folder.cleanup)
+        patch = mock.patch.object(scorer, "CACHE_DIR", Path(self.folder.name))
+        patch.start()
+        self.addCleanup(patch.stop)
+        self.pdf = (Path(__file__).resolve().parent.parent
+                    / "samples" / "corpus" / "EN-01_Jharia_BCCL_FY2024-25.pdf")
+
+    def _extract_returning(self, data, source):
+        return mock.patch(
+            "ai_extractor.extract_structured_data_detailed",
+            return_value={"data": data, "source": source, "note": None},
+        )
+
+    def test_a_real_extraction_is_saved_and_reused_without_a_second_call(self):
+        fields = {"mine_name": "Jharia Coal Mine"}
+
+        with self._extract_returning(fields, "gemini") as called:
+            first, source, from_cache = self.scorer._extract(self.pdf)
+        self.assertEqual(first, fields)
+        self.assertFalse(from_cache, "the first run must actually call")
+        self.assertEqual(called.call_count, 1)
+
+        with self._extract_returning({"mine_name": "SHOULD NOT BE USED"}, "gemini") as again:
+            second, _, from_cache = self.scorer._extract(self.pdf)
+        self.assertTrue(from_cache)
+        self.assertEqual(second, fields, "the saved extraction should win")
+        again.assert_not_called()
+
+    def test_mock_output_is_never_saved(self):
+        # The whole point of the cache is that a hit is as trustworthy as a
+        # call. A stand-in written here would be indistinguishable later.
+        with self._extract_returning({"mine_name": "invented"}, "mock"):
+            self.scorer._extract(self.pdf)
+        self.assertEqual(list(Path(self.folder.name).glob("*.json")), [])
+
+    def test_fresh_ignores_what_was_saved(self):
+        with self._extract_returning({"mine_name": "old"}, "gemini"):
+            self.scorer._extract(self.pdf)
+        with self._extract_returning({"mine_name": "new"}, "gemini"):
+            fields, _, from_cache = self.scorer._extract(self.pdf, use_cache=False)
+        self.assertEqual(fields, {"mine_name": "new"})
+        self.assertFalse(from_cache)
+
+    def test_a_different_model_does_not_reuse_the_first_model_s_answer(self):
+        with mock.patch("ai_providers.describe", return_value={"mode": "gemini", "model": "model-a"}), \
+             self._extract_returning({"mine_name": "from A"}, "gemini"):
+            self.scorer._extract(self.pdf)
+
+        with mock.patch("ai_providers.describe", return_value={"mode": "gemini", "model": "model-b"}), \
+             self._extract_returning({"mine_name": "from B"}, "gemini") as called:
+            fields, _, from_cache = self.scorer._extract(self.pdf)
+        self.assertFalse(from_cache, "a different model is a different measurement")
+        self.assertEqual(fields, {"mine_name": "from B"})
+        called.assert_called_once()
+
+    def test_a_corrupt_entry_is_ignored_rather_than_scored(self):
+        with self._extract_returning({"mine_name": "real"}, "gemini"):
+            self.scorer._extract(self.pdf)
+        written = next(Path(self.folder.name).glob("*.json"))
+        written.write_text("{ truncated", encoding="utf-8")
+
+        with self._extract_returning({"mine_name": "recalled"}, "gemini") as called:
+            fields, _, from_cache = self.scorer._extract(self.pdf)
+        self.assertFalse(from_cache)
+        self.assertEqual(fields, {"mine_name": "recalled"})
+        called.assert_called_once()
+
+    def test_a_hand_edited_mock_entry_is_ignored(self):
+        with self._extract_returning({"mine_name": "real"}, "gemini"):
+            self.scorer._extract(self.pdf)
+        written = next(Path(self.folder.name).glob("*.json"))
+        entry = json.loads(written.read_text(encoding="utf-8"))
+        entry["source"] = "mock"
+        written.write_text(json.dumps(entry), encoding="utf-8")
+
+        with self._extract_returning({"mine_name": "recalled"}, "gemini"):
+            _, _, from_cache = self.scorer._extract(self.pdf)
+        self.assertFalse(from_cache, "a mock entry must never satisfy a lookup")
+
+    def test_the_refusal_says_how_many_calls_a_retry_costs(self):
+        from evaluation import score as scorer
+
+        real = {"mine_name": "Jharia Coal Mine"}
+        outcomes = iter([
+            (real, "gemini", False), (real, "gemini", False),
+            (real, "mock", False),
+        ])
+        with mock.patch.object(scorer, "_refuse_if_mocked", lambda: None), \
+             mock.patch.object(scorer, "_refuse_if_ocr_unavailable", lambda labels: None), \
+             mock.patch.object(scorer, "_load_labels", lambda language: [
+                 {"document": f"{n}.pdf", "language": "en", "expected": real,
+                  "_label_file": f"{n}.json"} for n in "abc"
+             ]), \
+             mock.patch.object(Path, "exists", lambda self: True), \
+             mock.patch.object(scorer, "_extract", lambda path, use_cache=True: next(outcomes)):
+            with self.assertRaises(SystemExit) as stop:
+                scorer.score(None)
+
+        message = str(stop.exception)
+        # The number that decides whether someone on a daily quota bothers.
+        self.assertIn("costs 1 call(s), not 3", message)
+        self.assertIn("c.pdf", message)
 
 
 if __name__ == "__main__":

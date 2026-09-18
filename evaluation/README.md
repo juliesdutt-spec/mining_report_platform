@@ -51,6 +51,23 @@ scorer now checks which provider answered *per document* and stops, naming
 the ones that fell back. Nothing is cached, so running again costs only the
 calls.
 
+**A run that hits the quota keeps what it paid for.** The free tier caps
+generation per *day* as well as per minute — the observed cap is 20 requests,
+and the corpus needs 13. A run that dies partway used to discard every
+document it had already extracted, so the next attempt cost 13 again, which
+against a daily cap is unfinishable. Successful extractions are now saved to
+`evaluation/.extractions/`, so a second run only pays for what is left:
+
+    5 of 13 document(s) fell back to mock extraction ...
+    The other 8 are extracted and saved, so running again costs 5 call(s), not 13.
+
+Finish the corpus across two or three runs, then the score is written as
+normal. Nothing about that weakens it: each entry is a real model extraction
+of that exact document, and the key includes the model and the extractor's
+source, so changing either re-extracts rather than silently scoring stale
+answers. Mock output is never saved. `--fresh` ignores the lot and re-calls
+for every document.
+
 **A host that cannot read scans is not allowed to score them.** Two of the
 thirteen labelled documents are scans, carrying 20 of the 124 fields. Without
 working OCR they extract to nothing, score all-missing, and cap the run at
