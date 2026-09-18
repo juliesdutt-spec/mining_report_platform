@@ -78,8 +78,16 @@ path in `.env`:
 
     TESSERACT_CMD=C:\Program Files\Tesseract-OCR\tesseract.exe
 
+**Not sure what is wrong?** One command reports both the AI provider and OCR,
+including the exact folder tesseract reads language data from and the command
+to fill it:
+
+    python doctor.py
+
 **If the language checkboxes were missed**, you do not need to reinstall. The
-language data is two files. In PowerShell:
+language data is two files. In PowerShell, using the folder `doctor.py`
+printed — not a guessed one, since a machine with two tesseract installs has
+two of them:
 
     $dir = "C:\Program Files\Tesseract-OCR\tessdata"
     $base = "https://github.com/tesseract-ocr/tessdata/raw/main"

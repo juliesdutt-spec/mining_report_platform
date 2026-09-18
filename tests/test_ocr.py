@@ -176,5 +176,54 @@ class TesseractIsFoundWithoutEditingPATH(unittest.TestCase):
             self.assertTrue(status["path"], "a working install must say where it is")
 
 
+class TheDoctorDiagnosesBothHalvesIndependently(unittest.TestCase):
+    """
+    Someone with no API key and no Hindi language data has two problems, and
+    one run should tell them both. The AI half used to return on its first
+    failure, which made the OCR section unreachable for exactly the person
+    who most needed it.
+    """
+
+    def test_ocr_is_checked_even_when_the_ai_half_fails(self):
+        import doctor
+
+        with mock.patch.object(doctor, "_check_ai", return_value=1) as ai, \
+             mock.patch.object(doctor, "_check_ocr", return_value=0) as ocr:
+            code = doctor.main()
+        ai.assert_called_once()
+        ocr.assert_called_once()
+        self.assertEqual(code, 1, "a failing half must still fail the run")
+
+    def test_either_half_failing_fails_the_run(self):
+        import doctor
+
+        with mock.patch.object(doctor, "_check_ai", return_value=0), \
+             mock.patch.object(doctor, "_check_ocr", return_value=1):
+            self.assertEqual(doctor.main(), 1)
+        with mock.patch.object(doctor, "_check_ai", return_value=0), \
+             mock.patch.object(doctor, "_check_ocr", return_value=0):
+            self.assertEqual(doctor.main(), 0)
+
+    def test_missing_language_data_is_a_failure_not_a_note(self):
+        import doctor
+
+        with mock.patch.object(document_processor, "installed_ocr_languages",
+                               return_value={"eng", "osd"}):
+            if not document_processor.ocr_status()["ok"]:
+                self.skipTest("no tesseract on this host")
+            code = doctor._check_ocr()
+        self.assertEqual(code, 1, "reading Devanagari as Latin is not a pass")
+
+    def test_tessdata_dir_is_reported_so_files_land_in_the_right_place(self):
+        # Dropping a .traineddata into the wrong tessdata folder is
+        # indistinguishable from never downloading it, and a machine with two
+        # tesseract installs has two such folders.
+        if not document_processor.ocr_status()["ok"]:
+            self.skipTest("no tesseract on this host")
+        folder = document_processor.tessdata_dir()
+        self.assertTrue(folder, "tesseract should report where it reads data from")
+        self.assertIn("tessdata", folder)
+
+
 if __name__ == "__main__":
     unittest.main()
