@@ -6,7 +6,9 @@ Pipeline: PDF Upload → Extract Text → OCR (if scanned) → Chunk Text
 """
 import io
 import os
+import re
 import shutil
+import subprocess
 import sys
 from typing import List, Optional, Tuple
 
@@ -107,6 +109,47 @@ def _available_ocr_languages() -> str:
     return _ocr_langs_checked
 
 
+#: Document language, as the labels and the rest of the app spell it, to the
+#: tesseract code that reads it. Kept here because the mapping is a property
+#: of OCR, not of whoever is asking.
+OCR_LANGUAGE_CODES = {"en": "eng", "hi": "hin", "te": "tel"}
+
+
+def tessdata_dir() -> Optional[str]:
+    """
+    The folder tesseract reads language data from, as tesseract reports it.
+
+    Worth asking the binary rather than guessing: dropping a .traineddata
+    file into the wrong tessdata folder looks exactly like not downloading it
+    at all, and there is usually more than one on a machine that has had
+    tesseract installed twice. TESSDATA_PREFIX moves it too.
+    """
+    if not OCR_AVAILABLE:
+        return None
+    try:
+        result = subprocess.run(
+            [_TESSERACT_PATH or "tesseract", "--list-langs"],
+            capture_output=True, text=True, timeout=30,
+        )
+    except Exception:  # noqa: BLE001 - no binary, or it would not run
+        return None
+    match = re.search(
+        r'List of available languages in "?(.+?)"?\s*(?:\(\d+\))?:',
+        (result.stdout or "") + (result.stderr or ""),
+    )
+    return match.group(1).strip() if match else None
+
+
+def installed_ocr_languages() -> set:
+    """Which language codes this host actually holds traineddata for."""
+    if not OCR_AVAILABLE:
+        return set()
+    try:
+        return set(pytesseract.get_languages(config=""))
+    except Exception:  # noqa: BLE001 - no binary, or too old for get_languages
+        return set()
+
+
 #: Below this many characters on a page, a "text layer" is page furniture - a
 #: header, a stamp, a page number - and the body of the page is an image. This
 #: is what separates a document that reads itself from one OCR has to carry.
@@ -177,6 +220,7 @@ def ocr_status() -> dict:
             "reason": "the pytesseract package is not installed (pip install pytesseract)",
             "version": None,
             "languages": None,
+            "missing_languages": [],
             "path": None,
         }
     try:
@@ -194,13 +238,20 @@ def ocr_status() -> dict:
             ),
             "version": None,
             "languages": None,
+            "missing_languages": [],
             "path": _TESSERACT_PATH,
         }
+    wanted = {c for c in OCR_LANGUAGES.split("+") if c.strip()}
+    absent = sorted(wanted - installed_ocr_languages())
     return {
         "ok": True,
         "reason": None,
         "version": version,
         "languages": _available_ocr_languages(),
+        # Present and empty when everything asked for is installed. A host
+        # with only `eng` reads a Devanagari scan without complaint and
+        # returns Latin nonsense, so "ok" alone does not describe it.
+        "missing_languages": absent,
         # Worth reporting: "working" via a guessed Windows path is a different
         # situation from "working" via PATH, and the next person to move the
         # install will care which one this was.

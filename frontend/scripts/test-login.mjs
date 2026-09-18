@@ -111,7 +111,7 @@ const healthy = {
   online: true,
   ai: { ai_mode: "gemini", ai_model: "gemini-3.6-flash", ai_mode_reason: null },
   retrieval: { enabled: true, indexed_chunks: 240, indexed_reports: 6, index_reason: null, embeddings_reason: null },
-  ocr: { ok: true, reason: null, version: "5.3.4", languages: "eng+hin+tel" },
+  ocr: { ok: true, reason: null, version: "5.3.4", languages: "eng+hin+tel", missing_languages: [] },
 };
 
 test("nothing is claimed before the backend has answered", () => {
@@ -184,6 +184,18 @@ test("a host that cannot read scans says so rather than showing green", () => {
   assert.equal(rows["Scanned documents"].value, "Cannot be read");
   assert.equal(rows["Scanned documents"].tone, "warn");
   assert.equal(rows["Scanned documents"].detail, "the tesseract binary is not on PATH");
+});
+
+test("OCR running without the language data it needs is amber, not green", () => {
+  // The exact state a Windows install lands in when the language checkboxes
+  // are missed: tesseract works, and a Hindi scan reads as Latin nonsense.
+  const rows = byLabel(statusRows({
+    ...healthy,
+    ocr: { ok: true, reason: null, version: "5.5.3", languages: "eng", missing_languages: ["hin", "tel"] },
+  }));
+  assert.equal(rows["Scanned documents"].value, "Partly readable");
+  assert.equal(rows["Scanned documents"].tone, "warn");
+  assert.match(rows["Scanned documents"].detail, /hin, tel/);
 });
 
 test("a backend too old to report OCR does not crash the panel or cry wolf", () => {

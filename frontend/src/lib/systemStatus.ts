@@ -85,6 +85,18 @@ function scanRow(ocr: OcrStatus | null): StatusRow {
       detail: "This backend predates the OCR check.",
     };
   }
+  const absent = ocr.missing_languages ?? [];
+  if (ocr.ok && absent.length > 0) {
+    // Running, and unable to read a Devanagari or Telugu scan. tesseract with
+    // only English does not fail on one, it returns Latin nonsense - so this
+    // is amber, not green, even though OCR itself is up.
+    return {
+      label: "Scanned documents",
+      value: "Partly readable",
+      tone: "warn",
+      detail: `No OCR data for ${absent.join(", ")} - scans in those scripts will be misread.`,
+    };
+  }
   if (ocr.ok) {
     return {
       label: "Scanned documents",
