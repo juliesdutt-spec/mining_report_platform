@@ -203,5 +203,49 @@ class IndexedReportIdsMakesResumingPossible(unittest.TestCase):
             vector_store.available = original
 
 
+class WhyAReportCouldNotBeIndexedReachesTheLogs(unittest.TestCase):
+    """
+    Production said:
+
+        reindex: 0/1 report(s) indexed, 0 passage(s), 0 remaining after id 1
+
+    One document pending, indexing failed, and the reason was nowhere. It
+    went into the `failures` list, which reaches the browser only if the
+    request completes - and the entire reason this endpoint batches is that
+    it often does not: a timeout, a redeploy mid-request, a closed tab. So
+    the one fact that explains the failure is the one most likely to be
+    thrown away, and "the search index is not working" is all anyone can
+    say afterwards.
+    """
+
+    def test_a_failure_is_logged_not_only_returned(self):
+        import inspect
+
+        from backend.api import reindex_corpus
+
+        source = inspect.getsource(reindex_corpus)
+        self.assertIn("failures.append", source)
+        # The reason, the report, and the filename - a bare "failed" sends
+        # someone to the wrong document.
+        printed = [l for l in source.splitlines() if "print(" in l and "FAILED" in l]
+        self.assertTrue(printed, "a failed report must reach the logs")
+        line = printed[0]
+        self.assertIn("{error}", line)
+        self.assertIn("report.id", line)
+        self.assertIn("report.filename", line)
+
+    def test_an_empty_corpus_says_so_rather_than_reading_as_a_failure(self):
+        # "0 indexed" over an empty database looks exactly like a broken
+        # index. It is not - there is simply nothing uploaded yet, and the
+        # fix is an upload, not a deployment.
+        import inspect
+
+        from backend.api import reindex_corpus
+
+        source = inspect.getsource(reindex_corpus)
+        self.assertIn("if not reports:", source)
+        self.assertIn("upload documents first", source)
+
+
 if __name__ == "__main__":
     unittest.main()
