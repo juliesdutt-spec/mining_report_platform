@@ -209,6 +209,21 @@ def _advice(error: str) -> str:
     if "api key not valid" in lowered or "api_key_invalid" in lowered:
         return ("Fix: the key is wrong. Re-copy it from "
                 "https://aistudio.google.com/apikey - no quotes, no spaces.")
+    if "unavailable for free" in lowered:
+        # OpenRouter names a replacement slug, and it is the PAID one - the
+        # message says so in passing ("the paid version is available now")
+        # and it is easy to read as a fix rather than a bill. Free ids rotate
+        # as promotions end, which is exactly why OPENROUTER_MODEL has no
+        # default in this project.
+        suggested = re.search(r"use this slug instead:\s*([\w./:-]+)", error)
+        paid = f" ({suggested.group(1)})" if suggested else ""
+        return (
+            "Fix: that free model has been withdrawn. The slug OpenRouter "
+            f"suggests{paid} is the PAID one - using it spends credits.\n"
+            "       Pick a current free id from "
+            "https://openrouter.ai/models?max_price=0 (they end in ':free'), "
+            "set OPENROUTER_MODEL to it, and run this again."
+        )
     if "no longer available" in lowered or "not found" in lowered:
         # Google's 404 names the model to move to; quoting it beats guessing.
         match = re.search(r"use models/([\w.-]+)", error)
