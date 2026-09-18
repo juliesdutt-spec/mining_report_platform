@@ -257,6 +257,15 @@ def _refuse_if_ocr_unavailable(labels: List[dict]) -> None:
         )
 
 
+def _provider_name() -> str:
+    """Which provider is about to be billed, for the line before the wait."""
+    import ai_providers
+
+    described = ai_providers.describe()
+    model = described.get("model")
+    return f"{described.get('mode')} ({model})" if model else str(described.get("mode"))
+
+
 def score(language: Optional[str] = None, use_cache: bool = True) -> dict:
     labels = _load_labels(language)
     if not labels:
@@ -270,15 +279,30 @@ def score(language: Optional[str] = None, use_cache: bool = True) -> dict:
     contaminated: List[str] = []
     reused = 0
 
-    for label in labels:
+    # Printed per document, flushed, before the call rather than after.
+    #
+    # The run used to print nothing at all until every document was done.
+    # Thirteen documents at up to 90 seconds each is twenty minutes of an
+    # utterly silent terminal, which is indistinguishable from a hang - and
+    # was reported as one. A scorer whose whole purpose is to be trusted
+    # should not be the least legible thing in the project. OCR on a scan
+    # adds to it: rasterising two pages at 200 dpi and running tesseract
+    # happens before the call and takes seconds on its own.
+    print(f"\nScoring {len(labels)} document(s) with "
+          f"{_provider_name()}. Ctrl-C is safe: what has been extracted is saved.\n")
+
+    for position, label in enumerate(labels, start=1):
         pdf_path = (PROJECT_ROOT / label["document"]).resolve()
         if not pdf_path.exists():
             print(f"  ! {label['_label_file']}: {label['document']} not found, skipped")
             continue
 
+        name = Path(label["document"]).name
+        print(f"  [{position}/{len(labels)}] {name[:52]:54}", end="", flush=True)
         extracted, source, from_cache = _extract(pdf_path, use_cache)
         if from_cache:
             reused += 1
+        print("saved" if from_cache else ("MOCK" if source == "mock" else "ok"), flush=True)
         # The extractor falls back to mock output when a call fails, which is
         # right for an upload and fatal here: one 429 in the middle of a run
         # would score fabricated fields against hand-read labels and fold the
