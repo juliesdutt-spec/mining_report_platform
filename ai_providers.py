@@ -363,6 +363,56 @@ _embed_pacer = _RequestPacer(GEMINI_EMBED_RPM)
 _complete_pacer = _RequestPacer(GEMINI_RPM)
 
 
+def _empty_response_reason(candidate: dict, data: dict, max_tokens: int) -> str:
+    """
+    Why a 200 OK came back with no text, in terms someone can act on.
+
+    This used to say "Gemini returned an empty response." and stop, which
+    reads like an outage and sent a real debugging session chasing a rate
+    limit for an hour. It is almost never an outage. A reasoning model spends
+    tokens thinking before it writes, and those come out of the same
+    maxOutputTokens budget - so a small budget is consumed entirely by
+    reasoning and the response carries no text at all, with finishReason
+    MAX_TOKENS and a thoughtsTokenCount that accounts for all of it.
+
+    The rest are refusals of one kind or another, and each has a different
+    answer, so none of them should share a message.
+    """
+    finish = candidate.get("finishReason") or "no finishReason"
+    usage = data.get("usageMetadata") or {}
+    thoughts = usage.get("thoughtsTokenCount") or 0
+    written = usage.get("candidatesTokenCount") or 0
+
+    if finish == "MAX_TOKENS":
+        spent = (
+            f" It spent {thoughts} token(s) reasoning and wrote {written}."
+            if thoughts or written else ""
+        )
+        return (
+            f"Gemini hit its {max_tokens}-token output limit before writing "
+            f"anything.{spent} Reasoning models bill thinking against the same "
+            "budget, so a small limit can be used up entirely before the answer "
+            "starts. Raise max_tokens, or set GEMINI_MODEL to a non-reasoning "
+            "model. This is not a rate limit and waiting will not help."
+        )
+    if finish in ("SAFETY", "PROHIBITED_CONTENT", "BLOCKLIST"):
+        return (
+            f"Gemini declined to answer this prompt ({finish}). The document text "
+            "tripped a content filter; the call itself is working."
+        )
+    if finish == "RECITATION":
+        return (
+            "Gemini stopped because the answer reproduced training data "
+            "(RECITATION). The call is working; this prompt cannot be answered "
+            "as written."
+        )
+    return (
+        f"Gemini returned no text (finishReason {finish}, {written} token(s) "
+        f"written, {thoughts} reasoning). The call reached the API and came "
+        "back 200, so this is not a quota or network problem."
+    )
+
+
 class GeminiProvider(Provider):
     """Google's Gemini API. The key travels in a header, never in the URL."""
 
@@ -393,7 +443,7 @@ class GeminiProvider(Provider):
         parts = (candidates[0].get("content") or {}).get("parts") or []
         text = "".join(str(part.get("text", "")) for part in parts).strip()
         if not text:
-            raise ProviderError("Gemini returned an empty response.")
+            raise ProviderError(_empty_response_reason(candidates[0], data, max_tokens))
         return text
 
 
