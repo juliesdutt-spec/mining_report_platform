@@ -146,6 +146,22 @@ export interface RetrievalStatus {
   indexed_reports: number;
 }
 
+/**
+ * Whether scanned PDFs can be read on the host, from GET /health.
+ *
+ * A backend with no tesseract accepts a scanned upload, extracts nothing, and
+ * stores the empty result as the document. Nothing about that looks like a
+ * failure from the browser, so the only place it can surface is here.
+ */
+export interface OcrStatus {
+  ok: boolean;
+  /** Why scans cannot be read, in an operator's terms. Null when they can. */
+  reason: string | null;
+  version: string | null;
+  /** tesseract language codes joined by "+", e.g. "eng+hin+tel". */
+  languages: string | null;
+}
+
 /** What POST /admin/reindex reports once it has walked the corpus. */
 export interface ReindexResult {
   reports_seen: number;
@@ -185,6 +201,8 @@ export interface SystemStatus {
   online: boolean;
   ai: AiStatus | null;
   retrieval: RetrievalStatus | null;
+  /** Null when /health is too old to report it, which is not the same as off. */
+  ocr: OcrStatus | null;
 }
 
 /**
@@ -216,14 +234,17 @@ export function maxUploadBytes(): Promise<number> {
 
 export async function fetchSystemStatus(): Promise<SystemStatus> {
   try {
-    const health = await apiFetch<AiStatus & { retrieval?: RetrievalStatus }>(
-      '/health',
-      undefined,
-      6000
-    );
-    return { online: true, ai: health, retrieval: health.retrieval ?? null };
+    const health = await apiFetch<
+      AiStatus & { retrieval?: RetrievalStatus; ocr?: OcrStatus }
+    >('/health', undefined, 6000);
+    return {
+      online: true,
+      ai: health,
+      retrieval: health.retrieval ?? null,
+      ocr: health.ocr ?? null,
+    };
   } catch {
-    return { online: false, ai: null, retrieval: null };
+    return { online: false, ai: null, retrieval: null, ocr: null };
   }
 }
 

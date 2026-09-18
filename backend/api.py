@@ -38,7 +38,8 @@ import extraction_quality
 import retrieval
 import vector_store
 from document_processor import (
-    extract_text_from_pdf, extract_pages_from_pdf, chunk_text, get_pdf_metadata
+    extract_text_from_pdf, extract_pages_from_pdf, chunk_text, get_pdf_metadata,
+    ocr_status,
 )
 from ai_extractor import (
     extract_structured_data, summarize_report, identify_topics,
@@ -112,6 +113,16 @@ app.add_middleware(
 def startup_event():
     init_db()
     seed_users()
+
+    # Said once, at boot, because the alternative is finding out from a
+    # scanned upload that came back empty. A host without tesseract serves
+    # every other request perfectly and silently returns nothing for the one
+    # document type CMPDI reporting is most likely to arrive as.
+    ocr = ocr_status()
+    if ocr["ok"]:
+        print(f"OCR ready: tesseract {ocr['version']}, languages {ocr['languages']}")
+    else:
+        print(f"[WARN] OCR unavailable - scanned PDFs will extract to nothing: {ocr['reason']}")
 
 
 # auto_error=False so a missing header reaches our own handler and returns the
@@ -259,6 +270,11 @@ def health_check():
         # drift, and the copy that drifts is the one that lets a user wait out
         # a 200 MB upload to be told no at the end of it.
         "max_upload_mb": MAX_UPLOAD_BYTES // (1024 * 1024),
+        # Whether a scanned PDF can be read here at all. Uploading one to a
+        # host with no tesseract succeeds, extracts nothing, and reports the
+        # empty result as the document's contents - so this is the difference
+        # between a document type that works and one that silently does not.
+        "ocr": ocr_status(),
     }
 
 

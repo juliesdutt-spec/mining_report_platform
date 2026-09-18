@@ -51,6 +51,37 @@ scorer now checks which provider answered *per document* and stops, naming
 the ones that fell back. Nothing is cached, so running again costs only the
 calls.
 
+**A host that cannot read scans is not allowed to score them.** Two of the
+thirteen labelled documents are scans, carrying 20 of the 124 fields. Without
+working OCR they extract to nothing, score all-missing, and cap the run at
+83.9% — a number that reads as "the extractor got a fifth of the corpus wrong"
+when what it means is "this laptop has no tesseract". The scorer checks before
+it spends any quota and stops, naming the documents and what is missing.
+
+### Installing OCR
+
+`pip install pytesseract` is not enough. It is a wrapper around a separate
+binary, and installing the wrapper alone is the quiet failure above: every
+other check in the codebase believes OCR is present.
+
+**Windows** — install from the [UB Mannheim
+build](https://github.com/UB-Mannheim/tesseract/wiki). During setup, expand
+*Additional language data* and tick **Hindi** and **Telugu**; the corpus has
+documents in both, and tesseract with only English does not fail on a
+Devanagari page, it returns confident Latin nonsense. Let the installer add
+the directory to PATH, then open a new terminal.
+
+**macOS** — `brew install tesseract tesseract-lang`
+
+**Debian/Ubuntu** — `sudo apt-get install tesseract-ocr tesseract-ocr-hin tesseract-ocr-tel`
+
+Check it took effect without running the scorer:
+
+    python -m evaluation.inspect_documents samples/corpus
+
+The last line reports the tesseract version and the languages it found, or
+says OCR is not working and why. It needs no API key.
+
 **A `--language` run cannot be recorded as the corpus figure.** The dashboard
 presents that file as the accuracy of every document, so a Hindi-only score
 saved there would be a number nobody measured. The scorer refuses, before

@@ -78,12 +78,70 @@ def _refuse_if_mocked() -> None:
         )
 
 
+def _refuse_if_ocr_unavailable(labels: List[dict]) -> None:
+    """
+    A scan this host cannot read scores all-missing and says nothing about it.
+
+    The mock refusals catch a provider that is absent or rate-limited. This is
+    the same failure one step earlier: extraction cannot be wrong about a
+    document whose text never arrived, so every field comes back missing, the
+    run completes, and the percentage that lands on the dashboard is the
+    accuracy of the extractor on documents that happened to have a text layer -
+    presented as its accuracy on the corpus.
+
+    Two of the thirteen labelled documents are scans. They carry 20 of the 124
+    fields, so a run without working OCR tops out at 83.9% and reads as though
+    the extractor got a fifth of the corpus wrong.
+
+    Checked before any document is extracted, so a run that cannot produce a
+    publishable number does not spend quota discovering it.
+    """
+    from document_processor import has_usable_text_layer, ocr_status
+
+    scans = []
+    for label in labels:
+        path = (PROJECT_ROOT / label["document"]).resolve()
+        try:
+            data = path.read_bytes()
+        except OSError:
+            # Unreadable is not the same as scanned. The scoring loop below
+            # reports a missing document by name; refusing the whole run over
+            # one would be a worse error than the one it is guarding against.
+            continue
+        if not has_usable_text_layer(data):
+            scans.append(label["document"])
+    if not scans:
+        return
+
+    status = ocr_status()
+    if status["ok"]:
+        return
+
+    listed = "\n".join(f"    {d}" for d in scans)
+    fields = sum(
+        len(l["expected"]) for l in labels
+        if l["document"] in set(scans)
+    )
+    total = sum(len(l["expected"]) for l in labels)
+    sys.exit(
+        f"{len(scans)} of {len(labels)} labelled document(s) are scans, and OCR "
+        f"is not working here:\n{listed}\n\n"
+        f"  {status['reason']}\n\n"
+        f"Every field in those documents would score missing - {fields} of {total} "
+        f"({fields / total * 100:.0f}%) - and the run would report that as the\n"
+        "extractor's accuracy rather than this machine's. Install OCR and run\n"
+        "again, or pass --language to score a subset that excludes them and keep\n"
+        "the result for yourself."
+    )
+
+
 def score(language: Optional[str] = None) -> dict:
     labels = _load_labels(language)
     if not labels:
         sys.exit(f"No labelled documents{' for ' + language if language else ''}.")
 
     _refuse_if_mocked()
+    _refuse_if_ocr_unavailable(labels)
 
     per_field: Dict[str, Counter] = {}
     documents = []

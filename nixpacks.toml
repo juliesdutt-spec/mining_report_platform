@@ -1,0 +1,18 @@
+# Railway builds this service with Nixpacks, which detects Python from
+# requirements.txt and installs nothing else. That is fine for every
+# dependency in that file and wrong for exactly one thing: pytesseract is a
+# wrapper around a separate binary, so `pip install pytesseract` succeeds on a
+# host with no tesseract and OCR then fails once per page inside a caught
+# exception. A scanned PDF uploaded to such a host is accepted, extracts to
+# nothing, and is stored as an empty document - reported to the user as a
+# successful upload.
+#
+# Scanned reports are not an edge case here. CMPDI and Coal India reporting
+# from before digitisation arrives as scans, and two of the thirteen documents
+# in the evaluation corpus are scans for that reason.
+#
+# The language data is listed explicitly. tesseract with only `eng` does not
+# fail on a Devanagari or Telugu page - it returns confident Latin nonsense,
+# which flows into extraction and is answered over as though it were text.
+[phases.setup]
+aptPkgs = ["tesseract-ocr", "tesseract-ocr-hin", "tesseract-ocr-tel"]
