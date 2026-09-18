@@ -310,12 +310,16 @@ export function SettingsPage({ user }: { user: SessionUser | null }) {
         </SettingsGroup>
 
         <SettingsGroup title="Platform">
-          <dl className="grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-4">
+          {/* Which framework rendered this page and which component library
+              styled it are facts about our build, not about the deployment
+              someone is configuring. Everything else on this screen answers
+              "what is this instance doing" - the provider in use, whether
+              the index is live, where the API points. These two answered
+              "what did we use", which is a question for the README. */}
+          <dl className="grid grid-cols-2 gap-x-6 gap-y-3">
             {[
               ["Problem statement", "SIH26023"],
               ["Organisation", "Ministry of Coal / CMPDI"],
-              ["Frontend", "React 18 · Vite · TS"],
-              ["Design system", "shadcn/ui"],
             ].map(([label, value]) => (
               <div key={label}>
                 <dt className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
