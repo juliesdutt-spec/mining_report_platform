@@ -164,6 +164,11 @@ OLLAMA_EMBED_MODEL = _env("OLLAMA_EMBED_MODEL", "nomic-embed-text")
 FORCE_MOCK = _env("USE_MOCK_AI", "false").lower() == "true"
 REQUESTED_PROVIDER = _env("AI_PROVIDER", "auto").lower()
 
+#: Which provider embeds, when it should not be the one that generates.
+#: Unset means "the generation provider if it can, otherwise any configured
+#: provider that can" - see _resolve_embedder.
+EMBED_PROVIDER_REQUESTED = _env("AI_EMBED_PROVIDER", "").lower()
+
 HTTP_TIMEOUT = int(_env("AI_TIMEOUT_SECONDS", "90") or "90")
 
 #: Every secret this module knows about, for scrubbing error text.
@@ -756,8 +761,68 @@ def _resolve() -> tuple[Provider | None, str | None]:
     )
 
 
+def _resolve_embedder(active: "Provider | None") -> tuple["Provider | None", str | None]:
+    """
+    Pick the provider that produces embeddings, which need not be the one
+    that writes answers.
+
+    They are separate capabilities and the obvious configuration splits them.
+    OpenRouter publishes no embeddings endpoint at all, so choosing it for
+    generation - which is the sane move when Gemini's daily generation quota
+    is 20 and its embedding quota is 100 a minute - used to take semantic
+    search down with it. Nothing was wrong with the embedding key; it simply
+    stopped being consulted.
+
+    AI_EMBED_PROVIDER pins it. Left unset, the generation provider is used
+    when it can embed, and otherwise any other configured provider that can.
+    Falling back rather than failing is right here: an embedding key that is
+    present and working should not go unused because a different provider was
+    chosen for a different job.
+    """
+    if active is None:
+        return None, MOCK_REASON_FOR_EMBED
+
+    if EMBED_PROVIDER_REQUESTED in ("mock", "none"):
+        return None, "AI_EMBED_PROVIDER is set to mock."
+
+    if EMBED_PROVIDER_REQUESTED not in ("auto", ""):
+        factory = PROVIDERS.get(EMBED_PROVIDER_REQUESTED)
+        if factory is None:
+            known = ", ".join(sorted(PROVIDERS))
+            return None, (
+                f"AI_EMBED_PROVIDER '{EMBED_PROVIDER_REQUESTED}' is not one of: "
+                f"{known}, mock."
+            )
+        provider = factory()
+        if not provider.is_configured():
+            return None, provider.unconfigured_reason()
+        if not provider.can_embed():
+            return None, f"{provider.name} has no embeddings API."
+        return provider, None
+
+    if active.can_embed():
+        return active, None
+
+    for name in AUTO_ORDER:
+        if name == active.name:
+            continue
+        if name == "ollama" and not (_env("OLLAMA_HOST") or _env("OLLAMA_MODEL")):
+            continue
+        candidate = PROVIDERS[name]()
+        if candidate.is_configured() and candidate.can_embed():
+            return candidate, None
+
+    return None, (
+        f"{active.name} has no embeddings API, and no other provider that can "
+        "embed is configured. Set GEMINI_API_KEY as well to keep semantic "
+        "search working."
+    )
+
+
 ACTIVE_PROVIDER, MOCK_REASON = _resolve()
 USE_MOCK = ACTIVE_PROVIDER is None
+MOCK_REASON_FOR_EMBED = MOCK_REASON
+EMBED_PROVIDER, EMBED_REASON = _resolve_embedder(ACTIVE_PROVIDER)
 
 
 def complete(prompt: str, max_tokens: int = 1000) -> str:
@@ -774,17 +839,13 @@ def complete(prompt: str, max_tokens: int = 1000) -> str:
 
 def embed(texts: list[str]) -> list[list[float]]:
     """
-    Embed texts with the active provider.
+    Vectors for these texts, from whichever provider embeds here.
 
-    Raises ProviderError when there is no provider, or when the one in play
-    has no embeddings API — the same single failure path complete() gives, so
-    retrieval has one thing to catch and one place to fall back from.
+    Not necessarily the one that answers questions: see _resolve_embedder.
     """
-    if ACTIVE_PROVIDER is None:
-        raise ProviderError(MOCK_REASON or "No AI provider is configured.")
-    if not ACTIVE_PROVIDER.can_embed():
-        raise ProviderError(f"{ACTIVE_PROVIDER.name} has no embeddings API.")
-    return ACTIVE_PROVIDER.embed(texts)
+    if EMBED_PROVIDER is None:
+        raise ProviderError(EMBED_REASON or "No embeddings provider is configured.")
+    return EMBED_PROVIDER.embed(texts)
 
 
 def embeddings_describe() -> dict:
@@ -794,22 +855,24 @@ def embeddings_describe() -> dict:
     `reason` is set only when it cannot, so /health can say which of the two
     reasons applies: no provider at all, or a provider that does not embed.
     """
-    if ACTIVE_PROVIDER is None:
-        return {"available": False, "provider": None, "model": None, "reason": MOCK_REASON}
-    if not ACTIVE_PROVIDER.can_embed():
+    if EMBED_PROVIDER is None:
         return {
             "available": False,
-            "provider": ACTIVE_PROVIDER.name,
+            "provider": None,
             "model": None,
-            "reason": f"{ACTIVE_PROVIDER.name} has no embeddings API.",
+            "reason": EMBED_REASON or MOCK_REASON,
         }
     # Deliberately the configured or already-resolved name, never a fresh
     # lookup: this runs on /health, which the platform polls.
-    resolved = getattr(ACTIVE_PROVIDER, "_resolved_embed_model", None)
+    resolved = getattr(EMBED_PROVIDER, "_resolved_embed_model", None)
     return {
         "available": True,
-        "provider": ACTIVE_PROVIDER.name,
-        "model": resolved or ACTIVE_PROVIDER.embed_model,
+        # Named rather than assumed. When generation and embedding are on
+        # different providers, an operator reading /health has to be able to
+        # see that - otherwise "gemini" on one line and a quota error from
+        # openrouter on another look like a contradiction.
+        "provider": EMBED_PROVIDER.name,
+        "model": resolved or EMBED_PROVIDER.embed_model,
         "reason": None,
     }
 
