@@ -38,8 +38,8 @@ import extraction_quality
 import retrieval
 import vector_store
 from document_processor import (
-    extract_text_from_pdf, extract_pages_from_pdf, chunk_text, get_pdf_metadata,
-    ocr_status, without_nul,
+    extract_text_and_pages, chunk_text, get_pdf_metadata, ocr_status,
+    without_nul,
 )
 from ai_extractor import (
     extract_structured_data, summarize_report, identify_topics,
@@ -369,12 +369,13 @@ async def upload_report(
         db.commit()
         db.refresh(report)
         
-        # Step 1: Extract text
-        raw_text = extract_text_from_pdf(pdf_bytes, file.filename)
+        # Step 1: Extract text, and the page boundaries that let an extracted
+        # value cite a real page number. One call, because asking for them
+        # separately parses the PDF twice and rasterises and OCRs a scan
+        # twice - time taken out of the same request budget as the model call.
+        raw_text, page_texts = extract_text_and_pages(pdf_bytes, file.filename)
         report.raw_text = raw_text[:50000]  # Limit stored text
-
-        # Keep page boundaries so extracted values can cite a real page number.
-        report.page_texts = [p[:20000] for p in extract_pages_from_pdf(pdf_bytes)]
+        report.page_texts = [p[:20000] for p in page_texts]
         
         # Step 2: Extract structured data using AI
         extracted = extract_structured_data(raw_text, file.filename)
