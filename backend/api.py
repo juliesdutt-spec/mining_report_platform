@@ -39,7 +39,7 @@ import retrieval
 import vector_store
 from document_processor import (
     extract_text_from_pdf, extract_pages_from_pdf, chunk_text, get_pdf_metadata,
-    ocr_status,
+    ocr_status, without_nul,
 )
 from ai_extractor import (
     extract_structured_data, summarize_report, identify_topics,
@@ -430,13 +430,36 @@ async def upload_report(
         # large); pass it through rather than relabelling it a 500.
         raise
     except Exception as e:
+        # Roll back before touching the session again. The failure is often
+        # the commit itself - a value the driver refuses, a constraint - and
+        # that leaves the session unusable: every later statement on it raises
+        # PendingRollbackError instead of doing anything. Without this the
+        # recovery below raised that error, the HTTPException a few lines down
+        # never ran, and the endpoint exited on an *unhandled* exception.
+        #
+        # Which matters more than it looks. An unhandled exception is the one
+        # case where Starlette's CORSMiddleware never runs: it sits inside
+        # ServerErrorMiddleware, so the 500 reaches the browser with no
+        # Access-Control-Allow-Origin, the browser blocks it, fetch() rejects
+        # with a TypeError indistinguishable from a dead host, and the
+        # frontend reports a healthy backend as unreachable. A failed upload
+        # then reads as an outage - which is exactly how one bad document was
+        # mistaken for the whole service being down.
+        db.rollback()
         # The detail is stored for an operator but not returned: the raw
         # exception can carry file paths, driver internals and query
         # fragments, none of which an uploader needs.
-        if 'report' in dir():
-            report.status = "error"
-            report.error_message = str(e)
-            db.commit()
+        report_id = getattr(locals().get('report'), 'id', None)
+        if report_id is not None:
+            try:
+                report.status = "error"
+                report.error_message = without_nul(str(e))[:1000]
+                db.commit()
+            except Exception as record_error:
+                # Recording the failure is best effort. Losing it must not
+                # replace a useful 500 with an unhandled one.
+                db.rollback()
+                print(f"[upload] could not mark report {report_id} failed: {record_error}")
         print(f"[upload] processing failed for {file.filename!r}: {e}")
         raise HTTPException(
             status_code=500,
