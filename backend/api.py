@@ -378,7 +378,9 @@ async def upload_report(
         report.page_texts = [p[:20000] for p in page_texts]
         
         # Step 2: Extract structured data using AI
-        extracted = extract_structured_data(raw_text, file.filename)
+        # page_texts as well as the flat text: extraction chooses which
+        # passages to read, and page boundaries keep that choice citable.
+        extracted = extract_structured_data(raw_text, file.filename, page_texts)
         report.extracted_data = extracted
         
         # Store individual fields

@@ -75,6 +75,7 @@ CACHE_DIR = Path(__file__).resolve().parent / ".extractions"
 def _cache_key(pdf_bytes: bytes, model: str) -> str:
     """Document, model and prompt together - any change makes a new entry."""
     import ai_extractor
+    import extraction_context
 
     digest = hashlib.sha256()
     digest.update(pdf_bytes)
@@ -91,8 +92,16 @@ def _cache_key(pdf_bytes: bytes, model: str) -> str:
     # over-invalidates - an unrelated edit to ai_extractor.py costs a
     # re-extraction - and that is the right way to be wrong. A stale hit
     # scores silently; a stale miss only costs calls.
+    #
+    # Both modules, because the prompt is now assembled from two: ai_extractor
+    # writes the instructions and extraction_context chooses which passages go
+    # in. Hashing only the first would let a change to selection - a different
+    # 8000 characters, which is a different question - be scored against
+    # results extracted before it.
     try:
-        digest.update(Path(ai_extractor.__file__).read_bytes())
+        for module in (ai_extractor, extraction_context):
+            digest.update(Path(module.__file__).read_bytes())
+            digest.update(b"\0")
     except (OSError, TypeError, AttributeError):
         # No readable source: fall back to never reusing rather than reusing
         # across a prompt change nobody can detect.
@@ -137,7 +146,7 @@ def _extract(pdf_path: Path, use_cache: bool = True) -> tuple[dict, str, bool]:
     Re-reading the PDF on a cache hit is deliberate: the key is the document's
     bytes, so a document that changed must miss.
     """
-    from document_processor import extract_text_from_pdf
+    from document_processor import extract_text_and_pages
     from ai_extractor import extract_structured_data_detailed
     import ai_providers
 
@@ -150,8 +159,11 @@ def _extract(pdf_path: Path, use_cache: bool = True) -> tuple[dict, str, bool]:
         if entry is not None:
             return entry["data"], entry["source"], True
 
-    text = extract_text_from_pdf(data, pdf_path.name)
-    result = extract_structured_data_detailed(text, pdf_path.name)
+    # Both views, the way an upload gets them: the harness has to measure the
+    # pipeline production runs, and extraction now chooses which passages to
+    # read rather than taking the first 8000 characters.
+    text, page_texts = extract_text_and_pages(data, pdf_path.name)
+    result = extract_structured_data_detailed(text, pdf_path.name, page_texts)
     fields, source = (result.get("data") or {}), result.get("source", "mock")
     if source != "mock":
         _remember(key, pdf_path.name, fields, source, model)

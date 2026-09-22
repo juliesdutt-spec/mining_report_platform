@@ -33,7 +33,7 @@ def main() -> int:
 
     import ai_extractor
     import ai_providers
-    from document_processor import extract_text_from_pdf
+    from document_processor import extract_text_and_pages
 
     path = Path(args.document).expanduser()
     if not path.exists():
@@ -47,7 +47,7 @@ def main() -> int:
         )
 
     data = path.read_bytes()
-    text = extract_text_from_pdf(data, path.name)
+    text, page_texts = extract_text_and_pages(data, path.name)
     print(f"\nDocument : {path.name}")
     print(f"Text     : {len(text)} characters extracted"
           + ("  <- nothing to send; this is an OCR problem, not a model one"
@@ -55,7 +55,7 @@ def main() -> int:
     print(f"Provider : {described['mode']} ({described['model']})")
     print("\nCalling...\n")
 
-    prompt = ai_extractor.extraction_prompt(text, path.name)
+    prompt = ai_extractor.extraction_prompt(text, path.name, page_texts)
     try:
         reply = ai_providers.complete(prompt, max_tokens=2000)
     except ai_providers.ProviderError as exc:
