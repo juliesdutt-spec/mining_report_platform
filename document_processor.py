@@ -290,6 +290,33 @@ def _install_hint() -> str:
     return "Install it with: sudo apt-get install tesseract-ocr tesseract-ocr-hin tesseract-ocr-tel"
 
 
+def without_nul(text: str) -> str:
+    """
+    Drop NUL (0x00) bytes from extracted text.
+
+    PostgreSQL stores no NUL in a text value and psycopg2 refuses to send one,
+    raising `ValueError: A string literal cannot contain NUL (0x00) characters`
+    when the row is flushed - so a single stray 0x00 anywhere in a document
+    fails the whole upload at commit time, long after extraction looked fine.
+
+    PDFs produce them readily: a subset-embedded font with a gap in its CID
+    map extracts unmapped glyphs as 0x00, which is why a clean-looking annual
+    report can carry them while a scan of the same pages does not.
+
+    Dropping is right rather than substituting. A NUL here is the absence of a
+    character, not a character - it came from a glyph the extractor could not
+    identify, so there is nothing to preserve and no reader who wants it. It
+    is also not whitespace, so the tidying elsewhere in the pipeline
+    (vector_store._tidy collapses `[ \\t]+`) leaves it in place.
+
+    Applied at the two public extraction entry points below, which is the one
+    place every consumer shares: raw_text, page_texts, chunking, the semantic
+    index, the extraction prompt, evidence snippets and the evaluation
+    harness all read from these two functions.
+    """
+    return text.replace("\x00", "") if text else text
+
+
 def extract_text_from_pdf(pdf_bytes: bytes, filename: str = "") -> str:
     """
     Extract text from a PDF file.
@@ -310,8 +337,8 @@ def extract_text_from_pdf(pdf_bytes: bytes, filename: str = "") -> str:
         if len(full_text) < 100 and OCR_AVAILABLE:
             full_text = _ocr_pdf(pdf_bytes)
         
-        return full_text if full_text else _fallback_extraction(pdf_bytes)
-        
+        return without_nul(full_text if full_text else _fallback_extraction(pdf_bytes))
+
     except Exception as e:
         return f"Error extracting text: {str(e)}"
 
@@ -327,14 +354,14 @@ def extract_pages_from_pdf(pdf_bytes: bytes) -> List[str]:
     """
     try:
         reader = PdfReader(io.BytesIO(pdf_bytes))
-        pages = [(page.extract_text() or "").strip() for page in reader.pages]
+        pages = [without_nul((page.extract_text() or "").strip()) for page in reader.pages]
         if any(pages):
             return pages
     except Exception:
         pass
     # Nothing in the text layer: the document is a scan, so read it the same
     # way extract_text_from_pdf does, but keep the page boundaries.
-    ocr_pages = _ocr_pages(pdf_bytes)
+    ocr_pages = [without_nul(page) for page in _ocr_pages(pdf_bytes)]
     return ocr_pages if any(ocr_pages) else []
 
 
