@@ -490,6 +490,11 @@ export interface ExtractionQuality {
     equivalent: number;
     missing: number;
     wrong: number;
+    /** Which documents the figures above describe. Real ones lead once any
+     *  are scored; the synthetic set is then reported beside them, never
+     *  blended in. Absent on a server older than the real set. */
+    corpus?: "real" | "synthetic";
+    synthetic?: { accuracy: number; fieldsScored: number; documents: number } | null;
   } | null;
 }
 

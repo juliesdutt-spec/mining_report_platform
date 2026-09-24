@@ -82,11 +82,42 @@ def measured_accuracy() -> Optional[Dict[str, Any]]:
     if not isinstance(result, dict) or "accuracy" not in result:
         return None
 
-    totals = result.get("totals", {}) or {}
+    by_corpus = result.get("byCorpus") or {}
+    real = by_corpus.get("real")
+    if isinstance(real, dict) and real.get("fieldsScored"):
+        # Real documents lead once any are scored. They answer the question
+        # people actually ask of this figure - does it work on what CIL
+        # publishes - and blending in the fixtures, whose answers were
+        # written by construction, would let them flatter it.
+        synthetic = by_corpus.get("synthetic") or {}
+        return {
+            **_figures(real, real.get("documents", 0)),
+            "corpus": "real",
+            "synthetic": (
+                {
+                    "accuracy": synthetic.get("accuracy"),
+                    "fieldsScored": synthetic.get("fieldsScored", 0),
+                    "documents": synthetic.get("documents", 0),
+                }
+                if synthetic.get("fieldsScored") else None
+            ),
+        }
+
+    # A run recorded before real documents existed has no byCorpus, and
+    # everything in it is synthetic.
     return {
-        "accuracy": result.get("accuracy"),
-        "fieldsScored": result.get("fieldsScored", 0),
-        "documents": len(result.get("documents", []) or []),
+        **_figures(result, len(result.get("documents", []) or [])),
+        "corpus": "synthetic",
+        "synthetic": None,
+    }
+
+
+def _figures(part: Dict[str, Any], documents: int) -> Dict[str, Any]:
+    totals = part.get("totals", {}) or {}
+    return {
+        "accuracy": part.get("accuracy"),
+        "fieldsScored": part.get("fieldsScored", 0),
+        "documents": documents,
         "exact": totals.get("exact", 0),
         "equivalent": totals.get("equivalent", 0),
         "missing": totals.get("missing", 0),

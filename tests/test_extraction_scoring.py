@@ -72,6 +72,11 @@ class TheLabelledSetIsWellFormed(unittest.TestCase):
         root = LABELS.parent.parent
         for path in LABELS.glob("*.json"):
             label = json.loads(path.read_text(encoding="utf-8"))
+            if label.get("corpus") == "real":
+                # Not committed by design (evaluation/real/README.md); the
+                # label pins the file by URL and hash instead, which
+                # TheRealSetCanBeAudited checks.
+                continue
             self.assertTrue(
                 (root / label["document"]).exists(),
                 f"{path.name} points at a missing file: {label['document']}",

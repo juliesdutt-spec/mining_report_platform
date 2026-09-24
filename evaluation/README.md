@@ -167,6 +167,16 @@ trusting anything downstream of it.
 every field the scorer knows about left empty. Fill in what the document
 states, delete the rest, and score.
 
+## Adding a real document
+
+The labelled set above is synthetic. Real CMPDI/CIL reports go in
+`evaluation/real/` and have stricter labels: every value cites the page and
+words it was read from, the PDF is pinned by URL and SHA-256, and a label is
+not published until someone marks it verified. The scorer reports real and
+synthetic accuracy separately. **Start with [real/README.md](real/README.md).**
+
+    python -m evaluation.score --check    # labels and PDFs in order? no quota spent
+
 ## Adding a document
 
 Put the PDF anywhere in the repository, then add a label file beside the

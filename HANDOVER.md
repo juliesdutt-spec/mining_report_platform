@@ -301,6 +301,17 @@ production) and `ANNUAL_REPORT_2024-25.pdf` (21 MB, 342 pages, on their disk).
 Add 3–5 more from `coalcontroller.gov.in` / `cmpdi.co.in` / `coal.gov.in`, then
 `inspect_documents --labels` and hand-fill.
 
+*Update 2026-09-24:* the infrastructure for this is built — follow
+`evaluation/real/README.md`. Real PDFs go in `evaluation/real/` (gitignored);
+their labels (`evaluation/labelled/REAL-*.json`) are committed, pin the PDF by
+URL + SHA-256, cite page + quote for every value, and are not scored until
+`"status": "verified"`. `python -m evaluation.score --check` validates labels
+with no provider calls. The scorer reports real and synthetic separately
+(`byCorpus` in `latest.json`) and the dashboard headlines the real figure once
+any real document is scored. This cloud environment cannot download from any
+Indian government / CIL site (proxy 403), so the PDFs must come from the user.
+Still zero real labels — that is the remaining work, and it is manual.
+
 **(b) Merge and validate the extraction-selection work.** Commits `2d55951`
 and `94a0ab0` are pushed but have no PR. The user should run
 `python -m evaluation.score` locally first. **Expect the number not to move** —

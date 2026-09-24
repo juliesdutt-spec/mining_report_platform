@@ -25,3 +25,9 @@ reports/*.png
 # git on purpose: a committed cache would let a "score" run complete without
 # calling the model at all, and nobody would notice.
 evaluation/.extractions/
+
+# Real documents for the evaluation set. Their labels are committed and pin
+# each file by SHA-256 and source URL; the PDFs themselves are not - annual
+# reports run past 20 MB and would ship inside every backend deploy.
+evaluation/real/*
+!evaluation/real/README.md
