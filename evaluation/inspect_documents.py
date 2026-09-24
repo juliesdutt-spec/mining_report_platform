@@ -37,6 +37,11 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 LABELS_DIR = Path(__file__).resolve().parent / "labelled"
 
+#: Where real documents go. Their PDFs are not committed (see .gitignore and
+#: evaluation/real/README.md); their labels are, pinned to the exact file by
+#: hash, so a skeleton written for a document here is a real-corpus label.
+REAL_DIR = Path(__file__).resolve().parent / "real"
+
 SCRIPTS = (
     ("Devanagari", re.compile(r"[ऀ-ॿ]")),
     ("Telugu", re.compile(r"[ఀ-౿]")),
@@ -126,26 +131,76 @@ def _write_label(row: dict) -> Path:
     except ValueError:
         document = str(row["path"].resolve())
 
-    destination = LABELS_DIR / f"{row['path'].stem}.json"
+    if _is_real(row["path"]):
+        label, destination = _real_skeleton(row, document, fields)
+    else:
+        destination = LABELS_DIR / f"{row['path'].stem}.json"
+        label = {
+            "document": document,
+            "language": "en",
+            "note": (
+                "Hand-read from the PDF. Delete any field the document does "
+                "not state - a field left in with a guessed value scores the "
+                "labeller, not the extractor."
+            ),
+            "expected": {field: "" for field in sorted(fields)},
+        }
+    if destination.exists():
+        # A skeleton is blank by design; writing one over a label someone has
+        # spent an hour filling in would erase the only copy of that work.
+        print(f"  {destination.name} already exists, left as it is")
+        return destination
     destination.write_text(
-        json.dumps(
-            {
-                "document": document,
-                "language": "en",
-                "note": (
-                    "Hand-read from the PDF. Delete any field the document does "
-                    "not state - a field left in with a guessed value scores the "
-                    "labeller, not the extractor."
-                ),
-                "expected": {field: "" for field in sorted(fields)},
-            },
-            indent=2,
-            ensure_ascii=False,
-        )
-        + "\n",
-        encoding="utf-8",
+        json.dumps(label, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
     )
     return destination
+
+
+def _is_real(path: Path) -> bool:
+    try:
+        path.resolve().relative_to(REAL_DIR.resolve())
+        return True
+    except ValueError:
+        return False
+
+
+def _real_skeleton(row: dict, document: str, fields: set) -> tuple[dict, Path]:
+    """
+    A real document's label: blank answers, plus the provenance that makes
+    them checkable.
+
+    The hash is filled in here rather than left to the labeller, because it
+    is the one thing a person copying it would get wrong and never notice.
+    """
+    import hashlib
+    from datetime import date
+
+    ordered = sorted(fields)
+    label = {
+        "document": document,
+        "corpus": "real",
+        "status": "draft",
+        "language": "en",
+        "source": {
+            "title": "",
+            "publisher": "",
+            "url": "",
+            "retrieved": date.today().isoformat(),
+            "sha256": hashlib.sha256(row["path"].read_bytes()).hexdigest(),
+            "pages": row.get("pages"),
+        },
+        "labelled_by": "",
+        "note": (
+            "Read from the PDF by hand. For each field the document states, "
+            "write the value as the document gives it and cite the page and "
+            "the words on it. Delete every field it does not state, from "
+            "expected and evidence both. Set status to verified only after "
+            "checking each value against its page. See evaluation/real/README.md."
+        ),
+        "expected": {field: "" for field in ordered},
+        "evidence": {field: {"page": None, "quote": ""} for field in ordered},
+    }
+    return label, LABELS_DIR / f"REAL-{row['path'].stem}.json"
 
 
 #: What this tool cannot run without, and what to type. The pip name is not
@@ -243,6 +298,10 @@ def main() -> None:
         for row in rows:
             print(f"  wrote {_write_label(row)}")
         print("\nFill in what each document actually states, delete the rest, then:")
+        if any(_is_real(row["path"]) for row in rows):
+            print("  python -m evaluation.score --check    # no quota spent")
+            print("mark each real label verified once every value is checked against")
+            print("its page (evaluation/real/README.md), then:")
         print("  python -m evaluation.score --json")
 
 

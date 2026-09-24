@@ -13,6 +13,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import sys
 from collections import Counter
 from datetime import datetime, timezone
@@ -27,6 +28,23 @@ LABELS_DIR = Path(__file__).resolve().parent / "labelled"
 #: exact and equivalent both count as correct; they are kept apart so a run
 #: can show how much of the score rests on the equivalence table.
 EXACT, EQUIVALENT, MISSING, WRONG = "exact", "equivalent", "missing", "wrong"
+
+
+#: Which set a labelled document belongs to. Every label written before real
+#: documents existed describes a fixture this project generated, so a label
+#: that does not say is synthetic - never the other way round, or a fixture
+#: would be counted as evidence about real reports.
+SYNTHETIC, REAL = "synthetic", "real"
+
+#: A label someone has started but not checked against the PDF. Not scored by
+#: default: a half-filled label scores the labeller, not the extractor.
+DRAFT, VERIFIED = "draft", "verified"
+
+_SHA256 = re.compile(r"^[0-9a-f]{64}$")
+
+
+def corpus_of(label: dict) -> str:
+    return label.get("corpus") or SYNTHETIC
 
 
 def _load_labels(language: Optional[str]) -> List[dict]:
@@ -269,6 +287,147 @@ def _refuse_if_ocr_unavailable(labels: List[dict]) -> None:
         )
 
 
+def label_problems(label: dict) -> List[str]:
+    """
+    Why this label cannot be scored as it stands, or an empty list.
+
+    The bar is higher for a real document than for a fixture, because the
+    fixture's answers are known by construction and a real report's are only
+    known because somebody read it. A real label therefore has to say where
+    each value was read - page and the words on it - so anyone can open the
+    PDF and check the answer key rather than trusting it. An answer key
+    nobody can audit is how a benchmark ends up measuring its author.
+    """
+    name = label.get("_label_file", label.get("document", "?"))
+    expected = label.get("expected") or {}
+    problems = []
+
+    if not expected:
+        problems.append(f"{name}: labels no fields")
+    for field, value in expected.items():
+        # A skeleton field left blank is not "the document says nothing" -
+        # that is expressed by deleting the field. Scored, a blank would
+        # count any extracted value as wrong.
+        if value is None or not str(value).strip():
+            problems.append(
+                f"{name}: {field} is blank - delete fields the document does not state"
+            )
+
+    if corpus_of(label) != REAL:
+        return problems
+
+    status = label.get("status")
+    if status not in (DRAFT, VERIFIED):
+        problems.append(f"{name}: status must be \"{DRAFT}\" or \"{VERIFIED}\"")
+
+    source = label.get("source") or {}
+    if not str(source.get("url") or "").startswith(("http://", "https://")):
+        problems.append(f"{name}: source.url must say where the PDF was published")
+    if not _SHA256.match(str(source.get("sha256") or "")):
+        problems.append(f"{name}: source.sha256 must pin the exact PDF that was read")
+
+    if status == VERIFIED and not str(label.get("labelled_by") or "").strip():
+        problems.append(f"{name}: a verified label must say who checked it (labelled_by)")
+
+    evidence = label.get("evidence") or {}
+    for field in expected:
+        cited = evidence.get(field)
+        cited = cited if isinstance(cited, dict) else {}
+        page = cited.get("page")
+        if not isinstance(page, int) or isinstance(page, bool) or page < 1:
+            problems.append(f"{name}: {field} needs evidence.page - the page it was read on")
+        if not str(cited.get("quote") or "").strip():
+            problems.append(f"{name}: {field} needs evidence.quote - the words on that page")
+    for field in evidence:
+        if field not in expected:
+            problems.append(
+                f"{name}: evidence for {field}, which is not labelled - "
+                "delete it from both, or label it"
+            )
+    return problems
+
+
+def _refuse_if_malformed(labels: List[dict]) -> None:
+    problems = [p for label in labels for p in label_problems(label)]
+    if problems:
+        listed = "\n".join(f"  {p}" for p in problems)
+        sys.exit(
+            f"{len(problems)} problem(s) in the labels, so nothing was scored "
+            f"and no quota was spent:\n{listed}\n\n"
+            "See evaluation/real/README.md for what a label needs."
+        )
+
+
+def _refuse_if_changed(labels: List[dict]) -> None:
+    """
+    Stop when a real document is not the file its label was written against.
+
+    Reports are revised and re-published under the same name. A label read
+    from last year's PDF, scored against this year's, would mark the
+    extractor wrong for reading the document correctly.
+    """
+    changed = []
+    for label in labels:
+        pinned = (label.get("source") or {}).get("sha256")
+        if not pinned:
+            continue
+        path = (PROJECT_ROOT / label["document"]).resolve()
+        if not path.exists():
+            continue
+        actual = hashlib.sha256(path.read_bytes()).hexdigest()
+        if actual != pinned:
+            changed.append(f"  {label['document']}\n    label pins {pinned}\n    file is    {actual}")
+    if changed:
+        listed = "\n".join(changed)
+        sys.exit(
+            "These PDFs are not the files their labels were read from:\n"
+            f"{listed}\n\n"
+            "Download the exact version from source.url, or re-read the new one "
+            "and update the label."
+        )
+
+
+def missing_documents(labels: List[dict]) -> List[dict]:
+    return [l for l in labels if not (PROJECT_ROOT / l["document"]).resolve().exists()]
+
+
+def _where_to_get(label: dict) -> str:
+    url = (label.get("source") or {}).get("url")
+    return f" - download it from {url}" if url else ""
+
+
+def check(language: Optional[str] = None) -> Optional[str]:
+    """
+    Everything the scorer would refuse over, without calling the provider.
+
+    Labelling a real report takes an hour; finding out it was malformed
+    should not cost a day's quota. Returns None when all is in order (so
+    `sys.exit(check())` exits 0), or the reason it is not.
+    """
+    loaded = _load_labels(language)
+    by_corpus = Counter(corpus_of(l) for l in loaded)
+    drafts = [l for l in loaded if l.get("status") == DRAFT]
+    print(f"\n  {len(loaded)} label(s): "
+          + ", ".join(f"{n} {c}" for c, n in sorted(by_corpus.items()))
+          + (f"; {len(drafts)} still draft" if drafts else ""))
+
+    problems = [p for label in loaded for p in label_problems(label)]
+    for label in missing_documents(loaded):
+        problems.append(f"{label['document']} is not on this machine{_where_to_get(label)}")
+    for label in loaded:
+        pinned = (label.get("source") or {}).get("sha256")
+        path = (PROJECT_ROOT / label["document"]).resolve()
+        if pinned and path.exists() and hashlib.sha256(path.read_bytes()).hexdigest() != pinned:
+            problems.append(f"{label['document']} is not the file its label pins (sha256 differs)")
+
+    if problems:
+        return "\n".join(["", *(f"  {p}" for p in problems), "",
+                          f"  {len(problems)} problem(s). See evaluation/real/README.md."])
+    print("  all labels are in order"
+          + (" - mark drafts verified once checked against their pages" if drafts else ""))
+    return None
+
+
 def _provider_name() -> str:
     """Which provider is about to be billed, for the line before the wait."""
     import ai_providers
@@ -278,11 +437,25 @@ def _provider_name() -> str:
     return f"{described.get('mode')} ({model})" if model else str(described.get("mode"))
 
 
-def score(language: Optional[str] = None, use_cache: bool = True) -> dict:
-    labels = _load_labels(language)
+def score(
+    language: Optional[str] = None,
+    use_cache: bool = True,
+    include_drafts: bool = False,
+) -> dict:
+    loaded = _load_labels(language)
+    labels = [l for l in loaded if include_drafts or l.get("status") != DRAFT]
+    drafts = len(loaded) - len(labels)
     if not labels:
-        sys.exit(f"No labelled documents{' for ' + language if language else ''}.")
+        sys.exit(
+            f"No labelled documents{' for ' + language if language else ''}"
+            + (f" ({drafts} draft label(s) not scored; pass --include-drafts)." if drafts else ".")
+        )
 
+    # All three before the provider is called: each one is a reason the
+    # number would be wrong, and finding it after the run is a bill for
+    # nothing.
+    _refuse_if_malformed(labels)
+    _refuse_if_changed(labels)
     _refuse_if_mocked()
     _refuse_if_ocr_unavailable(labels)
 
@@ -302,11 +475,14 @@ def score(language: Optional[str] = None, use_cache: bool = True) -> dict:
     # happens before the call and takes seconds on its own.
     print(f"\nScoring {len(labels)} document(s) with "
           f"{_provider_name()}. Ctrl-C is safe: what has been extracted is saved.\n")
+    if drafts:
+        print(f"  {drafts} draft label(s) not scored - verify them, or pass --include-drafts\n")
 
     for position, label in enumerate(labels, start=1):
         pdf_path = (PROJECT_ROOT / label["document"]).resolve()
         if not pdf_path.exists():
-            print(f"  ! {label['_label_file']}: {label['document']} not found, skipped")
+            print(f"  ! {label['_label_file']}: {label['document']} not found, "
+                  f"skipped{_where_to_get(label)}")
             continue
 
         name = Path(label["document"]).name
@@ -334,6 +510,7 @@ def score(language: Optional[str] = None, use_cache: bool = True) -> dict:
 
         documents.append({
             "document": label["document"],
+            "corpus": corpus_of(label),
             "language": label.get("language", "unknown"),
             "source": source,
             "fields": outcomes,
@@ -362,6 +539,12 @@ def score(language: Optional[str] = None, use_cache: bool = True) -> dict:
 
     return {
         "documents": documents,
+        # Kept apart because they answer different questions. The synthetic
+        # set says whether extraction works on documents whose answers are
+        # known by construction; the real set says whether it works on what
+        # departments actually publish. One blended percentage would let the
+        # first stand in for the second.
+        "byCorpus": _by_corpus(documents),
         "perField": {f: dict(c) for f, c in per_field.items()},
         "totals": dict(totals),
         "fieldsScored": scored,
@@ -373,6 +556,27 @@ def score(language: Optional[str] = None, use_cache: bool = True) -> dict:
         "reusedExtractions": reused,
         "recordedAt": datetime.now(timezone.utc).isoformat(timespec="seconds"),
     }
+
+
+def _by_corpus(documents: List[dict]) -> Dict[str, dict]:
+    grouped: Dict[str, dict] = {}
+    for document in documents:
+        entry = grouped.setdefault(
+            document.get("corpus", SYNTHETIC), {"documents": 0, "totals": Counter()}
+        )
+        entry["documents"] += 1
+        entry["totals"].update(o["verdict"] for o in document["fields"].values())
+    summary = {}
+    for corpus, entry in grouped.items():
+        totals = entry["totals"]
+        scored = sum(totals.values())
+        summary[corpus] = {
+            "documents": entry["documents"],
+            "fieldsScored": scored,
+            "accuracy": ((totals[EXACT] + totals[EQUIVALENT]) / scored) if scored else 0.0,
+            "totals": dict(totals),
+        }
+    return summary
 
 
 def _render(result: dict) -> None:
@@ -393,6 +597,9 @@ def _render(result: dict) -> None:
               f"(same document, model and prompt) - pass --fresh to re-call")
     print(f"  accuracy {result['accuracy'] * 100:.1f}%"
           f"  ({totals.get(EXACT, 0)} exact + {totals.get(EQUIVALENT, 0)} equivalent)")
+    for corpus, part in sorted((result.get("byCorpus") or {}).items()):
+        print(f"    {corpus:10} {part['accuracy'] * 100:5.1f}%  over {part['fieldsScored']} "
+              f"field(s) in {part['documents']} document(s)")
     if totals.get(WRONG):
         print(f"  {totals[WRONG]} wrong - a blank field is a gap someone can see, "
               "a confidently wrong one is what corrupts a conflict report")
@@ -414,7 +621,12 @@ def _render(result: dict) -> None:
 DASHBOARD_PATH = PROJECT_ROOT / "evaluation" / "latest.json"
 
 
-def refuse_to_record(language: Optional[str], destination: Optional[Path]) -> Optional[str]:
+def refuse_to_record(
+    language: Optional[str],
+    destination: Optional[Path],
+    include_drafts: bool = False,
+    missing: Optional[List[dict]] = None,
+) -> Optional[str]:
     """
     Why this run must not be written to `destination`, or None if it may be.
 
@@ -426,9 +638,26 @@ def refuse_to_record(language: Optional[str], destination: Optional[Path]) -> Op
 
     Keeping such a run for yourself is fine. Publishing it is not.
     """
-    if destination is None or not language:
+    if destination is None or destination.resolve() != DASHBOARD_PATH.resolve():
         return None
-    if destination.resolve() != DASHBOARD_PATH.resolve():
+    if include_drafts:
+        # A draft is an answer key nobody has checked. Scoring against it is
+        # a reasonable thing to do while labelling; publishing the result as
+        # the platform's accuracy is not.
+        return (
+            "Refusing to record an --include-drafts run as the corpus accuracy.\n"
+            "Draft labels have not been checked against their PDFs. Mark them "
+            "\"verified\" once checked, or pass an explicit path to keep this run."
+        )
+    if missing:
+        # Skipping a document on screen is fine. Publishing a figure that
+        # quietly left documents out is a different corpus under the same name.
+        listed = "\n".join(f"  {l['document']}{_where_to_get(l)}" for l in missing)
+        return (
+            f"Refusing to record: {len(missing)} labelled document(s) are not on "
+            f"this machine, so the figure would describe a smaller corpus:\n{listed}"
+        )
+    if not language:
         return None
     return (
         f"Refusing to record a --language {language} run as the corpus accuracy.\n"
@@ -448,6 +677,14 @@ def main() -> None:
              "(costs one request each - check your daily quota first)",
     )
     parser.add_argument(
+        "--check", action="store_true",
+        help="only check the labels and PDFs are in order - no provider calls, no quota",
+    )
+    parser.add_argument(
+        "--include-drafts", action="store_true",
+        help="also score labels still marked draft (never recorded to the dashboard)",
+    )
+    parser.add_argument(
         "--json", dest="json_path", nargs="?", const=str(DASHBOARD_PATH), default=None,
         help=f"write the result as JSON; with no path, to {DASHBOARD_PATH.name}, "
              "which is the file the dashboard reads",
@@ -458,11 +695,19 @@ def main() -> None:
     # Checked before scoring, not after. Scoring calls the provider once per
     # document and spends real quota; refusing to record the result at the end
     # of that is a bill for nothing.
-    refusal = refuse_to_record(args.language, destination)
+    candidates = [
+        l for l in _load_labels(args.language)
+        if args.include_drafts or l.get("status") != DRAFT
+    ]
+    if args.check:
+        sys.exit(check(args.language))
+    refusal = refuse_to_record(
+        args.language, destination, args.include_drafts, missing_documents(candidates)
+    )
     if refusal:
         sys.exit(refusal)
 
-    result = score(args.language, use_cache=not args.fresh)
+    result = score(args.language, use_cache=not args.fresh, include_drafts=args.include_drafts)
     result["language"] = args.language or "all"
     _render(result)
 

@@ -131,10 +131,18 @@ export function ExtractionQualityPanel({ quality }: { quality?: Quality }) {
               )}
             </div>
             <p className="mt-1 text-xs text-muted-foreground">
-              {measured.fieldsScored} fields over {measured.documents} labelled test
+              {measured.fieldsScored} fields over {measured.documents}{" "}
+              {measured.corpus === "real" ? "real, hand-labelled" : "labelled test"}{" "}
               document{measured.documents === 1 ? "" : "s"} · {measured.exact} exact,{" "}
               {measured.equivalent} equivalent, {measured.missing} missing
             </p>
+            {measured.synthetic ? (
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                Synthetic test set, reported separately:{" "}
+                {Math.round(measured.synthetic.accuracy * 100)}% over{" "}
+                {measured.synthetic.fieldsScored} fields.
+              </p>
+            ) : null}
             <p className="mt-0.5 text-xs text-muted-foreground">
               Measured on the evaluation set, not on the documents uploaded here.
             </p>
