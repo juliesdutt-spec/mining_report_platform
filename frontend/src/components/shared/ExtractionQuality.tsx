@@ -79,7 +79,7 @@ export function ExtractionQualityPanel({ quality }: { quality?: Quality }) {
         </QualityCell>
         <QualityCell
           label="Extraction accuracy"
-          help="Measured by scoring extraction against documents a person has read by hand. Coverage is not a substitute — a field can be complete and wrong."
+          help="Measured by scoring extraction against a labelled test set: documents whose correct values were written down by hand beforehand. It describes the evaluation set, not the documents uploaded here. Coverage is not a substitute — a field can be complete and wrong."
         >
           <Skeleton className="mt-2 h-8 w-32" />
           <Skeleton className="mt-1 h-4 w-56" />
@@ -110,7 +110,7 @@ export function ExtractionQualityPanel({ quality }: { quality?: Quality }) {
 
       <QualityCell
         label="Extraction accuracy"
-        help="Measured by scoring extraction against documents a person has read by hand. Coverage is not a substitute — a field can be complete and wrong."
+        help="Measured by scoring extraction against a labelled test set: documents whose correct values were written down by hand beforehand. It describes the evaluation set, not the documents uploaded here. Coverage is not a substitute — a field can be complete and wrong."
       >
         {measured ? (
           <>
@@ -131,9 +131,12 @@ export function ExtractionQualityPanel({ quality }: { quality?: Quality }) {
               )}
             </div>
             <p className="mt-1 text-xs text-muted-foreground">
-              {measured.fieldsScored} fields over {measured.documents} hand-read
+              {measured.fieldsScored} fields over {measured.documents} labelled test
               document{measured.documents === 1 ? "" : "s"} · {measured.exact} exact,{" "}
               {measured.equivalent} equivalent, {measured.missing} missing
+            </p>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              Measured on the evaluation set, not on the documents uploaded here.
             </p>
           </>
         ) : (
