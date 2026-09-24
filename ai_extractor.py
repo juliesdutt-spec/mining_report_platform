@@ -21,6 +21,7 @@ from typing import Optional
 # Populates os.environ from .env before any getenv below runs.
 import utils.env  # noqa: F401
 import ai_providers
+import extraction_context
 from ai_providers import ProviderError
 
 # Whether the Anthropic SDK is importable. Still reported by /health, but no
@@ -48,7 +49,9 @@ def get_client():
     return ai_providers.ACTIVE_PROVIDER
 
 
-def extract_structured_data(text: str, filename: str = "") -> dict:
+def extract_structured_data(
+    text: str, filename: str = "", page_texts: Optional[list] = None
+) -> dict:
     """
     Extract structured data from mining report text using the active provider.
     Returns a dict with: date, location, mineral_type, quantity, 
@@ -60,7 +63,7 @@ def extract_structured_data(text: str, filename: str = "") -> dict:
     `extract_structured_data_detailed` instead, because from here the two are
     indistinguishable.
     """
-    return extract_structured_data_detailed(text, filename)["data"]
+    return extract_structured_data_detailed(text, filename, page_texts)["data"]
 
 
 #: A reply has to contain at least one of these to be an answer to the prompt
@@ -115,14 +118,31 @@ def _looks_truncated(text: str) -> bool:
     return opened > 0 and opened > text.count("}")
 
 
-def extraction_prompt(text: str, filename: str = "") -> str:
+def extraction_prompt(
+    text: str, filename: str = "", page_texts: Optional[list] = None
+) -> str:
     """
     The exact prompt extraction sends.
 
     Lifted out so `python -m evaluation.show_reply` can send the same one.
     A diagnostic that sends a near-enough prompt measures a near-enough
     system, which is how you spend an evening fixing the wrong thing.
+
+    The document text is chosen rather than truncated. This used to send
+    text[:8000] - fine for a two-page report, which is every document in the
+    corpus, and wrong for a real one: a 342-page annual report runs to about
+    750,000 characters, so the first 8000 are the cover, the contents and the
+    foreword, and every field would be read from there. extraction_context
+    spends the same budget on the passages likeliest to carry the fields,
+    from anywhere in the document. Documents that fit the budget come back
+    whole, so nothing about the corpus changes.
+
+    page_texts is optional because not every caller has it. Given, selection
+    keeps page boundaries and can mark where it skipped; without it the same
+    choosing happens over the flat text.
     """
+    excerpt, _pages = extraction_context.select_passages(page_texts, text)
+
     return f"""Output a single JSON object and nothing else. Do not explain your
 reasoning, do not narrate your thinking, do not write any text before or after
 the object. Begin with {{ and end with }}.
@@ -155,7 +175,7 @@ Return a JSON object with these fields (use null if not found):
 }}
 
 TEXT:
-{text[:8000]}
+{excerpt}
 
 LANGUAGE
 The source document may be in English, Hindi or Telugu, and a national corpus
@@ -180,7 +200,9 @@ numerals, and units stay as the document gives them.
 Respond ONLY with valid JSON. No markdown, no explanation."""
 
 
-def extract_structured_data_detailed(text: str, filename: str = "") -> dict:
+def extract_structured_data_detailed(
+    text: str, filename: str = "", page_texts: Optional[list] = None
+) -> dict:
     """
     Extraction, plus whether a real provider actually produced it.
 
@@ -195,7 +217,7 @@ def extract_structured_data_detailed(text: str, filename: str = "") -> dict:
     if USE_MOCK:
         return {"data": _mock_extraction(text, filename), "source": "mock", "note": None}
     
-    prompt = extraction_prompt(text, filename)
+    prompt = extraction_prompt(text, filename, page_texts)
 
     provider = ai_providers.describe()["mode"]
     try:
