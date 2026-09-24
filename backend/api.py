@@ -42,7 +42,7 @@ from document_processor import (
     without_nul,
 )
 from ai_extractor import (
-    extract_structured_data, summarize_report, identify_topics,
+    extract_structured_data_detailed, summarize_report, identify_topics,
     query_reports, query_reports_detailed, generate_report_content
 )
 from report_generator import (
@@ -344,6 +344,48 @@ async def _read_capped(file: UploadFile) -> bytes:
     return b"".join(chunks)
 
 
+def _provider_failure_detail(note: str) -> str:
+    """
+    What to tell an uploader when the model call failed.
+
+    Classified rather than passed through: the note carries the provider's own
+    error body, which is for the log, not the browser. The three cases need
+    different things from the person reading it - wait a few minutes, wait
+    until the quota resets, or retry - so they are worth telling apart.
+    """
+    provider = str(ai_providers.describe().get("mode") or "The AI provider").capitalize()
+    lowered = note.lower()
+    if "429" in lowered or "quota" in lowered or "resource_exhausted" in lowered:
+        why = f"{provider} has used up its request quota for now (HTTP 429)"
+        when = "Try again after the quota resets."
+    elif "503" in lowered or "high demand" in lowered or "unavailable" in lowered:
+        why = f"{provider} is overloaded right now (HTTP 503)"
+        when = "Try again in a few minutes."
+    elif "timed out" in lowered or "timeout" in lowered:
+        why = f"{provider} did not answer in time"
+        when = "Try again."
+    else:
+        why = f"{provider} could not extract this document"
+        when = "Try again, or check the provider in Settings."
+    return f"{why}. Nothing was stored - no values were guessed. {when}"
+
+
+def _discard(db: Session, report: MiningReport) -> None:
+    """
+    Remove a report row that was created before its extraction failed.
+
+    The row is committed as "processing" before any work starts, so leaving it
+    would show a document stuck mid-upload forever. Best effort: failing to
+    remove it must not replace the useful 503 with an unhandled error.
+    """
+    try:
+        db.delete(report)
+        db.commit()
+    except Exception as exc:  # noqa: BLE001
+        db.rollback()
+        print(f"[upload] could not remove report {getattr(report, 'id', None)}: {exc}")
+
+
 @app.post("/upload")
 async def upload_report(
     file: UploadFile = File(...),
@@ -380,7 +422,25 @@ async def upload_report(
         # Step 2: Extract structured data using AI
         # page_texts as well as the flat text: extraction chooses which
         # passages to read, and page boundaries keep that choice citable.
-        extracted = extract_structured_data(raw_text, file.filename, page_texts)
+        result = extract_structured_data_detailed(raw_text, file.filename, page_texts)
+        if result["source"] == "mock" and result.get("note"):
+            # A provider is configured and the call failed. This used to store
+            # mock fields and answer 200 "extracted and indexed" - so a busy
+            # minute at the provider put invented values into the corpus under
+            # a green tick, with nothing recording that they were invented:
+            # the report table has no column for where an extraction came
+            # from, so from then on the stand-in was indistinguishable from a
+            # real reading in the UI, in analytics and in the conflict
+            # detector. An error tells the truth; that did not.
+            #
+            # Mock with no note is deliberate - no provider configured at all,
+            # the local-development mode - and is still stored as before.
+            print(f"[upload] {file.filename!r} not stored: {result['note']}")
+            _discard(db, report)
+            raise HTTPException(
+                status_code=503, detail=_provider_failure_detail(result["note"])
+            )
+        extracted = result["data"]
         report.extracted_data = extracted
         
         # Store individual fields

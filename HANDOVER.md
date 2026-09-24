@@ -174,7 +174,31 @@ Combined with 4.3 and 4.5, any user can hand the app a file that takes it
 offline for minutes. Lowering it (~15 MB) is a one-variable seatbelt. It does
 **not** make large documents work — it makes them fail instantly and legibly.
 
-### 4.7 — Smaller open items
+### 4.7 — A failed model call used to store invented values (fixed on branch)
+
+`extract_structured_data` falls back to mock fields when the provider errors,
+and the upload stored them and answered `200 "extracted and indexed"`. The
+report table has no column recording where an extraction came from, so a
+stand-in was indistinguishable from a real reading everywhere downstream.
+
+Observed on production 2026-09-24: Gemini returned `503 "This model is
+currently experiencing high demand"`, and a Hindi report from Jayant was stored
+as `Coal, Opencast, 1,25,000 MT, District: Not specified` with a mine name built
+from its filename.
+
+**Fixed on the branch, not yet deployed.** The upload now calls
+`extract_structured_data_detailed`; when a configured provider fails it returns
+`503` with a classified reason (overloaded / quota / timeout / other), discards
+the half-created row, and stores nothing. Mock with no provider configured
+(local development, and most of the test suite) still uploads as before.
+`tests/test_upload_provider_failure.py` fails 7 of 9 against the old code.
+
+**Still open, same class of problem:** the frontend always says "extracted and
+indexed", even when indexing failed (e.g. Gemini embeddings 429). The upload
+response carries `indexed_chunks` and `index_note`, but
+`uploadMiningDocument` drops them.
+
+### 4.8 — Smaller open items
 
 - `evaluation/latest.json` does not exist — **no accuracy figure has ever been
   recorded**
