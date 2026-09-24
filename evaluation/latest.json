@@ -1,0 +1,760 @@
+{
+  "documents": [
+    {
+      "document": "samples/corpus/EN-01_Jharia_BCCL_FY2024-25.pdf",
+      "language": "en",
+      "source": "gemini",
+      "fields": {
+        "mine_name": {
+          "expected": "Jharia Coal Mine",
+          "actual": "Jharia Coal Mine",
+          "verdict": "exact"
+        },
+        "location": {
+          "expected": "Dhanbad, Jharkhand, India",
+          "actual": "Dhanbad, Jharkhand, India",
+          "verdict": "exact"
+        },
+        "district": {
+          "expected": "Dhanbad",
+          "actual": "Dhanbad",
+          "verdict": "exact"
+        },
+        "state": {
+          "expected": "Jharkhand",
+          "actual": "Jharkhand",
+          "verdict": "exact"
+        },
+        "company_name": {
+          "expected": "Bharat Coking Coal Limited (BCCL)",
+          "actual": "Bharat Coking Coal Limited",
+          "verdict": "equivalent"
+        },
+        "mineral_type": {
+          "expected": "Coking Coal",
+          "actual": "Coking Coal",
+          "verdict": "exact"
+        },
+        "extraction_method": {
+          "expected": "Underground",
+          "actual": "Underground",
+          "verdict": "exact"
+        },
+        "quantity_extracted": {
+          "expected": "3,50,000 MT",
+          "actual": "3,50,000 MT",
+          "verdict": "exact"
+        },
+        "reserve_estimate": {
+          "expected": "15.0 million tonnes",
+          "actual": "Proved reserves: 15.0 million tonnes, Indicated reserves: 8.4 million tonnes",
+          "verdict": "equivalent"
+        },
+        "report_date": {
+          "expected": "15-04-2025",
+          "actual": "15-04-2025",
+          "verdict": "exact"
+        }
+      }
+    },
+    {
+      "document": "samples/corpus/EN-02_Gevra_SECL_FY2024-25.pdf",
+      "language": "en",
+      "source": "gemini",
+      "fields": {
+        "mine_name": {
+          "expected": "Gevra Opencast Mine",
+          "actual": "Gevra Opencast Mine",
+          "verdict": "exact"
+        },
+        "location": {
+          "expected": "Korba, Chhattisgarh, India",
+          "actual": "Korba, Chhattisgarh, India",
+          "verdict": "exact"
+        },
+        "district": {
+          "expected": "Korba",
+          "actual": "Korba",
+          "verdict": "exact"
+        },
+        "state": {
+          "expected": "Chhattisgarh",
+          "actual": "Chhattisgarh",
+          "verdict": "exact"
+        },
+        "company_name": {
+          "expected": "South Eastern Coalfields Limited (SECL)",
+          "actual": "South Eastern Coalfields Limited",
+          "verdict": "equivalent"
+        },
+        "mineral_type": {
+          "expected": "Non-Coking Coal",
+          "actual": "coal",
+          "verdict": "equivalent"
+        },
+        "extraction_method": {
+          "expected": "Opencast",
+          "actual": "opencast",
+          "verdict": "exact"
+        },
+        "quantity_extracted": {
+          "expected": "52.5 million tonnes",
+          "actual": "52.5 million tonnes",
+          "verdict": "exact"
+        },
+        "reserve_estimate": {
+          "expected": "780 million tonnes",
+          "actual": "Proved reserves: 780 million tonnes, Indicated reserves: 245 million tonnes",
+          "verdict": "equivalent"
+        },
+        "report_date": {
+          "expected": "28-04-2025",
+          "actual": "28-04-2025",
+          "verdict": "exact"
+        }
+      }
+    },
+    {
+      "document": "samples/corpus/EN-03_Gevra_SECL_FY2024-25_REVISED.pdf",
+      "language": "en",
+      "source": "gemini",
+      "fields": {
+        "mine_name": {
+          "expected": "Gevra Opencast Mine",
+          "actual": "Gevra Opencast Mine",
+          "verdict": "exact"
+        },
+        "location": {
+          "expected": "Korba, Chhattisgarh, India",
+          "actual": "Korba, Chhattisgarh, India",
+          "verdict": "exact"
+        },
+        "district": {
+          "expected": "Korba",
+          "actual": "Korba",
+          "verdict": "exact"
+        },
+        "state": {
+          "expected": "Chhattisgarh",
+          "actual": "Chhattisgarh",
+          "verdict": "exact"
+        },
+        "company_name": {
+          "expected": "South Eastern Coalfields Limited (SECL)",
+          "actual": "South Eastern Coalfields Limited",
+          "verdict": "equivalent"
+        },
+        "mineral_type": {
+          "expected": "Non-Coking Coal",
+          "actual": "coal",
+          "verdict": "equivalent"
+        },
+        "extraction_method": {
+          "expected": "Opencast",
+          "actual": "opencast",
+          "verdict": "exact"
+        },
+        "quantity_extracted": {
+          "expected": "49.8 million tonnes",
+          "actual": "49.8 million tonnes",
+          "verdict": "exact"
+        },
+        "reserve_estimate": {
+          "expected": "780 million tonnes",
+          "actual": "Proved reserves: 780 million tonnes, Indicated reserves: 245 million tonnes",
+          "verdict": "equivalent"
+        },
+        "report_date": {
+          "expected": "11-06-2025",
+          "actual": "11-06-2025",
+          "verdict": "exact"
+        }
+      }
+    },
+    {
+      "document": "samples/corpus/EN-04_Talcher_MCL_FY2023-24.pdf",
+      "language": "en",
+      "source": "gemini",
+      "fields": {
+        "mine_name": {
+          "expected": "Talcher Opencast Mine",
+          "actual": "Talcher Opencast Mine",
+          "verdict": "exact"
+        },
+        "location": {
+          "expected": "Angul, Odisha, India",
+          "actual": "Angul, Odisha, India",
+          "verdict": "exact"
+        },
+        "district": {
+          "expected": "Angul",
+          "actual": "Angul",
+          "verdict": "exact"
+        },
+        "state": {
+          "expected": "Odisha",
+          "actual": "Odisha",
+          "verdict": "exact"
+        },
+        "company_name": {
+          "expected": "Mahanadi Coalfields Limited (MCL)",
+          "actual": "Mahanadi Coalfields Limited (MCL)",
+          "verdict": "exact"
+        },
+        "mineral_type": {
+          "expected": "Non-Coking Coal",
+          "actual": "Non-Coking Coal",
+          "verdict": "exact"
+        },
+        "extraction_method": {
+          "expected": "Opencast",
+          "actual": "Opencast",
+          "verdict": "exact"
+        },
+        "quantity_extracted": {
+          "expected": "38.4 million tonnes",
+          "actual": "38.4 million tonnes",
+          "verdict": "exact"
+        },
+        "reserve_estimate": {
+          "expected": "512 million tonnes",
+          "actual": "Proved reserves: 512 million tonnes, Indicated reserves: 190 million tonnes",
+          "verdict": "equivalent"
+        },
+        "report_date": {
+          "expected": "30-05-2024",
+          "actual": "30-05-2024",
+          "verdict": "exact"
+        }
+      }
+    },
+    {
+      "document": "samples/corpus/EN-05_Bailadila_NMDC_FY2024-25.pdf",
+      "language": "en",
+      "source": "gemini",
+      "fields": {
+        "mine_name": {
+          "expected": "Bailadila Deposit 14/11C",
+          "actual": "Bailadila Deposit 14/11C",
+          "verdict": "exact"
+        },
+        "location": {
+          "expected": "Dantewada, Chhattisgarh, India",
+          "actual": "Dantewada, Chhattisgarh, India",
+          "verdict": "exact"
+        },
+        "district": {
+          "expected": "Dantewada",
+          "actual": "Dantewada",
+          "verdict": "exact"
+        },
+        "state": {
+          "expected": "Chhattisgarh",
+          "actual": "Chhattisgarh",
+          "verdict": "exact"
+        },
+        "company_name": {
+          "expected": "NMDC Limited",
+          "actual": "NMDC Limited",
+          "verdict": "exact"
+        },
+        "mineral_type": {
+          "expected": "Iron Ore",
+          "actual": "Iron Ore",
+          "verdict": "exact"
+        },
+        "extraction_method": {
+          "expected": "Opencast",
+          "actual": "Opencast",
+          "verdict": "exact"
+        },
+        "quantity_extracted": {
+          "expected": "12.8 million tonnes",
+          "actual": "12.8 million tonnes",
+          "verdict": "exact"
+        },
+        "reserve_estimate": {
+          "expected": "210 million tonnes",
+          "actual": "Proved reserves: 210 million tonnes, Indicated reserves: 96 million tonnes",
+          "verdict": "equivalent"
+        },
+        "report_date": {
+          "expected": "22-05-2025",
+          "actual": "22-05-2025",
+          "verdict": "exact"
+        }
+      }
+    },
+    {
+      "document": "samples/corpus/EN-06_Korba_SECL_FY2024-25_INCOMPLETE.pdf",
+      "language": "en",
+      "source": "gemini",
+      "fields": {
+        "mine_name": {
+          "expected": "Kusmunda Opencast Mine",
+          "actual": "Kusmunda Opencast Mine",
+          "verdict": "exact"
+        },
+        "location": {
+          "expected": "Korba, Chhattisgarh, India",
+          "actual": "Korba, Chhattisgarh, India",
+          "verdict": "exact"
+        },
+        "district": {
+          "expected": "Korba",
+          "actual": "Korba",
+          "verdict": "exact"
+        },
+        "state": {
+          "expected": "Chhattisgarh",
+          "actual": "Chhattisgarh",
+          "verdict": "exact"
+        },
+        "company_name": {
+          "expected": "South Eastern Coalfields Limited (SECL)",
+          "actual": "South Eastern Coalfields Limited",
+          "verdict": "equivalent"
+        },
+        "mineral_type": {
+          "expected": "Non-Coking Coal",
+          "actual": "coal",
+          "verdict": "equivalent"
+        },
+        "extraction_method": {
+          "expected": "Opencast",
+          "actual": "opencast",
+          "verdict": "exact"
+        },
+        "report_date": {
+          "expected": "09-01-2025",
+          "actual": "09-01-2025",
+          "verdict": "exact"
+        }
+      }
+    },
+    {
+      "document": "samples/corpus/HI-01_Jayant_NCL_FY2024-25.pdf",
+      "language": "hi",
+      "source": "gemini",
+      "fields": {
+        "mine_name": {
+          "expected": "Jayant Opencast Mine",
+          "actual": "Jayant Open Cast Mine",
+          "verdict": "equivalent"
+        },
+        "location": {
+          "expected": "Singrauli, Madhya Pradesh, India",
+          "actual": "Singrauli, Madhya Pradesh, India",
+          "verdict": "exact"
+        },
+        "district": {
+          "expected": "Singrauli",
+          "actual": "Singrauli",
+          "verdict": "exact"
+        },
+        "state": {
+          "expected": "Madhya Pradesh",
+          "actual": "Madhya Pradesh",
+          "verdict": "exact"
+        },
+        "company_name": {
+          "expected": "Northern Coalfields Limited (NCL)",
+          "actual": "Northern Coalfields Limited (NCL)",
+          "verdict": "exact"
+        },
+        "mineral_type": {
+          "expected": "Non-Coking Coal",
+          "actual": "non-coking coal",
+          "verdict": "exact"
+        },
+        "extraction_method": {
+          "expected": "Opencast",
+          "actual": "opencast",
+          "verdict": "exact"
+        },
+        "quantity_extracted": {
+          "expected": "23.6 million tonnes",
+          "actual": "23.6 million tonnes",
+          "verdict": "exact"
+        },
+        "reserve_estimate": {
+          "expected": "1,240 million tonnes",
+          "actual": "Proved reserves: 1,240 million tonnes, Indicated reserves: 385 million tonnes",
+          "verdict": "equivalent"
+        },
+        "report_date": {
+          "expected": "18-04-2025",
+          "actual": "18-04-2025",
+          "verdict": "exact"
+        }
+      }
+    },
+    {
+      "document": "samples/corpus/HI-02_Jayant_NCL_FY2024-25_sanshodhit.pdf",
+      "language": "hi",
+      "source": "gemini",
+      "fields": {
+        "mine_name": {
+          "expected": "Jayant Opencast Mine",
+          "actual": "Jayant Open Cast Mine",
+          "verdict": "equivalent"
+        },
+        "location": {
+          "expected": "Singrauli, Madhya Pradesh, India",
+          "actual": "Singrauli, Madhya Pradesh, India",
+          "verdict": "exact"
+        },
+        "district": {
+          "expected": "Singrauli",
+          "actual": "Singrauli",
+          "verdict": "exact"
+        },
+        "state": {
+          "expected": "Madhya Pradesh",
+          "actual": "Madhya Pradesh",
+          "verdict": "exact"
+        },
+        "company_name": {
+          "expected": "Northern Coalfields Limited (NCL)",
+          "actual": "Northern Coalfields Limited (NCL)",
+          "verdict": "exact"
+        },
+        "mineral_type": {
+          "expected": "Non-Coking Coal",
+          "actual": "non-coking coal",
+          "verdict": "exact"
+        },
+        "extraction_method": {
+          "expected": "Opencast",
+          "actual": "opencast",
+          "verdict": "exact"
+        },
+        "quantity_extracted": {
+          "expected": "21.9 million tonnes",
+          "actual": "21.9 million tonnes",
+          "verdict": "exact"
+        },
+        "reserve_estimate": {
+          "expected": "1,240 million tonnes",
+          "actual": "Proved reserves: 1,240 million tonnes, Indicated reserves: 385 million tonnes",
+          "verdict": "equivalent"
+        },
+        "report_date": {
+          "expected": "27-06-2025",
+          "actual": "27-06-2025",
+          "verdict": "exact"
+        }
+      }
+    },
+    {
+      "document": "sample_mining_report.pdf",
+      "language": "en",
+      "source": "gemini",
+      "fields": {
+        "mine_name": {
+          "expected": "Jharia Coal Mine",
+          "actual": "Jharia Coal Mine",
+          "verdict": "exact"
+        },
+        "location": {
+          "expected": "Dhanbad, Jharkhand, India",
+          "actual": "Dhanbad, Jharkhand, India",
+          "verdict": "exact"
+        },
+        "state": {
+          "expected": "Jharkhand",
+          "actual": "Jharkhand",
+          "verdict": "exact"
+        },
+        "district": {
+          "expected": "Dhanbad",
+          "actual": "Dhanbad",
+          "verdict": "exact"
+        },
+        "company_name": {
+          "expected": "Bharat Coking Coal Limited (BCCL)",
+          "actual": "Bharat Coking Coal Limited (BCCL)",
+          "verdict": "exact"
+        },
+        "extraction_method": {
+          "expected": "Underground",
+          "actual": "underground",
+          "verdict": "exact"
+        }
+      }
+    },
+    {
+      "document": "samples/corpus/SCAN-01_Sohagpur_SECL_FY2024-25_scanned.pdf",
+      "language": "en",
+      "source": "gemini",
+      "fields": {
+        "mine_name": {
+          "expected": "Amlai Underground Mine",
+          "actual": "Amlai Underground Mine",
+          "verdict": "exact"
+        },
+        "location": {
+          "expected": "Shahdol, Madhya Pradesh, India",
+          "actual": "Shahdol, Madhya Pradesh, India",
+          "verdict": "exact"
+        },
+        "district": {
+          "expected": "Shahdol",
+          "actual": "Shahdol",
+          "verdict": "exact"
+        },
+        "state": {
+          "expected": "Madhya Pradesh",
+          "actual": "Madhya Pradesh",
+          "verdict": "exact"
+        },
+        "company_name": {
+          "expected": "South Eastern Coalfields Limited (SECL)",
+          "actual": "South Eastern Coalfields Limited (SECL)",
+          "verdict": "exact"
+        },
+        "mineral_type": {
+          "expected": "Non-Coking Coal",
+          "actual": "coal",
+          "verdict": "equivalent"
+        },
+        "extraction_method": {
+          "expected": "Underground",
+          "actual": "underground",
+          "verdict": "exact"
+        },
+        "quantity_extracted": {
+          "expected": "6,20,000 MT",
+          "actual": "6,20,000 MT",
+          "verdict": "exact"
+        },
+        "reserve_estimate": {
+          "expected": "74 million tonnes",
+          "actual": "Proved reserves: 74 million tonnes, Indicated reserves: 29 million tonnes",
+          "verdict": "equivalent"
+        },
+        "report_date": {
+          "expected": "02-05-2025",
+          "actual": "02-05-2025",
+          "verdict": "exact"
+        }
+      }
+    },
+    {
+      "document": "samples/corpus/SCAN-02_Jayant_NCL_hindi_scanned.pdf",
+      "language": "hi",
+      "source": "gemini",
+      "fields": {
+        "mine_name": {
+          "expected": "Jayant Opencast Mine",
+          "actual": "Jayant Open Cast Mine",
+          "verdict": "equivalent"
+        },
+        "location": {
+          "expected": "Singrauli, Madhya Pradesh, India",
+          "actual": "Singrauli, Madhya Pradesh, India",
+          "verdict": "exact"
+        },
+        "district": {
+          "expected": "Singrauli",
+          "actual": "Singrauli",
+          "verdict": "exact"
+        },
+        "state": {
+          "expected": "Madhya Pradesh",
+          "actual": "Madhya Pradesh",
+          "verdict": "exact"
+        },
+        "company_name": {
+          "expected": "Northern Coalfields Limited (NCL)",
+          "actual": "Northern Coalfields Limited",
+          "verdict": "equivalent"
+        },
+        "mineral_type": {
+          "expected": "Non-Coking Coal",
+          "actual": "non-coking coal",
+          "verdict": "exact"
+        },
+        "extraction_method": {
+          "expected": "Opencast",
+          "actual": "opencast",
+          "verdict": "exact"
+        },
+        "quantity_extracted": {
+          "expected": "20.4 million tonnes",
+          "actual": "20.4 मिलियन टन",
+          "verdict": "equivalent"
+        },
+        "reserve_estimate": {
+          "expected": "1,240 million tonnes",
+          "actual": "सिद्ध भंडार: 1,240 मिलियन टन, संकेतित भंडार: 385 मिलियन टन",
+          "verdict": "equivalent"
+        },
+        "report_date": {
+          "expected": "12-05-2024",
+          "actual": "12-05-2024",
+          "verdict": "exact"
+        }
+      }
+    },
+    {
+      "document": "samples/corpus/TE-01_Ramagundam_SCCL_FY2024-25.pdf",
+      "language": "te",
+      "source": "gemini",
+      "fields": {
+        "mine_name": {
+          "expected": "Ramagundam Opencast Mine-III",
+          "actual": "Ramagundam Open Cast Mine-III",
+          "verdict": "equivalent"
+        },
+        "location": {
+          "expected": "Ramagundam, Peddapalli, Telangana, India",
+          "actual": "Ramagundam, Peddapalli, Telangana, India",
+          "verdict": "exact"
+        },
+        "district": {
+          "expected": "Peddapalli",
+          "actual": "Peddapalli",
+          "verdict": "exact"
+        },
+        "state": {
+          "expected": "Telangana",
+          "actual": "Telangana",
+          "verdict": "exact"
+        },
+        "company_name": {
+          "expected": "Singareni Collieries Company Limited (SCCL)",
+          "actual": "Singareni Collieries Company Limited",
+          "verdict": "equivalent"
+        },
+        "mineral_type": {
+          "expected": "Coal",
+          "actual": "coal",
+          "verdict": "exact"
+        },
+        "extraction_method": {
+          "expected": "Opencast",
+          "actual": "opencast",
+          "verdict": "exact"
+        },
+        "quantity_extracted": {
+          "expected": "14.2 million tonnes",
+          "actual": "14.2 మిలియన్ టన్నులు",
+          "verdict": "equivalent"
+        },
+        "reserve_estimate": {
+          "expected": "402 million tonnes",
+          "actual": "నిరూపితమైన నిల్వలు: 402 మిలియన్ టన్నులు, సూచిత నిల్వలు: 138 మిలియన్ టన్నులు",
+          "verdict": "equivalent"
+        },
+        "report_date": {
+          "expected": "20-04-2025",
+          "actual": "20-04-2025",
+          "verdict": "exact"
+        }
+      }
+    },
+    {
+      "document": "samples/corpus/TE-02_Kothagudem_SCCL_FY2024-25.pdf",
+      "language": "te",
+      "source": "gemini",
+      "fields": {
+        "mine_name": {
+          "expected": "Kothagudem Underground Mine-21",
+          "actual": "Kothagudem Underground Mine-21",
+          "verdict": "exact"
+        },
+        "location": {
+          "expected": "Kothagudem, Bhadradri Kothagudem, Telangana, India",
+          "actual": "Kothagudem, Bhadradri Kothagudem, Telangana, India",
+          "verdict": "exact"
+        },
+        "district": {
+          "expected": "Bhadradri Kothagudem",
+          "actual": "Bhadradri Kothagudem",
+          "verdict": "exact"
+        },
+        "state": {
+          "expected": "Telangana",
+          "actual": "Telangana",
+          "verdict": "exact"
+        },
+        "company_name": {
+          "expected": "Singareni Collieries Company Limited (SCCL)",
+          "actual": "Singareni Collieries Company Limited",
+          "verdict": "equivalent"
+        },
+        "mineral_type": {
+          "expected": "Coal",
+          "actual": "coal",
+          "verdict": "exact"
+        },
+        "extraction_method": {
+          "expected": "Underground",
+          "actual": "underground",
+          "verdict": "exact"
+        },
+        "quantity_extracted": {
+          "expected": "8,40,000 tonnes",
+          "actual": "8,40,000 టన్నులు",
+          "verdict": "equivalent"
+        },
+        "reserve_estimate": {
+          "expected": "58 million tonnes",
+          "actual": "నిరూపితమైన నిల్వలు: 58 మిలియన్ టన్నులు, సూచిత నిల్వలు: 21 మిలియన్ టన్నులు",
+          "verdict": "equivalent"
+        },
+        "report_date": {
+          "expected": "25-04-2025",
+          "actual": "25-04-2025",
+          "verdict": "exact"
+        }
+      }
+    }
+  ],
+  "perField": {
+    "mine_name": {
+      "exact": 9,
+      "equivalent": 4
+    },
+    "location": {
+      "exact": 13
+    },
+    "district": {
+      "exact": 13
+    },
+    "state": {
+      "exact": 13
+    },
+    "company_name": {
+      "equivalent": 7,
+      "exact": 6
+    },
+    "mineral_type": {
+      "exact": 8,
+      "equivalent": 4
+    },
+    "extraction_method": {
+      "exact": 13
+    },
+    "quantity_extracted": {
+      "exact": 8,
+      "equivalent": 3
+    },
+    "reserve_estimate": {
+      "equivalent": 11
+    },
+    "report_date": {
+      "exact": 12
+    }
+  },
+  "totals": {
+    "exact": 95,
+    "equivalent": 29
+  },
+  "fieldsScored": 124,
+  "accuracy": 1.0,
+  "reusedExtractions": 0,
+  "recordedAt": "2026-09-24T07:04:11+00:00",
+  "language": "all"
+}
