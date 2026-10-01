@@ -1,6 +1,6 @@
 """
 Evidence Locator — anchors extracted values back to the source document.
-SIH26023 - AI-Powered Geological & Mining Reporting Solution
+DataForge - AI-Powered Geological & Mining Reporting Solution
 
 The extractor reports values such as "1,25,000 MT" but not where in the
 document they came from. This module searches the stored page text for each

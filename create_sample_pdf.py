@@ -1,6 +1,6 @@
 """
 Create a sample mining report PDF for testing
-SIH26023 - AI-Powered Geological & Mining Reporting Solution
+DataForge - AI-Powered Geological & Mining Reporting Solution
 """
 import os
 import sys

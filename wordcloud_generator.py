@@ -1,6 +1,6 @@
 """
 Word Cloud & Topic Identification Module
-SIH26023 - AI-Powered Geological & Mining Reporting Solution
+DataForge - AI-Powered Geological & Mining Reporting Solution
 
 Generates word clouds and visualizes topics from mining reports.
 """

@@ -318,8 +318,8 @@ export function SettingsPage({ user }: { user: SessionUser | null }) {
               "what did we use", which is a question for the README. */}
           <dl className="grid grid-cols-2 gap-x-6 gap-y-3">
             {[
-              ["Problem statement", "SIH26023"],
-              ["Organisation", "Ministry of Coal / CMPDI"],
+              ["Built for", "CMPDI / Coal India subsidiaries"],
+              ["Deployment", "Prototype"],
             ].map(([label, value]) => (
               <div key={label}>
                 <dt className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">

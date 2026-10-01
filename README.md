@@ -1,8 +1,6 @@
 # ⛏️ AI-Powered Geological & Mining Reporting Solution
 
-**Smart India Hackathon 2026 | Problem ID: SIH26023**
-
-**Ministry of Coal | CMPDI / CIL (Coal India Limited)**
+**DataForge — built for CMPDI and Coal India (CIL) subsidiaries**
 
 ---
 
@@ -798,4 +796,4 @@ mining_report_platform/
 
 ## 📝 License
 
-Developed for Smart India Hackathon 2026
+Developed by Team Data Forge

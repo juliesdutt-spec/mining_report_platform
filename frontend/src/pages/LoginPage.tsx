@@ -168,7 +168,7 @@ export function LoginPage({ onSignedIn }: { onSignedIn: (user: SessionUser) => v
           </div>
 
           <p className="mt-12 text-xs text-white/35">
-            Smart India Hackathon · Problem statement SIH26023
+            Built for CMPDI and Coal India subsidiaries
           </p>
         </div>
       </aside>

@@ -1,6 +1,6 @@
 """
 FastAPI Backend - AI-Powered Geological & Mining Reporting Solution
-SIH26023 - Ministry of Coal - CMPDI/CIL
+DataForge - for CMPDI and Coal India (CIL) subsidiaries
 
 Endpoints:
 - POST /upload - Upload and process PDF reports
@@ -55,7 +55,7 @@ from wordcloud_generator import generate_word_cloud_bytes, extract_topics, get_t
 # Initialize FastAPI app
 app = FastAPI(
     title="AI Mining Report System",
-    description="AI-Powered Geological & Mining Reporting Solution - SIH26023",
+    description="DataForge - AI-Powered Geological & Mining Reporting Solution",
     version="1.0.0",
 )
 
@@ -229,9 +229,8 @@ def demo_credentials():
 @app.get("/")
 def root():
     return {
-        "message": "AI-Powered Geological & Mining Reporting Solution",
-        "problem_id": "SIH26023",
-        "ministry": "Ministry of Coal - CMPDI/CIL",
+        "message": "DataForge - AI-Powered Geological & Mining Reporting Solution",
+        "built_for": "CMPDI and Coal India (CIL) subsidiaries",
         "status": "running",
         "endpoints": {
             "upload": "POST /upload",
