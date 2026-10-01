@@ -1,6 +1,6 @@
 """
 AI Extraction Module - multi-provider LLM integration
-SIH26023 - AI-Powered Geological & Mining Reporting Solution
+DataForge - AI-Powered Geological & Mining Reporting Solution
 
 Builds the prompts for:
 1. Structured data extraction from mining reports

@@ -1,6 +1,6 @@
 """
 Document Processing Module
-SIH26023 - AI-Powered Geological & Mining Reporting Solution
+DataForge - AI-Powered Geological & Mining Reporting Solution
 
 Pipeline: PDF Upload → Extract Text → OCR (if scanned) → Chunk Text
 """

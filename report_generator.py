@@ -1,6 +1,6 @@
 """
 PDF Report Generator
-SIH26023 - AI-Powered Geological & Mining Reporting Solution
+DataForge - AI-Powered Geological & Mining Reporting Solution
 
 Generates formatted PDF reports from extracted mining data.
 """

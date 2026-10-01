@@ -1,6 +1,6 @@
 """
 Startup Script for AI-Powered Geological & Mining Reporting System
-SIH26023 - Ministry of Coal - CMPDI/CIL
+DataForge - for CMPDI and Coal India (CIL) subsidiaries
 
 Run this script to start both the FastAPI backend and Streamlit frontend.
 """
@@ -93,8 +93,7 @@ def main():
     """Main entry point"""
     print("=" * 60)
     print("⛏️  AI-Powered Geological & Mining Reporting Solution")
-    print("   Smart India Hackathon 2026 - Problem ID: SIH26023")
-    print("   Ministry of Coal | CMPDI / CIL")
+    print("   DataForge - for CMPDI and Coal India (CIL) subsidiaries")
     print("=" * 60)
     print()
     

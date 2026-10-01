@@ -1,6 +1,6 @@
 """
 Database Layer - SQLite with SQLAlchemy
-SIH26023 - AI-Powered Geological & Mining Reporting Solution
+DataForge - AI-Powered Geological & Mining Reporting Solution
 """
 import os
 from datetime import datetime

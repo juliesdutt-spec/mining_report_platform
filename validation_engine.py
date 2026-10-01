@@ -1,6 +1,6 @@
 """
 Validation Engine — cross-document discrepancy detection.
-SIH26023 - AI-Powered Geological & Mining Reporting Solution
+DataForge - AI-Powered Geological & Mining Reporting Solution
 
 Findings are derived only from data the extractor actually produced. Nothing
 here invents confidence scores, page numbers or synthetic conflicts: if the

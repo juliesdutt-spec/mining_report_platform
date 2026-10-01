@@ -17,7 +17,7 @@ import { PRIVACY_HREF, TERMS_HREF, PublicRoute } from "@/lib/publicRoute";
  * happens to be false.
  */
 
-const UPDATED = "17 September 2026";
+const UPDATED = "1 October 2026";
 
 function Frame({ title, kicker, children }: {
   title: string;
@@ -54,8 +54,7 @@ function Frame({ title, kicker, children }: {
           </h1>
           <p className="mt-2 text-sm text-muted-foreground">{kicker}</p>
           <p className="mt-4 text-xs text-muted-foreground">
-            Last updated {UPDATED} · Smart India Hackathon, problem statement
-            SIH26023
+            Last updated {UPDATED}
           </p>
         </header>
 
@@ -174,8 +173,8 @@ function Privacy() {
 
       <h2>Where to ask</h2>
       <p>
-        This is a hackathon prototype built for problem statement SIH26023, not
-        a commissioned system. Questions about it go to the team that built it,
+        This is a prototype built by Team Data Forge, not a commissioned
+        system. Questions about it go to the team that built it,
         through the channel you were given this deployment on.
       </p>
     </Frame>
@@ -189,8 +188,8 @@ function Terms() {
       kicker="What this system is, what it is not, and what it expects of the person using it."
     >
       <p>
-        These terms cover the DataForge prototype as deployed for Smart India
-        Hackathon problem statement SIH26023. Using it means accepting them.
+        These terms cover the DataForge prototype as deployed at this address.
+        Using it means accepting them.
       </p>
 
       <h2>What this is</h2>

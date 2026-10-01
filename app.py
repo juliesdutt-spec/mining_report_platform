@@ -1,6 +1,6 @@
 """
 Streamlit Frontend - AI-Powered Geological & Mining Reporting Solution
-SIH26023 - Ministry of Coal - CMPDI/CIL
+DataForge - for CMPDI and Coal India (CIL) subsidiaries
 
 Features:
 1. PDF Upload & Processing
@@ -25,7 +25,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 # Page configuration
 st.set_page_config(
-    page_title="AI Mining Report System - SIH26023",
+    page_title="DataForge - AI Mining Report System",
     page_icon="⛏️",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -72,8 +72,7 @@ def render_header():
     st.markdown("""
     <div class="main-header">
         <h1>⛏️ AI-Powered Geological & Mining Reporting Solution</h1>
-        <p>Smart India Hackathon 2026 | Problem ID: SIH26023</p>
-        <p>Ministry of Coal | CMPDI / CIL</p>
+        <p>DataForge | for CMPDI and Coal India (CIL) subsidiaries</p>
     </div>
     """, unsafe_allow_html=True)
 
@@ -548,10 +547,7 @@ def render_about():
     st.markdown("""
     ### AI-Powered Geological & Mining Reporting Solution
     
-    **Problem ID:** SIH26023  
-    **Ministry:** Ministry of Coal  
-    **Organization:** CMPDI / CIL (Coal India Limited)  
-    **Event:** Smart India Hackathon 2026
+    **Built for:** CMPDI and Coal India (CIL) subsidiaries
     
     ---
     
@@ -593,7 +589,7 @@ def render_about():
     
     ### 👥 Team
     
-    Smart India Hackathon 2026 - Team for CMPDI/CIL Problem Statement
+    Team Data Forge
     """)
 
 
