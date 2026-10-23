@@ -409,7 +409,14 @@ async def upload_report(
         db.add(report)
         db.commit()
         db.refresh(report)
-        
+        # Hand the connection back before the slow part. refresh() opened a
+        # transaction, and holding it idle through minutes of OCR and model
+        # calls let the hosted database close it: a 342-page annual report
+        # extracted correctly on production, then lost everything at the final
+        # commit to "SSL connection has been closed unexpectedly". The next
+        # statement checks a connection out again, through pre-ping.
+        db.commit()
+
         # Step 1: Extract text, and the page boundaries that let an extracted
         # value cite a real page number. One call, because asking for them
         # separately parses the PDF twice and rasterises and OCRs a scan

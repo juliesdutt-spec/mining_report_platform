@@ -197,6 +197,34 @@ class UploadRefusesToStoreStandIns(unittest.TestCase):
         self.assertEqual(response.json()["extracted_data"]["mine_name"], "Jayant")
         self.assertIn("real.pdf", self._stored_filenames())
 
+    def test_no_connection_is_held_while_the_document_is_read(self):
+        # A 342-page annual report took six minutes on production. The
+        # upload held its connection open all that time, the hosted database
+        # closed it, and the final commit failed with "SSL connection has been
+        # closed unexpectedly", losing a correct extraction.
+        import database
+        held = []
+        real = {
+            "data": {"mineral_type": "Coal", "mine_name": "Jayant",
+                     "company_name": "Northern Coalfields Limited"},
+            "source": "gemini",
+            "note": None,
+        }
+
+        def extract(text, filename="", page_texts=None):
+            held.append(database.engine.pool.checkedout())
+            return real
+
+        with mock.patch.object(self.api, "extract_structured_data_detailed", side_effect=extract):
+            response = self._upload("long.pdf")
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(held, [0])
+        # And handing the connection back must not lose what was extracted.
+        stored = self.client.get(f"/reports/{response.json()['id']}").json()
+        self.assertEqual(stored["status"], "completed")
+        self.assertEqual(stored["mine_name"], "Jayant")
+        self.assertTrue(stored["page_count"])
+
 
 if __name__ == "__main__":
     unittest.main()
