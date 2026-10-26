@@ -226,3 +226,13 @@ test("the column can grow taller than the viewport without losing its top", () =
   assert.doesNotMatch(main, /<main[^>]*items-center/);
   assert.match(main, /df-rise[^"]*my-auto/);
 });
+
+test("the password can be shown before signing in, and is hidden by default", () => {
+  // A mistyped password is the usual reason sign-in fails during a live demo.
+  assert.match(login, /useState\(false\)/);
+  assert.match(login, /type=\{showPassword \? "text" : "password"\}/);
+  // A real button that never submits the form, announced to screen readers.
+  assert.match(login, /type="button"[\s\S]{0,120}setShowPassword/);
+  assert.match(login, /aria-pressed=\{showPassword\}/);
+  assert.match(login, /aria-label=\{showPassword \? "Hide password" : "Show password"\}/);
+});
