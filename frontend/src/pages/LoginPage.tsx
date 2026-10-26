@@ -77,6 +77,7 @@ const VALUE: Record<StatusTone, string> = {
 export function LoginPage({ onSignedIn }: { onSignedIn: (user: SessionUser) => void }) {
   const [username, setUsername] = React.useState("");
   const [password, setPassword] = React.useState("");
+  const [showPassword, setShowPassword] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = React.useState(false);
   const [demo, setDemo] = React.useState<{ username: string; password: string } | null>(null);
@@ -226,15 +227,30 @@ export function LoginPage({ onSignedIn }: { onSignedIn: (user: SessionUser) => v
 
             <div className="space-y-1.5">
               <Label htmlFor="password">Password</Label>
-              <Input
-                id="password"
-                type="password"
-                className="h-10"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                autoComplete="current-password"
-                disabled={isSubmitting}
-              />
+              {/* A typo in a hidden password is the usual reason sign-in fails
+                  in front of an audience; Show lets the person check it first. */}
+              <div className="relative">
+                <Input
+                  id="password"
+                  type={showPassword ? "text" : "password"}
+                  className="h-10 pr-16"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  autoComplete="current-password"
+                  disabled={isSubmitting}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((shown) => !shown)}
+                  aria-controls="password"
+                  aria-pressed={showPassword}
+                  aria-label={showPassword ? "Hide password" : "Show password"}
+                  disabled={isSubmitting}
+                  className="absolute inset-y-0 right-0 flex items-center rounded-r-md px-3 text-xs font-semibold text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+                >
+                  {showPassword ? "Hide" : "Show"}
+                </button>
+              </div>
             </div>
 
             {error && (

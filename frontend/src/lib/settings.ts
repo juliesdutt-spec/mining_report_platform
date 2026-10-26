@@ -23,7 +23,7 @@ const STORAGE_KEY = "dataforge-settings";
  * VITE_API_URL still wins wherever it is set; this only decides what a build
  * without one does.
  */
-const DEPLOYED_API_URL = "https://miningreportplatform-production.up.railway.app";
+const DEPLOYED_API_URL = "https://dataforge-backend-x80o.onrender.com";
 
 /** True when the page is being served from the developer's own machine. */
 function servedLocally(): boolean {

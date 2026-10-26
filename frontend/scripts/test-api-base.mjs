@@ -22,7 +22,7 @@ const require = createRequire(import.meta.url);
 const here = path.dirname(fileURLToPath(import.meta.url));
 const esbuild = require(path.join(here, '..', 'node_modules', 'esbuild'));
 
-const DEPLOYED = 'https://miningreportplatform-production.up.railway.app';
+const DEPLOYED = 'https://dataforge-backend-x80o.onrender.com';
 
 /**
  * Load settings.ts as it would be after a build with the given VITE_API_URL,

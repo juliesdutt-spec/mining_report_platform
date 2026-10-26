@@ -225,6 +225,13 @@ class UploadRefusesToStoreStandIns(unittest.TestCase):
         self.assertEqual(stored["mine_name"], "Jayant")
         self.assertTrue(stored["page_count"])
 
+    def test_a_long_upload_does_not_block_the_server(self):
+        # As `async def` with a synchronous body, the upload ran on the event
+        # loop and the server answered nothing else while a 342-page report
+        # was processed. A plain `def` runs in FastAPI's threadpool.
+        import inspect
+        self.assertFalse(inspect.iscoroutinefunction(self.api.upload_report))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -27,6 +27,7 @@ import {
   fetchDocuments,
   getDocumentById,
   uploadMiningDocument,
+  waitForStoredUpload,
 } from "@/services/documents";
 import { ApiError, fetchFile, maxUploadBytes, saveFile } from "@/services/api";
 
@@ -113,6 +114,16 @@ export function DocumentsPage({
     }
   }
   const [uploadProgress, setUploadProgress] = useState<{ done: number; total: number } | null>(null);
+  // The file being processed and how long it has taken, so a six-minute
+  // annual report shows a running clock instead of looking stuck.
+  const [uploadingName, setUploadingName] = useState<string | null>(null);
+  const [uploadStartedAt, setUploadStartedAt] = useState<number | null>(null);
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    if (uploadStartedAt === null) return;
+    const timer = setInterval(() => setTick((n) => n + 1), 1000);
+    return () => clearInterval(timer);
+  }, [uploadStartedAt]);
   const [pendingDelete, setPendingDelete] = useState<MiningDocument | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -260,15 +271,30 @@ export function DocumentsPage({
     const failed: string[] = [...rejected];
     let lastId: number | undefined;
 
+    const knownMaxId = documents.reduce((max, doc) => Math.max(max, doc.id), 0);
     for (const [index, file] of files.entries()) {
+      setUploadingName(file.name);
+      setUploadStartedAt(Date.now());
       try {
         const newDoc = await uploadMiningDocument(file);
         succeeded.push(newDoc.filename);
         lastId = newDoc.id;
       } catch (err) {
-        failed.push(
-          `${file.name}: ${err instanceof ApiError ? err.message : "upload failed"}`
-        );
+        // No HTTP status means the browser lost the response (timeout or a
+        // dropped connection), not that the server refused the file. A large
+        // report keeps processing on the server, so wait for it to land.
+        const recovered =
+          err instanceof ApiError && err.status === undefined
+            ? await waitForStoredUpload(file.name, knownMaxId)
+            : undefined;
+        if (recovered) {
+          succeeded.push(recovered.filename);
+          lastId = recovered.id;
+        } else {
+          failed.push(
+            `${file.name}: ${err instanceof ApiError ? err.message : "upload failed"}`
+          );
+        }
       }
       if (files.length > 1) {
         setUploadProgress({ done: index + 1, total: files.length });
@@ -290,9 +316,14 @@ export function DocumentsPage({
     }
 
     setUploadProgress(null);
+    setUploadingName(null);
+    setUploadStartedAt(null);
     setIsUploading(false);
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
+
+  const elapsedSeconds = uploadStartedAt === null ? 0 : Math.floor((Date.now() - uploadStartedAt) / 1000);
+  const elapsedLabel = `${Math.floor(elapsedSeconds / 60)}:${String(elapsedSeconds % 60).padStart(2, "0")}`;
 
   const filtered = documents.filter((doc) => {
     const matchesSub = selectedOrganisation === "ALL" || doc.organisation === selectedOrganisation;
@@ -354,9 +385,16 @@ export function DocumentsPage({
         >
           <span className="mt-1.5 h-2 w-2 shrink-0 animate-pulse rounded-full bg-primary" />
           <span>
-            {uploadProgress
-              ? `Uploading and extracting — ${uploadProgress.done} of ${uploadProgress.total} done.`
-              : "Uploading and extracting — the backend runs OCR and AI extraction, which can take a minute."}
+            {uploadingName ? `Reading and extracting "${uploadingName}"` : "Uploading and extracting"}
+            {uploadProgress ? ` (${uploadProgress.done + 1} of ${uploadProgress.total})` : ""}
+            {" · "}
+            <span className="font-mono tabular-nums text-foreground">{elapsedLabel}</span>
+            {elapsedSeconds >= 45 && (
+              <span className="mt-1 block">
+                Large reports (100+ pages) can take 5–8 minutes. Keep this tab open; the
+                report opens automatically when it is ready.
+              </span>
+            )}
           </span>
         </div>
       )}
