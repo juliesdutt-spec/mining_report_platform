@@ -111,6 +111,40 @@ export async function deleteDocument(id: number): Promise<void> {
 }
 
 /**
+ * How long the browser waits for one upload. A 342-page annual report takes
+ * about six minutes on the hosted backend; at the old 180 s the browser gave
+ * up halfway and reported a failure for an upload that went on to succeed.
+ */
+export const UPLOAD_TIMEOUT_MS = 15 * 60 * 1000;
+
+/**
+ * After a dropped or timed-out upload, wait for the backend to finish the
+ * report anyway. Only reports newer than `afterId` count, so an earlier copy of
+ * the same file is never mistaken for this one. Resolves to the stored report,
+ * or undefined if none appears in time or processing ends in an error.
+ */
+export async function waitForStoredUpload(
+  filename: string,
+  afterId: number,
+  { timeoutMs = 10 * 60 * 1000, intervalMs = 10000 } = {}
+): Promise<MiningDocument | undefined> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      const match = (await fetchDocuments())
+        .filter((doc) => doc.id > afterId && doc.filename === filename)
+        .sort((a, b) => b.id - a.id)[0];
+      if (match?.status === 'completed') return match;
+      if (match?.status === 'error') return undefined;
+    } catch {
+      /* the backend may be busy or waking up; try again */
+    }
+    await new Promise((resolve) => setTimeout(resolve, intervalMs));
+  }
+  return undefined;
+}
+
+/**
  * POST /upload — multipart form with a single `file` field. The backend only
  * accepts PDFs and runs text extraction plus AI extraction synchronously, so
  * this can take a while; hence the long timeout.
@@ -122,7 +156,7 @@ export async function uploadMiningDocument(file: File): Promise<MiningDocument> 
   const res = await apiFetch<BackendUploadResponse>(
     '/upload',
     { method: 'POST', body: form },
-    180000
+    UPLOAD_TIMEOUT_MS
   );
 
   return mapReportToDocument({

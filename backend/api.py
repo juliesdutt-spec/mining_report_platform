@@ -318,7 +318,7 @@ MAX_UPLOAD_BYTES = int(os.getenv("MAX_UPLOAD_MB", "50")) * 1024 * 1024
 _UPLOAD_CHUNK = 1024 * 1024
 
 
-async def _read_capped(file: UploadFile) -> bytes:
+def _read_capped(file: UploadFile) -> bytes:
     """
     Read an upload, refusing anything past MAX_UPLOAD_BYTES.
 
@@ -328,7 +328,7 @@ async def _read_capped(file: UploadFile) -> bytes:
     chunks: list[bytes] = []
     total = 0
     while True:
-        chunk = await file.read(_UPLOAD_CHUNK)
+        chunk = file.file.read(_UPLOAD_CHUNK)
         if not chunk:
             break
         total += len(chunk)
@@ -385,8 +385,12 @@ def _discard(db: Session, report: MiningReport) -> None:
         print(f"[upload] could not remove report {getattr(report, 'id', None)}: {exc}")
 
 
+# A plain `def`, so FastAPI runs it in its threadpool. As `async def` with a
+# synchronous body, every PDF parse, OCR pass and model call ran on the event
+# loop, and the server answered nothing else - not /health, not /reports -
+# for the six minutes a 342-page report takes.
 @app.post("/upload")
-async def upload_report(
+def upload_report(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
     user: User = Depends(writing_user),
@@ -399,7 +403,7 @@ async def upload_report(
         raise HTTPException(status_code=400, detail="Only PDF files are supported.")
     
     try:
-        pdf_bytes = await _read_capped(file)
+        pdf_bytes = _read_capped(file)
         
         # Create report record
         report = MiningReport(

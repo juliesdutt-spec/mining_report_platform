@@ -62,3 +62,16 @@ test("one slow reply does not report the backend as offline", () => {
     "a success must reset the counter, or it would latch"
   );
 });
+
+test("a long upload shows a clock and survives the browser giving up", () => {
+  const docs = readFileSync(new URL("../src/services/documents.ts", import.meta.url), "utf8");
+  const page = readFileSync(new URL("../src/pages/DocumentsPage.tsx", import.meta.url), "utf8");
+  // A 342-page report takes about six minutes; 180 s cut every one off.
+  assert.match(docs, /UPLOAD_TIMEOUT_MS = 15 \* 60 \* 1000/);
+  assert.doesNotMatch(docs, /180000/);
+  // Only reports newer than the ones already listed count as this upload.
+  assert.match(docs, /doc\.id > afterId && doc\.filename === filename/);
+  // Recovery only for a lost response, never for a refusal with a status.
+  assert.match(page, /err\.status === undefined[\s\S]{0,80}waitForStoredUpload/);
+  assert.match(page, /elapsedLabel/);
+});
