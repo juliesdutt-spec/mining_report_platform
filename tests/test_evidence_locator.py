@@ -87,5 +87,32 @@ class LocateEvidenceTests(unittest.TestCase):
         self.assertEqual(snippet["documentId"], 7)
 
 
+class NumbersNeedTheirContext(unittest.TestCase):
+    """
+    On a real 342-page annual report the reserve-estimate card quoted a CSR
+    spending passage: the value was not found whole, so the bare number was
+    searched for, and the first page carrying those digits won.
+    """
+
+    CSR_PAGE = "CSR expenditure during the year was Rs 780 lakh across 12 villages."
+    RESERVES_PAGE = "4. RESERVE POSITION - Proved reserves: 780 million tonnes - Indicated reserves: 245 million tonnes"
+    VALUE = "Proved reserves: 780 million tonnes, Indicated reserves: 245 million tonnes"
+
+    def _cite(self, pages, **fields):
+        return {e["field"]: e for e in locate_evidence(FakeReport(pages=pages, **fields))}
+
+    def test_a_reserve_figure_is_not_cited_from_an_unrelated_page(self):
+        cited = self._cite([self.CSR_PAGE, self.RESERVES_PAGE], reserve_estimate=self.VALUE)
+        self.assertEqual(cited["reserve_estimate"]["pageNumber"], 2)
+
+    def test_no_citation_beats_a_wrong_one(self):
+        cited = self._cite([self.CSR_PAGE], reserve_estimate=self.VALUE)
+        self.assertNotIn("reserve_estimate", cited)
+
+    def test_a_number_is_not_found_inside_a_longer_one(self):
+        cited = self._cite(["Total coal production: 17,800 tonnes."], quantity_extracted="780")
+        self.assertNotIn("quantity_extracted", cited)
+
+
 if __name__ == "__main__":
     unittest.main()

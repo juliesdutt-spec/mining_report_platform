@@ -49,6 +49,18 @@ def _search_variants(value: str) -> List[str]:
     if stripped != value:
         variants.append(stripped)
 
+    # The first figure with its unit, e.g. "780 million tonnes" out of
+    # "Proved reserves: 780 million tonnes, Indicated reserves: 245 million
+    # tonnes", which the document never writes as one string.
+    with_unit = re.search(
+        r"\d[\d,]*\.?\d*\s*(?:million|billion|lakh|crore|thousand)?\s*"
+        r"(?:tonnes?|tons?|mtpa|mt|cubic metres|cu\.? ?m)\b",
+        value,
+        re.IGNORECASE,
+    )
+    if with_unit:
+        variants.append(with_unit.group(0).strip())
+
     number = re.search(r"\d[\d,]*\.?\d*", value)
     if number:
         variants.append(number.group(0))
@@ -80,14 +92,42 @@ def _digit_tolerant_pattern(variant: str) -> str:
     return "".join(parts)
 
 
-def _find_in_pages(pages: List[str], value: str) -> Optional[Dict[str, Any]]:
+# Words that must appear near a bare number before it counts as evidence for
+# a field. A number alone is not a citation: on a real 342-page annual report,
+# "780" from a reserve estimate matched a CSR spending passage first, and the
+# evidence card quoted it as the reserve figure.
+FIELD_CUES = {
+    "reserve_estimate": ("reserve", "resource", "भंडार", "निक्षेप", "నిల్వ"),
+    "quantity_extracted": ("production", "produced", "extracted", "output", "उत्पादन",
+                           "ఉత్పత్తి", "ఉత్పాదన"),
+}
+
+
+def _is_bare_number(variant: str) -> bool:
+    return bool(re.fullmatch(r"[\d,.\s]+", variant))
+
+
+def _find_in_pages(pages: List[str], value: str, field: Optional[str] = None) -> Optional[Dict[str, Any]]:
     """Locate a value in the page text, returning its page and passage."""
+    cues = FIELD_CUES.get(field or "")
     for variant in _search_variants(value):
-        pattern = re.compile(_digit_tolerant_pattern(variant), re.IGNORECASE)
+        # Digits on either side mean a different number: "780" is not the
+        # middle of "17,800".
+        before = r"(?<![\d.,])" if variant[0].isdigit() else ""
+        after = r"(?![\d])" if variant[-1].isdigit() else ""
+        pattern = re.compile(before + _digit_tolerant_pattern(variant) + after, re.IGNORECASE)
+        needs_cue = cues is not None and _is_bare_number(variant)
         for index, page_text in enumerate(pages):
             if not page_text:
                 continue
-            match = pattern.search(page_text)
+            match = None
+            for candidate in pattern.finditer(page_text):
+                if needs_cue:
+                    window = page_text[max(0, candidate.start() - CONTEXT_RADIUS):candidate.end() + CONTEXT_RADIUS].casefold()
+                    if not any(cue.casefold() in window for cue in cues):
+                        continue
+                match = candidate
+                break
             if not match:
                 continue
 
@@ -129,7 +169,7 @@ def locate_evidence(report: Any) -> List[Dict[str, Any]]:
         if not value:
             continue
 
-        location = _find_in_pages(pages, str(value))
+        location = _find_in_pages(pages, str(value), field)
         if not location:
             continue  # the value is not verifiable in the source text
 
