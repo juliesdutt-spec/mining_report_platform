@@ -1,4 +1,5 @@
-# Backend image for hosts that build from a Dockerfile (Render).
+# Backend image for hosts that build from a Dockerfile (Render), and the image
+# .github/workflows/container.yml publishes to ghcr.io for Azure App Service.
 #
 # Railway builds this service with Nixpacks (see nixpacks.toml) and is not
 # affected by this file: it lives under deploy/ precisely so that Railway,
